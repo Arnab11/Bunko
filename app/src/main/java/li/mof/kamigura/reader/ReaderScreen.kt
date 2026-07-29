@@ -161,7 +161,6 @@ fun ReaderScreen(
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     val settings by settingsStore.flow.collectAsState(initial = AppSettings())
-    ReaderFullscreenEffect()
 
     var session by remember { mutableStateOf<KavitaSession?>(null) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
@@ -189,6 +188,7 @@ fun ReaderScreen(
     var readerReady by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showReaderMenu by remember { mutableStateOf(false) }
+    ReaderFullscreenEffect(showStatusBar = showReaderMenu)
     var rightToLeft by remember { mutableStateOf(settings.reader.rightToLeft) }
     // Per-book overrides survive a short close/reopen cycle in process memory. The server
     // direction and global Reader setting remain authoritative after the cache expires.
