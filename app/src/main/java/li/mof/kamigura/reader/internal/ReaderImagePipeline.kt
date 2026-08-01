@@ -2,6 +2,7 @@ package li.mof.kamigura.reader.internal
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -15,10 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -31,7 +29,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.SuccessResult
@@ -58,12 +56,6 @@ private sealed interface PageModelState {
     data object Loading : PageModelState
     data object Unavailable : PageModelState
     data class Ready(val model: Any) : PageModelState
-}
-
-private enum class PageImageLoadState {
-    Loading,
-    Success,
-    Error
 }
 
 private val NegativeColorFilter = ColorFilter.colorMatrix(
@@ -241,10 +233,7 @@ private fun RowScope.PageImage(
                 if (shouldInvert == null) {
                     ReaderPageLoadingPlaceholder()
                 } else {
-                    var imageLoadState by remember(resolvedModel) {
-                        mutableStateOf(PageImageLoadState.Loading)
-                    }
-                    AsyncImage(
+                    SubcomposeAsyncImage(
                         model = resolvedModel,
                         imageLoader = imageLoader,
                         contentDescription = label,
@@ -252,18 +241,30 @@ private fun RowScope.PageImage(
                         alignment = alignment,
                         contentScale = contentScale,
                         colorFilter = if (shouldInvert == true) NegativeColorFilter else null,
-                        onLoading = { imageLoadState = PageImageLoadState.Loading },
-                        onSuccess = { imageLoadState = PageImageLoadState.Success },
-                        onError = { imageLoadState = PageImageLoadState.Error }
+                        loading = {
+                            PagePlaceholderContainer {
+                                ReaderPageLoadingPlaceholder()
+                            }
+                        },
+                        error = {
+                            PagePlaceholderContainer {
+                                ReaderPageUnavailablePlaceholder()
+                            }
+                        }
                     )
-                    when (imageLoadState) {
-                        PageImageLoadState.Loading -> ReaderPageLoadingPlaceholder()
-                        PageImageLoadState.Error -> ReaderPageUnavailablePlaceholder()
-                        PageImageLoadState.Success -> Unit
-                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PagePlaceholderContainer(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
     }
 }
 
