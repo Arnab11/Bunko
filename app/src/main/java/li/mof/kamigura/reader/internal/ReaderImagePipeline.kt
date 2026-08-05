@@ -1,6 +1,8 @@
 package li.mof.kamigura.reader.internal
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,7 +18,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -30,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
 import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.SuccessResult
@@ -188,38 +194,52 @@ private fun RowScope.PageImage(
         }
         val resolvedModel = (pageModelState as? PageModelState.Ready)?.model
         val cacheKey = resolvedModel?.let { ReaderInvertCacheKey(it, whiteThreshold) }
+        val cachedInvertDecision = cacheKey?.let(invertDecisionCache::get)
+        var loadedDrawable by remember(resolvedModel, imageLoader) {
+            mutableStateOf<Drawable?>(null)
+        }
         val shouldInvert by produceState<Boolean?>(
             initialValue = when (invertMode) {
                 InvertMode.Off -> false
                 InvertMode.Always -> true
-                InvertMode.Smart -> cacheKey?.let(invertDecisionCache::get)
+                InvertMode.Smart -> cachedInvertDecision
             },
             resolvedModel,
             invertMode,
             whiteThreshold,
-            imageLoader
+            loadedDrawable,
+            cachedInvertDecision
         ) {
             value = when (invertMode) {
                 InvertMode.Off -> false
                 InvertMode.Always -> true
                 InvertMode.Smart -> {
                     val loadedModel = resolvedModel
-                    if (loadedModel == null) {
+                    val drawable = loadedDrawable
+                    if (loadedModel == null || drawable == null) {
                         null
                     } else {
                         val key = ReaderInvertCacheKey(loadedModel, whiteThreshold)
-                        invertDecisionCache[key] ?: try {
-                            analyzeShouldInvert(
-                                ctx,
-                                imageLoader,
-                                loadedModel,
-                                whiteThreshold
-                            ).also { invertDecisionCache[key] = it }
+                        cachedInvertDecision ?: try {
+                            try {
+                                analyzeShouldInvert(drawable, whiteThreshold)
+                            } catch (t: Throwable) {
+                                KamiguraLog.w(
+                                    "Reader Smart Invert drawable analysis failed; retrying from cache.",
+                                    t
+                                )
+                                analyzeShouldInvert(
+                                    ctx,
+                                    imageLoader,
+                                    loadedModel,
+                                    whiteThreshold
+                                )
+                            }.also { invertDecisionCache[key] = it }
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (t: Throwable) {
                             KamiguraLog.w("Reader Smart Invert analysis failed.", t)
-                            false
+                            null
                         }
                     }
                 }
@@ -230,29 +250,37 @@ private fun RowScope.PageImage(
             PageModelState.Loading -> ReaderPageLoadingPlaceholder()
             PageModelState.Unavailable -> ReaderPageUnavailablePlaceholder()
             is PageModelState.Ready -> {
-                if (shouldInvert == null) {
-                    ReaderPageLoadingPlaceholder()
-                } else {
-                    SubcomposeAsyncImage(
-                        model = resolvedModel,
-                        imageLoader = imageLoader,
-                        contentDescription = label,
-                        modifier = Modifier.fillMaxSize(),
-                        alignment = alignment,
-                        contentScale = contentScale,
-                        colorFilter = if (shouldInvert == true) NegativeColorFilter else null,
-                        loading = {
+                SubcomposeAsyncImage(
+                    model = resolvedModel,
+                    imageLoader = imageLoader,
+                    contentDescription = label,
+                    modifier = Modifier.fillMaxSize(),
+                    alignment = alignment,
+                    contentScale = contentScale,
+                    colorFilter = if (shouldInvert == true) NegativeColorFilter else null,
+                    onSuccess = { state ->
+                        loadedDrawable = state.result.drawable
+                    },
+                    loading = {
+                        PagePlaceholderContainer {
+                            ReaderPageLoadingPlaceholder()
+                        }
+                    },
+                    error = {
+                        PagePlaceholderContainer {
+                            ReaderPageUnavailablePlaceholder()
+                        }
+                    },
+                    success = {
+                        if (invertMode == InvertMode.Smart && shouldInvert == null) {
                             PagePlaceholderContainer {
                                 ReaderPageLoadingPlaceholder()
                             }
-                        },
-                        error = {
-                            PagePlaceholderContainer {
-                                ReaderPageUnavailablePlaceholder()
-                            }
+                        } else {
+                            SubcomposeAsyncImageContent()
                         }
-                    )
-                }
+                    }
+                )
             }
         }
     }
@@ -368,10 +396,18 @@ private suspend fun analyzeShouldInvert(
         .size(SmartInvertSampleSize)
         .allowHardware(false)
         .build()
-    val bitmap = (imageLoader.execute(request) as? SuccessResult)
-        ?.drawable
-        ?.toBitmap()
-        ?: return false
+    val result = imageLoader.execute(request)
+    if (result !is SuccessResult) {
+        error("Smart Invert sample image could not be loaded.")
+    }
+    return analyzeShouldInvert(result.drawable, whiteThreshold)
+}
+
+private fun analyzeShouldInvert(drawable: Drawable, whiteThreshold: Float): Boolean {
+    val bitmap = drawable
+        .toBitmap(SmartInvertSampleSize, SmartInvertSampleSize)
+        .copy(Bitmap.Config.ARGB_8888, false)
+        ?: error("Smart Invert sample image could not be copied.")
 
     val width = bitmap.width
     val height = bitmap.height
