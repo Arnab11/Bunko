@@ -143,6 +143,16 @@ private const val ReaderSpreadCurlVisualCurrent = 1
 private const val ReaderSpreadCurlTurnEndFractionX = 0.5f
 internal const val ReaderPortraitBackPageContentAlpha = 0.05f
 
+internal fun readerPageBackgroundColor(
+    darkPaper: Boolean,
+    usePureColors: Boolean
+): Color = when {
+    darkPaper && usePureColors -> Color.Black
+    darkPaper -> Color(0xFF101010)
+    usePureColors -> Color.White
+    else -> Color(0xFFFAF7F2)
+}
+
 internal fun readerPortraitBackPageContentAlpha(showContent: Boolean): Float {
     return if (showContent) ReaderPortraitBackPageContentAlpha else 0f
 }
@@ -706,11 +716,10 @@ fun ReaderScreen(
         // rest of the time.
         val darkPaper = invertMode != InvertMode.Off ||
             settings.reader.pageBackground == PageBackground.Dark
-        val curlBackPageColor = if (darkPaper) {
-            Color(0xFF101010)
-        } else {
-            Color(0xFFFAF7F2)
-        }
+        val curlBackPageColor = readerPageBackgroundColor(
+            darkPaper = darkPaper,
+            usePureColors = settings.reader.usePurePageBackgroundColors
+        )
         // Every rendering branch letterboxes with the selected paper colour.
         val readerPageBackground = curlBackPageColor
         val portraitBackPageContentAlpha = readerPortraitBackPageContentAlpha(

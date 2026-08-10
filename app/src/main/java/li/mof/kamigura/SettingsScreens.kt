@@ -682,6 +682,15 @@ fun ReaderSettingsScreen(
             }
 
             SettingRow(
+                title = "Pure black / white margins",
+                desc = "Uses #000000 for Dark and #FFFFFF for Paper instead of the softer colours.",
+                checked = settings.reader.usePurePageBackgroundColors,
+                onToggle = { enabled ->
+                    scope.launch { settingsStore.setUsePurePageBackgroundColors(enabled) }
+                }
+            )
+
+            SettingRow(
                 title = "Spread shift buttons",
                 desc = "Shows the +1 / -1 buttons in the reader menu (landscape) to correct a " +
                     "one-page spread misalignment. Edge long-press does the same either way.",
