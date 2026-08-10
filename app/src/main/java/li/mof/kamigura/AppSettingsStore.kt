@@ -40,6 +40,7 @@ data class ReaderSettings(
     val pageTransitionAnimation: Boolean = true,
     val pageTurnMode: PageTurnMode = PageTurnMode.Curl,
     val pageBackground: PageBackground = PageBackground.Paper,
+    val showPortraitPageBackContent: Boolean = true,
     val showSpreadShiftButtons: Boolean = true
 )
 
@@ -56,6 +57,8 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_PAGE_TRANSITION_ANIMATION = booleanPreferencesKey("reader_page_transition_animation")
     private val KEY_PAGE_TURN_MODE = stringPreferencesKey("reader_page_turn_mode")
     private val KEY_PAGE_BACKGROUND = stringPreferencesKey("reader_page_background")
+    private val KEY_SHOW_PORTRAIT_PAGE_BACK_CONTENT =
+        booleanPreferencesKey("reader_show_portrait_page_back_content")
     private val KEY_SHOW_SPREAD_SHIFT_BUTTONS = booleanPreferencesKey("reader_show_spread_shift_buttons")
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
@@ -77,6 +80,7 @@ class AppSettingsStore(private val context: Context) {
                 pageBackground = prefs[KEY_PAGE_BACKGROUND]
                     ?.let { runCatching { PageBackground.valueOf(it) }.getOrNull() }
                     ?: PageBackground.Paper,
+                showPortraitPageBackContent = prefs[KEY_SHOW_PORTRAIT_PAGE_BACK_CONTENT] ?: true,
                 showSpreadShiftButtons = prefs[KEY_SHOW_SPREAD_SHIFT_BUTTONS] ?: true
             )
         )
@@ -108,6 +112,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setPageBackground(value: PageBackground) {
         context.settingsDataStore.edit { it[KEY_PAGE_BACKGROUND] = value.name }
+    }
+
+    suspend fun setShowPortraitPageBackContent(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_SHOW_PORTRAIT_PAGE_BACK_CONTENT] = value }
     }
 
     suspend fun setShowSpreadShiftButtons(value: Boolean) {

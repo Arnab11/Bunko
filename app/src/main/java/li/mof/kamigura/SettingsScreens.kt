@@ -644,6 +644,15 @@ fun ReaderSettingsScreen(
                 }
             }
 
+            SettingRow(
+                title = "Page-back show-through",
+                desc = "Shows a faint mirror of the page on the back of a curled portrait sheet.",
+                checked = settings.reader.showPortraitPageBackContent,
+                onToggle = { enabled ->
+                    scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
+                }
+            )
+
             Text("Page background", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Colour of the margins around a page, and of the back of a curling page. " +

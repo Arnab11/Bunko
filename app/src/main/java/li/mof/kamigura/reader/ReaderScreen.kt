@@ -141,6 +141,11 @@ private const val ReaderProgressSyncDelayMillis = 3_000L
 private const val ReaderSpreadCurlVisualPageCount = 3
 private const val ReaderSpreadCurlVisualCurrent = 1
 private const val ReaderSpreadCurlTurnEndFractionX = 0.5f
+internal const val ReaderPortraitBackPageContentAlpha = 0.05f
+
+internal fun readerPortraitBackPageContentAlpha(showContent: Boolean): Float {
+    return if (showContent) ReaderPortraitBackPageContentAlpha else 0f
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPageCurlApi::class)
 @Composable
@@ -708,7 +713,13 @@ fun ReaderScreen(
         }
         // Every rendering branch letterboxes with the selected paper colour.
         val readerPageBackground = curlBackPageColor
-        val portraitCurlConfig = rememberPageCurlConfig(backPageColor = curlBackPageColor)
+        val portraitBackPageContentAlpha = readerPortraitBackPageContentAlpha(
+            showContent = settings.reader.showPortraitPageBackContent
+        )
+        val portraitCurlConfig = rememberPageCurlConfig(
+            backPageColor = curlBackPageColor,
+            backPageContentAlpha = portraitBackPageContentAlpha
+        )
         val spreadCurlConfig = rememberPageCurlConfig(
             backPageColor = curlBackPageColor,
             backPageContentAlpha = 0.96f,
@@ -716,8 +727,9 @@ fun ReaderScreen(
                 pointerBehavior = PageCurlConfig.DragInteraction.PointerBehavior.PageEdge
             )
         )
-        LaunchedEffect(curlBackPageColor) {
+        LaunchedEffect(curlBackPageColor, portraitBackPageContentAlpha) {
             portraitCurlConfig.backPageColor = curlBackPageColor
+            portraitCurlConfig.backPageContentAlpha = portraitBackPageContentAlpha
             spreadCurlConfig.backPageColor = curlBackPageColor
         }
         fun prefetchTargetsFor(
