@@ -11,15 +11,28 @@ import kotlinx.serialization.json.Json
 import li.mof.kamigura.InvertMode
 import li.mof.kamigura.KamiguraLog
 import li.mof.kamigura.KavitaSession
+import li.mof.kamigura.ReaderReadingDirection
 import li.mof.kamigura.cache.imageCacheScope
 
 internal const val ReaderSessionPreferenceTtlMillis = 30L * 24L * 60L * 60L * 1_000L
 private const val ReaderSessionPreferenceCacheFileName = "reader_session_preferences.json"
 
 internal data class ReaderSessionPreferences(
-    val rightToLeft: Boolean,
+    val readingDirection: ReaderReadingDirection,
     val invertMode: InvertMode
-)
+) {
+    constructor(rightToLeft: Boolean, invertMode: InvertMode) : this(
+        readingDirection = if (rightToLeft) {
+            ReaderReadingDirection.RightToLeft
+        } else {
+            ReaderReadingDirection.LeftToRight
+        },
+        invertMode = invertMode
+    )
+
+    val rightToLeft: Boolean
+        get() = readingDirection == ReaderReadingDirection.RightToLeft
+}
 
 internal fun readerSessionPreferenceKey(
     session: KavitaSession,
@@ -38,7 +51,8 @@ internal object ReaderSessionPreferenceCache {
     @Serializable
     private data class StoredEntry(
         val key: String,
-        val rightToLeft: Boolean,
+        val readingDirection: String? = null,
+        val rightToLeft: Boolean? = null,
         val invertMode: String,
         val touchedAtMillis: Long
     )
@@ -73,8 +87,15 @@ internal object ReaderSessionPreferenceCache {
                 stored.forEach { storedEntry ->
                     val mode = runCatching { InvertMode.valueOf(storedEntry.invertMode) }.getOrNull()
                         ?: return@forEach
+                    val direction = storedEntry.readingDirection
+                        ?.let { runCatching { ReaderReadingDirection.valueOf(it) }.getOrNull() }
+                        ?: if (storedEntry.rightToLeft != false) {
+                            ReaderReadingDirection.RightToLeft
+                        } else {
+                            ReaderReadingDirection.LeftToRight
+                        }
                     entries[storedEntry.key] = Entry(
-                        preferences = ReaderSessionPreferences(storedEntry.rightToLeft, mode),
+                        preferences = ReaderSessionPreferences(direction, mode),
                         touchedAtMillis = storedEntry.touchedAtMillis
                     )
                 }
@@ -104,7 +125,7 @@ internal object ReaderSessionPreferenceCache {
             entries.map { (key, entry) ->
                 StoredEntry(
                     key = key,
-                    rightToLeft = entry.preferences.rightToLeft,
+                    readingDirection = entry.preferences.readingDirection.name,
                     invertMode = entry.preferences.invertMode.name,
                     touchedAtMillis = entry.touchedAtMillis
                 )

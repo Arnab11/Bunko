@@ -23,6 +23,12 @@ enum class PageTurnMode {
     Curl
 }
 
+enum class ReaderReadingDirection {
+    RightToLeft,
+    Vertical,
+    LeftToRight
+}
+
 /** Colour of the margins around a page (and of the curl flap's back face). */
 enum class PageBackground {
     Paper,
@@ -33,7 +39,7 @@ internal const val DefaultReaderPrefetchTurns = 4
 internal const val MaxReaderPrefetchTurns = 8
 
 data class ReaderSettings(
-    val rightToLeft: Boolean = true,
+    val readingDirection: ReaderReadingDirection = ReaderReadingDirection.RightToLeft,
     val invertMode: InvertMode = InvertMode.Off,
     val invertWhiteThreshold: Float = 0.5f,
     val prefetchTurns: Int = DefaultReaderPrefetchTurns,
@@ -43,7 +49,10 @@ data class ReaderSettings(
     val showPortraitPageBackContent: Boolean = true,
     val usePurePageBackgroundColors: Boolean = false,
     val showSpreadShiftButtons: Boolean = true
-)
+) {
+    val rightToLeft: Boolean
+        get() = readingDirection == ReaderReadingDirection.RightToLeft
+}
 
 data class AppSettings(
     val reader: ReaderSettings = ReaderSettings()
@@ -51,6 +60,7 @@ data class AppSettings(
 
 class AppSettingsStore(private val context: Context) {
     private val KEY_RTL = booleanPreferencesKey("reader_rtl")
+    private val KEY_READING_DIRECTION = stringPreferencesKey("reader_reading_direction")
     private val KEY_INVERT_MODE = stringPreferencesKey("reader_invert_mode")
     private val KEY_INVERT_WHITE_THRESHOLD = floatPreferencesKey("reader_invert_white_threshold")
     private val KEY_PREFETCH_TURNS = intPreferencesKey("reader_prefetch_turns")
@@ -67,7 +77,10 @@ class AppSettingsStore(private val context: Context) {
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
             reader = ReaderSettings(
-                rightToLeft = prefs[KEY_RTL] ?: true,
+                readingDirection = readerReadingDirection(
+                    storedName = prefs[KEY_READING_DIRECTION],
+                    legacyRightToLeft = prefs[KEY_RTL]
+                ),
                 invertMode = prefs[KEY_INVERT_MODE]
                     ?.let { runCatching { InvertMode.valueOf(it) }.getOrNull() }
                     ?: InvertMode.Off,
@@ -91,7 +104,13 @@ class AppSettingsStore(private val context: Context) {
     }
 
     suspend fun setRightToLeft(value: Boolean) {
-        context.settingsDataStore.edit { it[KEY_RTL] = value }
+        setReadingDirection(
+            if (value) ReaderReadingDirection.RightToLeft else ReaderReadingDirection.LeftToRight
+        )
+    }
+
+    suspend fun setReadingDirection(value: ReaderReadingDirection) {
+        context.settingsDataStore.edit { it[KEY_READING_DIRECTION] = value.name }
     }
 
     suspend fun setInvertMode(value: InvertMode) {
@@ -129,4 +148,17 @@ class AppSettingsStore(private val context: Context) {
     suspend fun setShowSpreadShiftButtons(value: Boolean) {
         context.settingsDataStore.edit { it[KEY_SHOW_SPREAD_SHIFT_BUTTONS] = value }
     }
+}
+
+internal fun readerReadingDirection(
+    storedName: String?,
+    legacyRightToLeft: Boolean?
+): ReaderReadingDirection {
+    return storedName
+        ?.let { runCatching { ReaderReadingDirection.valueOf(it) }.getOrNull() }
+        ?: if (legacyRightToLeft != false) {
+            ReaderReadingDirection.RightToLeft
+        } else {
+            ReaderReadingDirection.LeftToRight
+        }
 }
