@@ -1947,25 +1947,20 @@ fun ReaderScreen(
                 chapterName = currentChapter.displayName,
                 page = page,
                 pages = pages,
-                rightToLeft = rtl,
+                readingDirection = readingDirection,
                 showSpreadShift = !vertical && !portrait && settings.reader.showSpreadShiftButtons,
                 onBack = onBack,
                 onDismiss = { showReaderMenu = false },
-                onToggleDirection = {
+                onSetReadingDirection = { direction ->
                     // Per-book session override only. The global fallback lives in Reader
                     // Settings; a per-series direction lives on the Kavita server. This
                     // toggle flips the current reading session without writing either, so it
                     // never silently changes other books or fights the server value.
-                    val next = if (rtl) {
-                        ReaderReadingDirection.LeftToRight
-                    } else {
-                        ReaderReadingDirection.RightToLeft
-                    }
-                    readingDirection = next
+                    readingDirection = direction
                     sessionPreferenceKey?.let { key ->
                         ReaderSessionPreferenceCache.put(
                             key = key,
-                            preferences = ReaderSessionPreferences(next, invertMode),
+                            preferences = ReaderSessionPreferences(direction, invertMode),
                             nowMillis = System.currentTimeMillis()
                         )
                         ReaderExitWriteScope.launch {

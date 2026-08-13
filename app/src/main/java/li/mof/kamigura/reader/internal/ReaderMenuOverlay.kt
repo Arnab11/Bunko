@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import li.mof.kamigura.InvertMode
+import li.mof.kamigura.ReaderReadingDirection
 import li.mof.kamigura.ui.ValueBubbleSlider
 import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -47,19 +48,20 @@ internal fun ReaderMenuOverlay(
     chapterName: String,
     page: Int,
     pages: Int,
-    rightToLeft: Boolean,
+    readingDirection: ReaderReadingDirection,
     // Spread shift only means something while spreads are shown; portrait hides the row
     // (a single-page ±1 there is just a page turn).
     showSpreadShift: Boolean,
     onBack: () -> Unit,
     onDismiss: () -> Unit,
-    onToggleDirection: () -> Unit,
+    onSetReadingDirection: (ReaderReadingDirection) -> Unit,
     invertMode: InvertMode,
     onSetInvertMode: (InvertMode) -> Unit,
     onNextSingle: () -> Unit,
     onPreviousSingle: () -> Unit,
     onJumpToPage: (Int) -> Unit
 ) {
+    val rightToLeft = readingDirection == ReaderReadingDirection.RightToLeft
     val safePageCount = pages.coerceAtLeast(1)
     val currentPage = page.coerceIn(0, safePageCount - 1)
     var jumpPage by remember(currentPage, safePageCount) { mutableIntStateOf(currentPage) }
@@ -114,24 +116,6 @@ internal fun ReaderMenuOverlay(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
-            ) {
-                // Same selected-segment pattern as the Invert group below, so the current
-                // reading direction is visible at a glance instead of hidden in a toggle.
-                ToggleButton(
-                    checked = rightToLeft,
-                    onCheckedChange = { if (!rightToLeft) onToggleDirection() },
-                    modifier = Modifier.semantics { role = Role.RadioButton },
-                    shapes = ButtonGroupDefaults.connectedLeadingButtonShapes()
-                ) { Text("RTL") }
-                ToggleButton(
-                    checked = !rightToLeft,
-                    onCheckedChange = { if (rightToLeft) onToggleDirection() },
-                    modifier = Modifier.semantics { role = Role.RadioButton },
-                    shapes = ButtonGroupDefaults.connectedTrailingButtonShapes()
-                ) { Text("LTR") }
-            }
             IconButton(onClick = onDismiss) {
                 Icon(
                     imageVector = Icons.Filled.Close,
@@ -149,6 +133,42 @@ internal fun ReaderMenuOverlay(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Direction", color = Color.White)
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                ) {
+                    val directions = ReaderReadingDirection.entries
+                    directions.forEachIndexed { index, direction ->
+                        ToggleButton(
+                            checked = readingDirection == direction,
+                            onCheckedChange = { onSetReadingDirection(direction) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { role = Role.RadioButton },
+                            shapes = when (index) {
+                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                directions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                            }
+                        ) {
+                            Text(
+                                when (direction) {
+                                    ReaderReadingDirection.RightToLeft -> "RTL"
+                                    ReaderReadingDirection.Vertical -> "Vertical"
+                                    ReaderReadingDirection.LeftToRight -> "LTR"
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

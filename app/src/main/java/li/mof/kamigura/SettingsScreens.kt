@@ -587,39 +587,9 @@ fun ReaderSettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            SettingRow(
-                title = "Right-to-left",
-                desc = "Fallback page-turn direction, used only when a series has no reading " +
-                    "direction of its own on the Kavita server. Series with their own setting follow that.",
-                checked = settings.reader.rightToLeft,
-                onToggle = { v -> scope.launch { settingsStore.setRightToLeft(v) } }
-            )
-
-            Text("Page preloading", style = MaterialTheme.typography.titleMedium)
+            Text("Reading direction", style = MaterialTheme.typography.titleMedium)
             Text(
-                "One turn is one page turn. A two-page spread can preload two page images per turn.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
-            PrefetchTurnsSetting(
-                turns = settings.reader.prefetchTurns,
-                onTurnsChanged = { turns ->
-                    scope.launch { settingsStore.setPrefetchTurns(turns) }
-                }
-            )
-
-            SettingRow(
-                title = "Page transition animation",
-                desc = "Slides pages with a small amount of depth. Turn this off to use instant page changes.",
-                checked = settings.reader.pageTransitionAnimation,
-                onToggle = { enabled ->
-                    scope.launch { settingsStore.setPageTransitionAnimation(enabled) }
-                }
-            )
-
-            Text("Page turn", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Slide is the stable reader. Curl is experimental and applies to portrait single-page and landscape spread reading.",
+                "Fallback used when a series has no reading direction of its own on the Kavita server.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray
             )
@@ -627,20 +597,81 @@ fun ReaderSettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
             ) {
-                val modes = PageTurnMode.entries
-                modes.forEachIndexed { index, mode ->
+                val directions = ReaderReadingDirection.entries
+                directions.forEachIndexed { index, direction ->
                     ToggleButton(
-                        checked = settings.reader.pageTurnMode == mode,
-                        onCheckedChange = { scope.launch { settingsStore.setPageTurnMode(mode) } },
+                        checked = settings.reader.readingDirection == direction,
+                        onCheckedChange = {
+                            scope.launch { settingsStore.setReadingDirection(direction) }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .semantics { role = Role.RadioButton },
                         shapes = when (index) {
                             0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                            directions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                             else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                         }
-                    ) { Text(mode.name) }
+                    ) {
+                        Text(
+                            when (direction) {
+                                ReaderReadingDirection.RightToLeft -> "RTL"
+                                ReaderReadingDirection.Vertical -> "Vertical"
+                                ReaderReadingDirection.LeftToRight -> "LTR"
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (settings.reader.readingDirection != ReaderReadingDirection.Vertical) {
+                Text("Page preloading", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "One turn is one page turn. A two-page spread can preload two page images per turn.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                PrefetchTurnsSetting(
+                    turns = settings.reader.prefetchTurns,
+                    onTurnsChanged = { turns ->
+                        scope.launch { settingsStore.setPrefetchTurns(turns) }
+                    }
+                )
+
+                SettingRow(
+                    title = "Page transition animation",
+                    desc = "Slides pages with a small amount of depth. Turn this off to use instant page changes.",
+                    checked = settings.reader.pageTransitionAnimation,
+                    onToggle = { enabled ->
+                        scope.launch { settingsStore.setPageTransitionAnimation(enabled) }
+                    }
+                )
+
+                Text("Page turn", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Slide is the stable reader. Curl is experimental and applies to portrait single-page and landscape spread reading.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                ) {
+                    val modes = PageTurnMode.entries
+                    modes.forEachIndexed { index, mode ->
+                        ToggleButton(
+                            checked = settings.reader.pageTurnMode == mode,
+                            onCheckedChange = { scope.launch { settingsStore.setPageTurnMode(mode) } },
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { role = Role.RadioButton },
+                            shapes = when (index) {
+                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                            }
+                        ) { Text(mode.name) }
+                    }
                 }
             }
 
@@ -681,24 +712,26 @@ fun ReaderSettingsScreen(
                 }
             )
 
-            SettingRow(
-                title = "Page-back show-through",
-                desc = "Shows a faint mirror of the page on the back of a curled portrait sheet.",
-                checked = settings.reader.showPortraitPageBackContent,
-                onToggle = { enabled ->
-                    scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
-                }
-            )
+            if (settings.reader.readingDirection != ReaderReadingDirection.Vertical) {
+                SettingRow(
+                    title = "Page-back show-through",
+                    desc = "Shows a faint mirror of the page on the back of a curled portrait sheet.",
+                    checked = settings.reader.showPortraitPageBackContent,
+                    onToggle = { enabled ->
+                        scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
+                    }
+                )
 
-            SettingRow(
-                title = "Spread shift buttons",
-                desc = "Shows the +1 / -1 buttons in the reader menu (landscape) to correct a " +
-                    "one-page spread misalignment. Edge long-press does the same either way.",
-                checked = settings.reader.showSpreadShiftButtons,
-                onToggle = { enabled ->
-                    scope.launch { settingsStore.setShowSpreadShiftButtons(enabled) }
-                }
-            )
+                SettingRow(
+                    title = "Spread shift buttons",
+                    desc = "Shows the +1 / -1 buttons in the reader menu (landscape) to correct a " +
+                        "one-page spread misalignment. Edge long-press does the same either way.",
+                    checked = settings.reader.showSpreadShiftButtons,
+                    onToggle = { enabled ->
+                        scope.launch { settingsStore.setShowSpreadShiftButtons(enabled) }
+                    }
+                )
+            }
 
             Text("Invert (night)", style = MaterialTheme.typography.titleMedium)
             Text(
