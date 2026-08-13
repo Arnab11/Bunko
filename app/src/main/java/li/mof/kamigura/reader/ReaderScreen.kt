@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,6 +66,7 @@ import li.mof.kamigura.MarkChapterReadDto
 import li.mof.kamigura.MarkVolumesReadDto
 import li.mof.kamigura.PageTurnMode
 import li.mof.kamigura.ProgressDto
+import li.mof.kamigura.ReaderReadingDirection
 import li.mof.kamigura.download.OfflineChapter
 import li.mof.kamigura.download.OfflineIssueRepository
 import li.mof.kamigura.reader.internal.ReaderInvertCacheKey
@@ -76,6 +78,7 @@ import li.mof.kamigura.reader.internal.ReaderChapterEntry
 import li.mof.kamigura.reader.internal.ReaderMenuOverlay
 import li.mof.kamigura.reader.internal.ReaderPageView
 import li.mof.kamigura.reader.internal.ReaderTapLayer
+import li.mof.kamigura.reader.internal.ReaderVerticalScroll
 import li.mof.kamigura.reader.internal.ReaderZoomEpsilon
 import li.mof.kamigura.reader.internal.ReaderZoomPanState
 import li.mof.kamigura.reader.internal.lerpTo
@@ -129,13 +132,6 @@ private data class PendingReaderRemoteProgress(
     val target: ReaderRemoteProgressTarget,
     val sinceMillis: Long
 )
-
-// Kavita reading-profile reading direction values (ReadingDirection enum).
-private const val KavitaReadingDirectionLtr = 0
-private const val KavitaReadingDirectionRtl = 1
-
-// ReadingProfileKind.Default = the user's global default (no per-series direction).
-private const val KavitaReadingProfileKindDefault = 0
 
 private const val ReaderProgressSyncDelayMillis = 3_000L
 private const val ReaderSpreadCurlVisualPageCount = 3
@@ -204,7 +200,7 @@ fun ReaderScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var showReaderMenu by remember { mutableStateOf(false) }
     ReaderFullscreenEffect(showStatusBar = showReaderMenu)
-    var rightToLeft by remember { mutableStateOf(settings.reader.rightToLeft) }
+    var readingDirection by remember { mutableStateOf(settings.reader.readingDirection) }
     // Per-book overrides survive a short close/reopen cycle in process memory. The server
     // direction and global Reader setting remain authoritative after the cache expires.
     var invertMode by remember { mutableStateOf(settings.reader.invertMode) }
@@ -226,6 +222,7 @@ fun ReaderScreen(
     var zoomAnimationJob by remember { mutableStateOf<Job?>(null) }
     var closeDragOffsetY by remember { mutableFloatStateOf(0f) }
     var closeAnimationJob by remember { mutableStateOf<Job?>(null) }
+    var verticalRestoreNonce by remember { mutableIntStateOf(0) }
     val invertDecisionCache = remember { mutableStateMapOf<ReaderInvertCacheKey, Boolean>() }
     val offlineRepository = remember(ctx) { OfflineIssueRepository(ctx) }
     val minimumFlingVelocity = remember(ctx) {
@@ -464,6 +461,7 @@ fun ReaderScreen(
                 pages = loadedPageCount
                 pageDimensions = loadedDimensions
                 page = landingPage
+                verticalRestoreNonce++
                 completingRead = false
                 chapterBoundary = null
                 boundaryDragDirection = null
@@ -500,7 +498,7 @@ fun ReaderScreen(
         if (cachedPreferences != null) {
             // Apply before network initialization so an offline reopen does not flash the
             // global direction or invert mode while the reading-profile call times out.
-            rightToLeft = cachedPreferences.rightToLeft
+            readingDirection = cachedPreferences.readingDirection
             invertMode = cachedPreferences.invertMode
             ReaderExitWriteScope.launch {
                 ReaderSessionPreferenceCache.persist(ctx.cacheDir)
@@ -528,6 +526,7 @@ fun ReaderScreen(
                 lastRemoteProgressPages[currentChapterId] = page
             }
             readerReady = pages > 0
+            verticalRestoreNonce++
         }
 
         try {
@@ -550,27 +549,23 @@ fun ReaderScreen(
                     currentVolumeId = it.volumeId
                 }
             }
-            val serverRightToLeft = try {
+            val resolvedDirection = try {
                 // A series-specific direction on the server (User/Implicit profile)
                 // wins. When only the global Default profile applies, the series has
                 // no direction of its own, so fall back to the app setting.
                 val profile = loadedApi.readingProfile(libraryId, seriesId)
-                when {
-                    profile.kind == KavitaReadingProfileKindDefault -> persistedReaderSettings.rightToLeft
-                    profile.readingDirection == KavitaReadingDirectionRtl -> true
-                    profile.readingDirection == KavitaReadingDirectionLtr -> false
-                    else -> persistedReaderSettings.rightToLeft
-                }
+                resolveReaderReadingDirection(
+                    globalDirection = persistedReaderSettings.readingDirection,
+                    cachedDirection = cachedPreferences?.readingDirection,
+                    profileKind = profile.kind,
+                    profileDirection = profile.readingDirection
+                )
             } catch (t: Throwable) {
                 KamiguraLog.w("Could not load reading direction for series $seriesId.", t)
-                persistedReaderSettings.rightToLeft
+                cachedPreferences?.readingDirection ?: persistedReaderSettings.readingDirection
             }
-            if (cachedPreferences != null) {
-                rightToLeft = cachedPreferences.rightToLeft
-                invertMode = cachedPreferences.invertMode
-            } else {
-                rightToLeft = serverRightToLeft
-            }
+            readingDirection = resolvedDirection
+            cachedPreferences?.let { invertMode = it.invertMode }
             if (local == null) {
                 val info = loadedApi.chapterInfo(currentChapterId, includeDimensions = true)
                 val pageCount = info.pages ?: 0
@@ -596,6 +591,7 @@ fun ReaderScreen(
             }
             chapterMetadataJob.join()
             readerReady = true
+            verticalRestoreNonce++
         } catch (t: Throwable) {
             KamiguraLog.w("Could not initialize Reader for chapter $currentChapterId.", t)
             if (local == null) {
@@ -690,13 +686,26 @@ fun ReaderScreen(
         } else {
             null
         }
-    val rtl = rightToLeft
+    val rtl = readingDirection == ReaderReadingDirection.RightToLeft
+    val vertical = readingDirection == ReaderReadingDirection.Vertical
     val spreadPages = spreadPagesFor(page, rtl)
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val portrait = maxHeight > maxWidth
         val viewportWidthPx = with(density) { maxWidth.toPx() }
         val viewportHeightPx = with(density) { maxHeight.toPx() }
+        val viewportHeight = maxHeight
+        val verticalListState = rememberLazyListState()
+        LaunchedEffect(
+            currentChapterId,
+            readingDirection,
+            verticalRestoreNonce,
+            pages
+        ) {
+            if (vertical && pages > 0) {
+                verticalListState.scrollToItem((page + 1).coerceIn(1, pages))
+            }
+        }
         val turnVisualDistancePx = viewportWidthPx
         val layout = readerPageLayout(
             page = page,
@@ -793,6 +802,7 @@ fun ReaderScreen(
             invertMode,
             settings.reader.invertWhiteThreshold
         ) {
+            if (vertical) return@LaunchedEffect
             if (offlineChapter != null || pages <= 0) return@LaunchedEffect
             val indices = readerPrefetchPageIndicesAround(
                 page = page,
@@ -832,12 +842,14 @@ fun ReaderScreen(
         val panBounds = readerPanBoundsPx(viewportWidthPx, viewportHeightPx, totalZoomScale)
         val zoomPanEnabled = totalZoomScale > 1f + ReaderZoomEpsilon
         val usePortraitCurl =
+            !vertical &&
             settings.reader.pageTurnMode == PageTurnMode.Curl &&
                 settings.reader.pageTransitionAnimation &&
                 portrait &&
                 layout.singlePage &&
                 !zoomPanEnabled
         val useSpreadCurl =
+            !vertical &&
             settings.reader.pageTurnMode == PageTurnMode.Curl &&
                 settings.reader.pageTransitionAnimation &&
                 !portrait &&
@@ -1383,6 +1395,74 @@ fun ReaderScreen(
                     alpha = (1f - closeDragOffsetY / safeViewportHeight * 0.35f).coerceIn(0.65f, 1f)
                 }
         ) {
+            if (vertical) {
+                val neighbors = readerChapterNeighbors(chapterSequence, currentChapterId)
+                val previousBoundary = neighbors.previous?.let { previous ->
+                    ReaderChapterBoundary(
+                        direction = ReaderTurnDirection.Previous,
+                        current = currentChapter,
+                        neighbor = previous
+                    )
+                }
+                val nextBoundary = neighbors.next?.let { next ->
+                    ReaderChapterBoundary(
+                        direction = ReaderTurnDirection.Next,
+                        current = currentChapter,
+                        neighbor = next
+                    )
+                }
+                ReaderVerticalScroll(
+                    pageCount = pages,
+                    pageDimensions = pageDimensions,
+                    pageModel = ::pageModel,
+                    imageLoader = activeImageLoader,
+                    invertMode = invertMode,
+                    whiteThreshold = settings.reader.invertWhiteThreshold,
+                    invertDecisionCache = invertDecisionCache,
+                    pageBackground = readerPageBackground,
+                    viewportHeight = viewportHeight,
+                    fallbackPageAspectRatio = (viewportWidthPx / viewportHeightPx.coerceAtLeast(1f))
+                        .coerceAtLeast(0.01f),
+                    listState = verticalListState,
+                    previousBoundary = previousBoundary,
+                    nextBoundary = nextBoundary,
+                    seriesName = seriesName,
+                    chapterSwitching = chapterSwitching,
+                    boundaryHasError = error != null,
+                    onCurrentPageChanged = { currentPage ->
+                        if (page != currentPage) page = currentPage
+                        if (completingRead) completingRead = false
+                    },
+                    onBoundaryReached = { direction ->
+                        if (!completingRead) {
+                            when (direction) {
+                                ReaderTurnDirection.Next -> {
+                                    if (neighbors.next == null) completeChapter()
+                                    else completeChapter(exitAfter = false)
+                                }
+                                ReaderTurnDirection.Previous -> {
+                                    if (neighbors.previous == null) resetChapterAndExit()
+                                    else resetChapterAndExit(exitAfter = false)
+                                }
+                            }
+                        }
+                    },
+                    onContinueBoundary = { direction ->
+                        val neighbor = when (direction) {
+                            ReaderTurnDirection.Next -> neighbors.next
+                            ReaderTurnDirection.Previous -> neighbors.previous
+                        }
+                        neighbor?.let { target ->
+                            switchChapter(
+                                target = target,
+                                openAtLastPage = direction == ReaderTurnDirection.Previous
+                            )
+                        }
+                    },
+                    onBackToSeries = onBack,
+                    onMenuToggle = { showReaderMenu = !showReaderMenu }
+                )
+            } else {
             // Keep PageCurl mounted whenever the curl mode is active (not just during a
             // turn): the neighbour pages it composes at rest are exactly the images the
             // next turn needs, so the gesture starts warm instead of kicking off image
@@ -1696,9 +1776,10 @@ fun ReaderScreen(
                 )
                 }
             }
+            }
         }
 
-        if (chapterBoundary == null) {
+        if (!vertical && chapterBoundary == null) {
             key(page, rtl, nextPageTurnStep, previousPageTurnStep, showingFinalPage) {
                 ReaderTapLayer(
                 rightToLeft = rtl,
@@ -1811,7 +1892,7 @@ fun ReaderScreen(
                 }
                 )
             }
-        } else {
+        } else if (!vertical) {
             ReaderTapLayer(
                 rightToLeft = rtl,
                 onNextSpread = { turnChapterBoundary(ReaderTurnDirection.Next) },
@@ -1867,7 +1948,7 @@ fun ReaderScreen(
                 page = page,
                 pages = pages,
                 rightToLeft = rtl,
-                showSpreadShift = !portrait && settings.reader.showSpreadShiftButtons,
+                showSpreadShift = !vertical && !portrait && settings.reader.showSpreadShiftButtons,
                 onBack = onBack,
                 onDismiss = { showReaderMenu = false },
                 onToggleDirection = {
@@ -1875,8 +1956,12 @@ fun ReaderScreen(
                     // Settings; a per-series direction lives on the Kavita server. This
                     // toggle flips the current reading session without writing either, so it
                     // never silently changes other books or fights the server value.
-                    val next = !rightToLeft
-                    rightToLeft = next
+                    val next = if (rtl) {
+                        ReaderReadingDirection.LeftToRight
+                    } else {
+                        ReaderReadingDirection.RightToLeft
+                    }
+                    readingDirection = next
                     sessionPreferenceKey?.let { key ->
                         ReaderSessionPreferenceCache.put(
                             key = key,
@@ -1896,7 +1981,7 @@ fun ReaderScreen(
                     sessionPreferenceKey?.let { key ->
                         ReaderSessionPreferenceCache.put(
                             key = key,
-                            preferences = ReaderSessionPreferences(rightToLeft, mode),
+                            preferences = ReaderSessionPreferences(readingDirection, mode),
                             nowMillis = System.currentTimeMillis()
                         )
                         ReaderExitWriteScope.launch {
@@ -1910,7 +1995,12 @@ fun ReaderScreen(
                 onPreviousSingle = {
                     requestSingleStep(ReaderTurnDirection.Previous, false)
                 },
-                onJumpToPage = { jumpToPage(it) }
+                onJumpToPage = { targetPage ->
+                    jumpToPage(targetPage)
+                    if (vertical) {
+                        scope.launch { verticalListState.scrollToItem(targetPage + 1) }
+                    }
+                }
             )
         }
 
