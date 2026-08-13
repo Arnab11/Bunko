@@ -624,20 +624,21 @@ fun ReaderSettingsScreen(
                 }
             }
 
-            if (settings.reader.readingDirection != ReaderReadingDirection.Vertical) {
-                Text("Page preloading", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "One turn is one page turn. A two-page spread can preload two page images per turn.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-                PrefetchTurnsSetting(
-                    turns = settings.reader.prefetchTurns,
-                    onTurnsChanged = { turns ->
-                        scope.launch { settingsStore.setPrefetchTurns(turns) }
-                    }
-                )
+            Text("Page preloading", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Keeps upcoming pages ready while reading. A two-page spread can preload two page images per turn.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+            PrefetchTurnsSetting(
+                turns = settings.reader.prefetchTurns,
+                vertical = settings.reader.readingDirection == ReaderReadingDirection.Vertical,
+                onTurnsChanged = { turns ->
+                    scope.launch { settingsStore.setPrefetchTurns(turns) }
+                }
+            )
 
+            if (settings.reader.readingDirection != ReaderReadingDirection.Vertical) {
                 SettingRow(
                     title = "Page transition animation",
                     desc = "Slides pages with a small amount of depth. Turn this off to use instant page changes.",
@@ -786,13 +787,14 @@ fun ReaderSettingsScreen(
 @Composable
 private fun PrefetchTurnsSetting(
     turns: Int,
+    vertical: Boolean,
     onTurnsChanged: (Int) -> Unit
 ) {
     var draft by remember(turns) { mutableStateOf(turns.toFloat()) }
     val draftTurns = draft.roundToInt().coerceIn(0, MaxReaderPrefetchTurns)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            text = "Preload ahead: ${prefetchTurnsSummary(draftTurns)}",
+            text = "Preload ahead: ${prefetchTurnsSummary(draftTurns, vertical)}",
             style = MaterialTheme.typography.bodyMedium
         )
         ValueBubbleSlider(
@@ -808,9 +810,11 @@ private fun PrefetchTurnsSetting(
     }
 }
 
-private fun prefetchTurnsSummary(turns: Int): String {
+private fun prefetchTurnsSummary(turns: Int, vertical: Boolean): String {
     return if (turns == 0) {
         "Off"
+    } else if (vertical) {
+        "$turns pages"
     } else {
         "$turns turns (up to ${turns * 2} pages)"
     }
