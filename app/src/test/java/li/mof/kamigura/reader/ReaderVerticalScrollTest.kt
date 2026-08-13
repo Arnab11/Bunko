@@ -48,6 +48,19 @@ class ReaderVerticalScrollTest {
     }
 
     @Test
+    fun firstReadablePageIsOffsetPastThePreviousBoundary() {
+        assertEquals(
+            ReaderVerticalPosition.Page(0),
+            readerVerticalPosition(
+                visibleItems = listOf(ReaderVerticalVisibleItem(1, 0, 1_000)),
+                viewportStartOffset = 0,
+                viewportEndOffset = 1_000,
+                pageCount = 10
+            )
+        )
+    }
+
+    @Test
     fun pageAspectRatioUsesDimensionsAndFallsBackWhenMissing() {
         assertEquals(
             0.5f,

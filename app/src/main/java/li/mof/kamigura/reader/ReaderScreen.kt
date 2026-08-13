@@ -696,6 +696,11 @@ fun ReaderScreen(
         val viewportHeightPx = with(density) { maxHeight.toPx() }
         val viewportHeight = maxHeight
         val verticalListState = rememberLazyListState()
+        var verticalBoundariesEnabled by remember(
+            currentChapterId,
+            readingDirection,
+            verticalRestoreNonce
+        ) { mutableStateOf(false) }
         LaunchedEffect(
             currentChapterId,
             readingDirection,
@@ -703,7 +708,10 @@ fun ReaderScreen(
             pages
         ) {
             if (vertical && pages > 0) {
+                verticalBoundariesEnabled = false
                 verticalListState.scrollToItem((page + 1).coerceIn(1, pages))
+                withFrameNanos { }
+                verticalBoundariesEnabled = true
             }
         }
         val turnVisualDistancePx = viewportWidthPx
@@ -1434,7 +1442,7 @@ fun ReaderScreen(
                         if (completingRead) completingRead = false
                     },
                     onBoundaryReached = { direction ->
-                        if (!completingRead) {
+                        if (verticalBoundariesEnabled && !completingRead) {
                             when (direction) {
                                 ReaderTurnDirection.Next -> {
                                     if (neighbors.next == null) completeChapter()
