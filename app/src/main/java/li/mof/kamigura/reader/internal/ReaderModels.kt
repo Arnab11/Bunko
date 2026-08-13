@@ -59,3 +59,8 @@ internal data class ReaderPrefetchTarget(
     val targetWidth: Int,
     val targetHeight: Int
 )
+
+internal data class ReaderPrefetchSize(
+    val width: Int,
+    val height: Int
+)

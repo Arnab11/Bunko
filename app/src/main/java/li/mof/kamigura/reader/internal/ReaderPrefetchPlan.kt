@@ -51,6 +51,38 @@ internal fun readerPrefetchPageIndicesAround(
 }
 
 /** Internal to reader, not for external use. */
+internal fun readerVerticalPrefetchPageIndicesAround(
+    page: Int,
+    pageCount: Int,
+    pagesAhead: Int
+): List<Int> {
+    if (pageCount <= 0 || page !in 0 until pageCount || pagesAhead <= 0) return emptyList()
+    val result = ArrayList<Int>(pagesAhead + 1)
+    if (page > 0) result += page - 1
+    val lastPage = minOf(page + pagesAhead, pageCount - 1)
+    for (targetPage in page + 1..lastPage) result += targetPage
+    return result
+}
+
+/** Matches the full-width, source-aspect-ratio constraints used by ReaderVerticalScroll. */
+internal fun readerVerticalPrefetchSize(
+    page: Int,
+    pageDimensions: Map<Int, FileDimensionDto>,
+    viewportWidthPx: Float,
+    fallbackAspectRatio: Float
+): ReaderPrefetchSize {
+    val width = viewportWidthPx.roundToInt().coerceAtLeast(1)
+    val aspectRatio = readerVerticalPageAspectRatio(
+        dimension = pageDimensions[page],
+        fallbackAspectRatio = fallbackAspectRatio
+    )
+    return ReaderPrefetchSize(
+        width = width,
+        height = (width / aspectRatio).roundToInt().coerceAtLeast(1)
+    )
+}
+
+/** Internal to reader, not for external use. */
 internal fun readerPrefetchSlotWidthPx(
     page: Int,
     pageCount: Int,

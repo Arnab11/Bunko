@@ -94,6 +94,8 @@ import li.mof.kamigura.reader.internal.readerChapterSequence
 import li.mof.kamigura.reader.internal.readerPrefetchMemoryPlan
 import li.mof.kamigura.reader.internal.readerPrefetchPageIndicesAround
 import li.mof.kamigura.reader.internal.readerPrefetchSlotWidthPx
+import li.mof.kamigura.reader.internal.readerVerticalPrefetchPageIndicesAround
+import li.mof.kamigura.reader.internal.readerVerticalPrefetchSize
 import li.mof.kamigura.reader.internal.readerVisiblePageIndices
 import li.mof.kamigura.reader.internal.spreadPagesFor
 import li.mof.kamigura.reader.internal.toPageDimensionMap
@@ -796,6 +798,37 @@ fun ReaderScreen(
                 target.takeIf { memoryPlan[index] }
             }
         }
+        fun verticalPrefetchTargetsFor(indices: List<Int>): List<ReaderPrefetchTarget> {
+            val fallbackAspectRatio = viewportWidthPx / viewportHeightPx.coerceAtLeast(1f)
+            val rawTargets = indices.mapNotNull { index ->
+                val model = pageModel(index) as? String ?: return@mapNotNull null
+                val size = readerVerticalPrefetchSize(
+                    page = index,
+                    pageDimensions = pageDimensions,
+                    viewportWidthPx = viewportWidthPx,
+                    fallbackAspectRatio = fallbackAspectRatio
+                )
+                index to ReaderPrefetchTarget(
+                    model = model,
+                    targetWidth = size.width,
+                    targetHeight = size.height
+                )
+            }
+            val memoryPlan = readerPrefetchMemoryPlan(
+                estimatedBytes = rawTargets.map { (targetPage, target) ->
+                    readerEstimatedDecodeBytes(
+                        page = targetPage,
+                        pageDimensions = pageDimensions,
+                        targetWidth = target.targetWidth,
+                        targetHeight = target.targetHeight
+                    )
+                },
+                memoryCacheMaxBytes = activeImageLoader.memoryCache?.maxSize?.toLong() ?: 0L
+            )
+            return rawTargets.mapIndexedNotNull { index, (_, target) ->
+                target.takeIf { memoryPlan[index] }
+            }
+        }
         LaunchedEffect(
             currentChapterId,
             page,
@@ -807,19 +840,28 @@ fun ReaderScreen(
             s.baseUrl,
             s.apiKey,
             settings.reader.prefetchTurns,
+            vertical,
             invertMode,
             settings.reader.invertWhiteThreshold
         ) {
-            if (vertical) return@LaunchedEffect
             if (offlineChapter != null || pages <= 0) return@LaunchedEffect
-            val indices = readerPrefetchPageIndicesAround(
-                page = page,
-                pageCount = pages,
-                portrait = portrait,
-                pageDimensions = pageDimensions,
-                turns = settings.reader.prefetchTurns
-            )
-            val targets = prefetchTargetsFor(indices)
+            val targets = if (vertical) {
+                val indices = readerVerticalPrefetchPageIndicesAround(
+                    page = page,
+                    pageCount = pages,
+                    pagesAhead = settings.reader.prefetchTurns
+                )
+                verticalPrefetchTargetsFor(indices)
+            } else {
+                val indices = readerPrefetchPageIndicesAround(
+                    page = page,
+                    pageCount = pages,
+                    portrait = portrait,
+                    pageDimensions = pageDimensions,
+                    turns = settings.reader.prefetchTurns
+                )
+                prefetchTargetsFor(indices)
+            }
             prefetchReaderPages(
                 context = ctx,
                 imageLoader = activeImageLoader,
