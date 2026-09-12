@@ -33,11 +33,13 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.imageLoader
+import li.mof.kamigura.EpubTextAlign
 import li.mof.kamigura.InvertMode
 
 private val NegativeColorFilter = ColorFilter.colorMatrix(
@@ -58,6 +60,7 @@ internal fun ReaderEpubPageView(
     pageBackground: Color,
     invertMode: InvertMode = InvertMode.Off,
     epubFontFamily: String = "Serif",
+    epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
     modifier: Modifier = Modifier,
     imageLoader: ImageLoader? = null,
     contentPadding: PaddingValues? = null
@@ -72,6 +75,12 @@ internal fun ReaderEpubPageView(
         "mono", "monospace" -> FontFamily.Monospace
         "cursive" -> FontFamily.Cursive
         else -> FontFamily.Serif
+    }
+    val activeTextAlign = when (epubTextAlign) {
+        EpubTextAlign.Left -> TextAlign.Start
+        EpubTextAlign.Center -> TextAlign.Center
+        EpubTextAlign.Right -> TextAlign.End
+        EpubTextAlign.Justify -> TextAlign.Justify
     }
 
     val insets = WindowInsets.safeDrawing.asPaddingValues()
@@ -137,8 +146,11 @@ internal fun ReaderEpubPageView(
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = activeFontFamily,
                                 color = textColor,
+                                textAlign = activeTextAlign,
                                 lineHeight = (fontSizeSp * headingScale * 1.35f).sp,
-                                modifier = Modifier.padding(vertical = 4.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
                             )
                         } else if (block.isQuote) {
                             Row(
@@ -159,7 +171,9 @@ internal fun ReaderEpubPageView(
                                     fontStyle = FontStyle.Italic,
                                     fontFamily = activeFontFamily,
                                     color = textColor,
-                                    lineHeight = (fontSizeSp * 1.45f).sp
+                                    textAlign = activeTextAlign,
+                                    lineHeight = (fontSizeSp * 1.45f).sp,
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         } else {
@@ -168,7 +182,9 @@ internal fun ReaderEpubPageView(
                                 fontSize = fontSizeSp.sp,
                                 fontFamily = activeFontFamily,
                                 color = textColor,
-                                lineHeight = (fontSizeSp * 1.45f).sp
+                                textAlign = activeTextAlign,
+                                lineHeight = (fontSizeSp * 1.45f).sp,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }

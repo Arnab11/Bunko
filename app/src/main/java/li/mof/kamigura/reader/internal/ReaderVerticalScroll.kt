@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.Dp
 import coil.ImageLoader
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import li.mof.kamigura.EpubTextAlign
 import li.mof.kamigura.FileDimensionDto
 import li.mof.kamigura.InvertMode
 import li.mof.kamigura.reader.ReaderTurnDirection
@@ -96,7 +97,8 @@ internal fun ReaderVerticalScroll(
     onMenuToggle: () -> Unit,
     epubSubpages: List<EpubSubpage> = emptyList(),
     epubFontSizeSp: Float = 18f,
-    epubFontFamily: String = "Serif"
+    epubFontFamily: String = "Serif",
+    epubTextAlign: EpubTextAlign = EpubTextAlign.Left
 ) {
     LaunchedEffect(listState, pageCount) {
         snapshotFlow { listState.layoutInfo }
@@ -174,6 +176,7 @@ internal fun ReaderVerticalScroll(
                         subpage = epubSubpages[page],
                         fontSizeSp = epubFontSizeSp,
                         epubFontFamily = epubFontFamily,
+                        epubTextAlign = epubTextAlign,
                         pageBackground = pageBackground,
                         invertMode = invertMode,
                         imageLoader = imageLoader,

@@ -23,16 +23,30 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
+import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FormatAlignCenter
+import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalDivider
+import li.mof.kamigura.EpubTextAlign
+import li.mof.kamigura.PageLayoutMode
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -40,6 +54,7 @@ import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -81,10 +96,12 @@ internal fun ReaderMenuOverlay(
     page: Int,
     pages: Int,
     readingDirection: ReaderReadingDirection,
+    pageLayoutMode: PageLayoutMode = PageLayoutMode.Auto,
     showSpreadShift: Boolean,
     onBack: () -> Unit,
     onDismiss: () -> Unit,
     onSetReadingDirection: (ReaderReadingDirection) -> Unit,
+    onSetPageLayoutMode: (PageLayoutMode) -> Unit = {},
     invertMode: InvertMode,
     onSetInvertMode: (InvertMode) -> Unit,
     onNextSingle: () -> Unit,
@@ -100,13 +117,19 @@ internal fun ReaderMenuOverlay(
     epubFontSizeSp: Float = 18f,
     onSetEpubFontSizeSp: ((Float) -> Unit)? = null,
     epubFontFamily: String = "Serif",
-    onSetEpubFontFamily: ((String) -> Unit)? = null
+    onSetEpubFontFamily: ((String) -> Unit)? = null,
+    epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
+    onSetEpubTextAlign: ((EpubTextAlign) -> Unit)? = null,
+    chapters: List<ReaderChapterEntry> = emptyList(),
+    currentChapterId: Int = 0,
+    onSelectChapter: ((ReaderChapterEntry) -> Unit)? = null
 ) {
     val rightToLeft = readingDirection == ReaderReadingDirection.RightToLeft
     val safePageCount = pages.coerceAtLeast(1)
     val currentPage = page.coerceIn(0, safePageCount - 1)
     var jumpPage by remember(currentPage, safePageCount) { mutableIntStateOf(currentPage) }
     var showDisplayOptions by remember { mutableStateOf(false) }
+    var showChapterList by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(MenuOptionTab.Text) }
 
     val sliderMax = (safePageCount - 1).toFloat()
@@ -121,18 +144,18 @@ internal fun ReaderMenuOverlay(
     }
 
     Box(
-        Modifier
-            .fillMaxSize()
-            .pointerInput(onDismiss) {
-                detectTapGestures(onTap = {
-                    if (showDisplayOptions) {
-                        showDisplayOptions = false
-                    } else {
-                        onDismiss()
-                    }
-                })
-            }
+        modifier = Modifier.fillMaxSize()
     ) {
+        // Scrim to dismiss options when open
+        if (showDisplayOptions) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { showDisplayOptions = false })
+                    }
+            )
+        }
         // TOP APP BAR
         Row(
             modifier = Modifier
@@ -173,8 +196,8 @@ internal fun ReaderMenuOverlay(
             Surface(
                 onClick = { showDisplayOptions = !showDisplayOptions },
                 shape = RoundedCornerShape(12.dp),
-                color = if (showDisplayOptions) Color(0xFF383B40) else Color.Transparent,
-                contentColor = Color.White,
+                color = if (showDisplayOptions) Color(0xFF384357) else Color.Transparent,
+                contentColor = if (showDisplayOptions) Color(0xFF8AB4F8) else Color.White,
                 modifier = Modifier.size(40.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -183,7 +206,7 @@ internal fun ReaderMenuOverlay(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Serif,
-                        color = if (showDisplayOptions) Color(0xFF90CAF9) else Color.White
+                        color = if (showDisplayOptions) Color(0xFF8AB4F8) else Color.White
                     )
                 }
             }
@@ -222,6 +245,11 @@ internal fun ReaderMenuOverlay(
                         .padding(bottom = 16.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
+                    val accentBlue = Color(0xFF8AB4F8)
+                    val unselectedText = Color(0xFF9AA0A6)
+                    val segmentBg = Color(0xFF26282E)
+                    val segmentCheckedBg = Color(0xFF384357)
+
                     // TABS (Text & Lighting)
                     TabRow(
                         selectedTabIndex = selectedTab.ordinal,
@@ -230,7 +258,7 @@ internal fun ReaderMenuOverlay(
                         indicator = { tabPositions ->
                             TabRowDefaults.SecondaryIndicator(
                                 Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
-                                color = Color(0xFF90CAF9),
+                                color = accentBlue,
                                 height = 3.dp
                             )
                         },
@@ -250,7 +278,7 @@ internal fun ReaderMenuOverlay(
                                 Text(
                                     text = "Text",
                                     fontWeight = if (selectedTab == MenuOptionTab.Text) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (selectedTab == MenuOptionTab.Text) Color(0xFF90CAF9) else Color(0xFFB0B4BA)
+                                    color = if (selectedTab == MenuOptionTab.Text) accentBlue else unselectedText
                                 )
                             }
                         )
@@ -261,7 +289,7 @@ internal fun ReaderMenuOverlay(
                                 Text(
                                     text = "Lighting",
                                     fontWeight = if (selectedTab == MenuOptionTab.Lighting) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (selectedTab == MenuOptionTab.Lighting) Color(0xFF90CAF9) else Color(0xFFB0B4BA)
+                                    color = if (selectedTab == MenuOptionTab.Lighting) accentBlue else unselectedText
                                 )
                             }
                         )
@@ -303,13 +331,13 @@ internal fun ReaderMenuOverlay(
                                                     modifier = Modifier
                                                         .size(52.dp)
                                                         .clip(CircleShape)
-                                                        .background(if (isSelected) Color(0xFF90CAF9) else Color(0xFF2B2D33))
+                                                        .background(if (isSelected) accentBlue else segmentBg)
                                                         .border(
                                                             BorderStroke(
                                                                 1.dp,
-                                                                if (isSelected) Color(0xFF90CAF9) else Color(0x33FFFFFF)
+                                                                if (isSelected) accentBlue else Color(0x388E9196)
                                                             ),
-                                                            CircleShape
+                                                             CircleShape
                                                         ),
                                                     contentAlignment = Alignment.Center
                                                 ) {
@@ -317,13 +345,14 @@ internal fun ReaderMenuOverlay(
                                                         text = "A",
                                                         fontSize = 24.sp,
                                                         fontFamily = fam,
-                                                        color = if (isSelected) Color(0xFF101216) else Color.White
+                                                        color = if (isSelected) Color(0xFF101318) else Color.White
                                                     )
                                                 }
                                                 Text(
                                                     text = label,
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = if (isSelected) Color(0xFF90CAF9) else Color(0xFF9EA3AC)
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                    color = if (isSelected) accentBlue else unselectedText
                                                 )
                                             }
                                         }
@@ -335,7 +364,8 @@ internal fun ReaderMenuOverlay(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(12.dp))
-                                                .background(Color(0xFF2A2D33))
+                                                .background(segmentBg)
+                                                .border(BorderStroke(1.dp, Color(0x388E9196)), RoundedCornerShape(12.dp))
                                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
@@ -372,23 +402,131 @@ internal fun ReaderMenuOverlay(
                                             }
                                         }
                                     }
+                                    // Text Alignment Options
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "Text alignment",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = Color(0xFFC4C7C5)
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                        ) {
+                                            val alignments = EpubTextAlign.entries
+                                            alignments.forEachIndexed { index, align ->
+                                                val isSelected = epubTextAlign == align
+                                                ToggleButton(
+                                                    checked = isSelected,
+                                                    onCheckedChange = { onSetEpubTextAlign?.invoke(align) },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .semantics { role = Role.RadioButton },
+                                                    shapes = when (index) {
+                                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                        alignments.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                    },
+                                                    colors = ToggleButtonDefaults.toggleButtonColors(
+                                                        containerColor = segmentBg,
+                                                        contentColor = unselectedText,
+                                                        checkedContainerColor = segmentCheckedBg,
+                                                        checkedContentColor = accentBlue
+                                                    )
+                                                ) {
+                                                    Icon(
+                                                        imageVector = when (align) {
+                                                            EpubTextAlign.Left -> Icons.AutoMirrored.Filled.FormatAlignLeft
+                                                            EpubTextAlign.Center -> Icons.Default.FormatAlignCenter
+                                                            EpubTextAlign.Right -> Icons.AutoMirrored.Filled.FormatAlignRight
+                                                            EpubTextAlign.Justify -> Icons.Default.FormatAlignJustify
+                                                        },
+                                                        contentDescription = align.name,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
-                                // Page Layout / Direction
+                                // Page layout (Auto, 2 pages, 1 page)
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
                                         text = "Page layout",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFB0B4BA)
+                                        color = Color(0xFFC4C7C5)
                                     )
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
                                     ) {
-                                        val directions = ReaderReadingDirection.entries
-                                        directions.forEachIndexed { index, direction ->
+                                        val layoutOptions = listOf(
+                                            Triple(PageLayoutMode.Auto, "Auto", Icons.Default.Check),
+                                            Triple(PageLayoutMode.TwoPages, "2 pages", Icons.AutoMirrored.Filled.MenuBook),
+                                            Triple(PageLayoutMode.SinglePage, "1 page", Icons.AutoMirrored.Filled.Article)
+                                        )
+                                        layoutOptions.forEachIndexed { index, (mode, label, icon) ->
+                                            val isSelected = pageLayoutMode == mode
                                             ToggleButton(
-                                                checked = readingDirection == direction,
+                                                checked = isSelected,
+                                                onCheckedChange = { onSetPageLayoutMode(mode) },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .semantics { role = Role.RadioButton },
+                                                shapes = when (index) {
+                                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                    layoutOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                },
+                                                colors = ToggleButtonDefaults.toggleButtonColors(
+                                                    containerColor = segmentBg,
+                                                    contentColor = unselectedText,
+                                                    checkedContainerColor = segmentCheckedBg,
+                                                    checkedContentColor = accentBlue
+                                                )
+                                            ) {
+                                                Column(
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                    modifier = Modifier.padding(vertical = 4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = icon,
+                                                        contentDescription = label,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Text(
+                                                        text = label,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Reading direction (LTR, Vertical, RTL)
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Reading direction",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = Color(0xFFC4C7C5)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                    ) {
+                                        val directions = listOf(
+                                            ReaderReadingDirection.LeftToRight to "LTR",
+                                            ReaderReadingDirection.Vertical to "Vertical",
+                                            ReaderReadingDirection.RightToLeft to "RTL"
+                                        )
+                                        directions.forEachIndexed { index, (direction, label) ->
+                                            val isSelected = readingDirection == direction
+                                            ToggleButton(
+                                                checked = isSelected,
                                                 onCheckedChange = { onSetReadingDirection(direction) },
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -397,14 +535,17 @@ internal fun ReaderMenuOverlay(
                                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                                                     directions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                }
+                                                },
+                                                colors = ToggleButtonDefaults.toggleButtonColors(
+                                                    containerColor = segmentBg,
+                                                    contentColor = unselectedText,
+                                                    checkedContainerColor = segmentCheckedBg,
+                                                    checkedContentColor = accentBlue
+                                                )
                                             ) {
                                                 Text(
-                                                    when (direction) {
-                                                        ReaderReadingDirection.LeftToRight -> "LTR"
-                                                        ReaderReadingDirection.RightToLeft -> "RTL"
-                                                        ReaderReadingDirection.Vertical -> "Vertical"
-                                                    }
+                                                    text = label,
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                                                 )
                                             }
                                         }
@@ -416,7 +557,7 @@ internal fun ReaderMenuOverlay(
                                     Text(
                                         text = "Turn Animation",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFB0B4BA)
+                                        color = Color(0xFFC4C7C5)
                                     )
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -434,7 +575,13 @@ internal fun ReaderMenuOverlay(
                                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                                                     modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                }
+                                                },
+                                                colors = ToggleButtonDefaults.toggleButtonColors(
+                                                    containerColor = segmentBg,
+                                                    contentColor = unselectedText,
+                                                    checkedContainerColor = segmentCheckedBg,
+                                                    checkedContentColor = accentBlue
+                                                )
                                             ) {
                                                 Text(
                                                     when (mode) {
@@ -453,7 +600,7 @@ internal fun ReaderMenuOverlay(
                                         Text(
                                             text = "Spread Shift",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = Color(0xFFB0B4BA)
+                                            color = Color(0xFFC4C7C5)
                                         )
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -463,7 +610,8 @@ internal fun ReaderMenuOverlay(
                                                 onClick = { if (rightToLeft) onNextSingle() else onPreviousSingle() },
                                                 modifier = Modifier.weight(1f).height(38.dp),
                                                 shape = RoundedCornerShape(10.dp),
-                                                color = Color(0xFF2A2D33),
+                                                color = segmentBg,
+                                                border = BorderStroke(1.dp, Color(0x388E9196)),
                                                 contentColor = Color.White
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
@@ -474,7 +622,8 @@ internal fun ReaderMenuOverlay(
                                                 onClick = { if (rightToLeft) onPreviousSingle() else onNextSingle() },
                                                 modifier = Modifier.weight(1f).height(38.dp),
                                                 shape = RoundedCornerShape(10.dp),
-                                                color = Color(0xFF2A2D33),
+                                                color = segmentBg,
+                                                border = BorderStroke(1.dp, Color(0x388E9196)),
                                                 contentColor = Color.White
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
@@ -499,7 +648,7 @@ internal fun ReaderMenuOverlay(
                                     Text(
                                         text = "Theme",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFB0B4BA)
+                                        color = Color(0xFFC4C7C5)
                                     )
                                     val themes = listOf(
                                         Triple("White", Color.White, Color(0xFF141414)),
@@ -551,7 +700,7 @@ internal fun ReaderMenuOverlay(
                                                         .border(
                                                             BorderStroke(
                                                                 if (isSelected) 2.5.dp else 1.dp,
-                                                                if (isSelected) Color(0xFF90CAF9) else Color(0x44FFFFFF)
+                                                                if (isSelected) accentBlue else Color(0x448E9196)
                                                             ),
                                                             CircleShape
                                                         ),
@@ -576,7 +725,8 @@ internal fun ReaderMenuOverlay(
                                                 Text(
                                                     text = name,
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = if (isSelected) Color(0xFF90CAF9) else Color(0xFF9EA3AC)
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                    color = if (isSelected) accentBlue else unselectedText
                                                 )
                                             }
                                         }
@@ -588,7 +738,7 @@ internal fun ReaderMenuOverlay(
                                     Text(
                                         text = "Invert Mode",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFB0B4BA)
+                                        color = Color(0xFFC4C7C5)
                                     )
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -606,7 +756,13 @@ internal fun ReaderMenuOverlay(
                                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                                                     modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                }
+                                                },
+                                                colors = ToggleButtonDefaults.toggleButtonColors(
+                                                    containerColor = segmentBg,
+                                                    contentColor = unselectedText,
+                                                    checkedContainerColor = segmentCheckedBg,
+                                                    checkedContentColor = accentBlue
+                                                )
                                             ) {
                                                 Text(
                                                     when (mode) {
@@ -626,27 +782,35 @@ internal fun ReaderMenuOverlay(
             }
         }
 
-        // BOTTOM BAR (ONLY PAGE SLIDER)
+        // BOTTOM BAR (CHAPTERS BUTTON + PAGE SLIDER + PAGE COUNT)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .background(Color(0xEB141518))
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = if (rightToLeft) "$safePageCount" else "1",
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
+            // Chapters / Table of Contents Button (Left of Slider)
+            IconButton(
+                onClick = { showChapterList = true },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.List,
+                    contentDescription = "Chapters",
+                    tint = Color.White
+                )
+            }
+
             ValueBubbleSlider(
                 value = sliderValue,
                 onValueChange = { value ->
-                    jumpPage = sliderValueToPage(value)
+                    val newPage = sliderValueToPage(value)
+                    jumpPage = newPage
+                    onJumpToPage(newPage)
                 },
                 onValueChangeFinished = {
                     onJumpToPage(jumpPage)
@@ -658,12 +822,76 @@ internal fun ReaderMenuOverlay(
                 showStopIndicator = false,
                 modifier = Modifier.weight(1f)
             )
+
             Text(
-                text = if (rightToLeft) "1" else "$safePageCount",
-                color = Color.White,
+                text = "${jumpPage + 1} / $safePageCount",
+                color = Color.White.copy(alpha = 0.85f),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
+        }
+
+        // CHAPTERS MODAL BOTTOM SHEET
+        if (showChapterList) {
+            ModalBottomSheet(
+                onDismissRequest = { showChapterList = false },
+                containerColor = Color(0xF51E2024),
+                contentColor = Color.White,
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Text(
+                        text = "Chapters",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                    )
+                    HorizontalDivider(color = Color(0x22FFFFFF))
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                    ) {
+                        items(chapters) { entry ->
+                            val isCurrent = entry.chapterId == currentChapterId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showChapterList = false
+                                        onSelectChapter?.invoke(entry)
+                                    }
+                                    .background(if (isCurrent) Color(0x228AB4F8) else Color.Transparent)
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = entry.displayName,
+                                    color = if (isCurrent) Color(0xFF8AB4F8) else Color.White,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isCurrent) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Current Chapter",
+                                        tint = Color(0xFF8AB4F8),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

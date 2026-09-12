@@ -29,10 +29,23 @@ enum class ReaderReadingDirection {
     LeftToRight
 }
 
+enum class PageLayoutMode {
+    Auto,
+    TwoPages,
+    SinglePage
+}
+
 /** Colour of the margins around a page (and of the curl flap's back face). */
 enum class PageBackground {
     Paper,
     Dark
+}
+
+enum class EpubTextAlign {
+    Left,
+    Center,
+    Right,
+    Justify
 }
 
 internal const val DefaultReaderPrefetchTurns = 4
@@ -40,6 +53,7 @@ internal const val MaxReaderPrefetchTurns = 8
 
 data class ReaderSettings(
     val readingDirection: ReaderReadingDirection = ReaderReadingDirection.RightToLeft,
+    val pageLayoutMode: PageLayoutMode = PageLayoutMode.Auto,
     val invertMode: InvertMode = InvertMode.Off,
     val invertWhiteThreshold: Float = 0.5f,
     val prefetchTurns: Int = DefaultReaderPrefetchTurns,
@@ -50,7 +64,8 @@ data class ReaderSettings(
     val usePurePageBackgroundColors: Boolean = false,
     val showSpreadShiftButtons: Boolean = true,
     val epubFontSizeSp: Float = 18f,
-    val epubFontFamily: String = "Serif"
+    val epubFontFamily: String = "Serif",
+    val epubTextAlign: EpubTextAlign = EpubTextAlign.Left
 ) {
     val rightToLeft: Boolean
         get() = readingDirection == ReaderReadingDirection.RightToLeft
@@ -63,6 +78,7 @@ data class AppSettings(
 class AppSettingsStore(private val context: Context) {
     private val KEY_RTL = booleanPreferencesKey("reader_rtl")
     private val KEY_READING_DIRECTION = stringPreferencesKey("reader_reading_direction")
+    private val KEY_PAGE_LAYOUT_MODE = stringPreferencesKey("reader_page_layout_mode")
     private val KEY_INVERT_MODE = stringPreferencesKey("reader_invert_mode")
     private val KEY_INVERT_WHITE_THRESHOLD = floatPreferencesKey("reader_invert_white_threshold")
     private val KEY_PREFETCH_TURNS = intPreferencesKey("reader_prefetch_turns")
@@ -77,6 +93,7 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_SHOW_SPREAD_SHIFT_BUTTONS = booleanPreferencesKey("reader_show_spread_shift_buttons")
     private val KEY_EPUB_FONT_SIZE_SP = floatPreferencesKey("reader_epub_font_size_sp")
     private val KEY_EPUB_FONT_FAMILY = stringPreferencesKey("reader_epub_font_family")
+    private val KEY_EPUB_TEXT_ALIGN = stringPreferencesKey("reader_epub_text_align")
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
@@ -85,6 +102,9 @@ class AppSettingsStore(private val context: Context) {
                     storedName = prefs[KEY_READING_DIRECTION],
                     legacyRightToLeft = prefs[KEY_RTL]
                 ),
+                pageLayoutMode = prefs[KEY_PAGE_LAYOUT_MODE]
+                    ?.let { runCatching { PageLayoutMode.valueOf(it) }.getOrNull() }
+                    ?: PageLayoutMode.Auto,
                 invertMode = prefs[KEY_INVERT_MODE]
                     ?.let { runCatching { InvertMode.valueOf(it) }.getOrNull() }
                     ?: InvertMode.Off,
@@ -104,7 +124,10 @@ class AppSettingsStore(private val context: Context) {
                 usePurePageBackgroundColors = prefs[KEY_USE_PURE_PAGE_BACKGROUND_COLORS] ?: false,
                 showSpreadShiftButtons = prefs[KEY_SHOW_SPREAD_SHIFT_BUTTONS] ?: true,
                 epubFontSizeSp = (prefs[KEY_EPUB_FONT_SIZE_SP] ?: 18f).coerceIn(12f, 36f),
-                epubFontFamily = prefs[KEY_EPUB_FONT_FAMILY] ?: "Serif"
+                epubFontFamily = prefs[KEY_EPUB_FONT_FAMILY] ?: "Serif",
+                epubTextAlign = prefs[KEY_EPUB_TEXT_ALIGN]
+                    ?.let { runCatching { EpubTextAlign.valueOf(it) }.getOrNull() }
+                    ?: EpubTextAlign.Left
             )
         )
     }
@@ -117,6 +140,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setReadingDirection(value: ReaderReadingDirection) {
         context.settingsDataStore.edit { it[KEY_READING_DIRECTION] = value.name }
+    }
+
+    suspend fun setPageLayoutMode(value: PageLayoutMode) {
+        context.settingsDataStore.edit { it[KEY_PAGE_LAYOUT_MODE] = value.name }
     }
 
     suspend fun setInvertMode(value: InvertMode) {
@@ -161,6 +188,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setEpubFontFamily(value: String) {
         context.settingsDataStore.edit { it[KEY_EPUB_FONT_FAMILY] = value }
+    }
+
+    suspend fun setEpubTextAlign(value: EpubTextAlign) {
+        context.settingsDataStore.edit { it[KEY_EPUB_TEXT_ALIGN] = value.name }
     }
 }
 
