@@ -1,7 +1,6 @@
 package li.mof.kamigura.reader.internal
 
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,16 +11,20 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import li.mof.kamigura.FileDimensionDto
@@ -58,10 +61,9 @@ internal fun readerOverviewIndexForCursor(cursors: List<Int>, cursor: Int): Int 
 }
 
 /**
- * Google Play Books style overview: every spread is the same size card, centered
- * with neighbours peeking on either side, scrolling smoothly 1:1 like a horizontal
- * PDF viewer via [HorizontalPager]. One card per readable spread position so a
- * swipe lands exactly on a page the reader can show.
+ * Google Play Books style overview: spreads laid out horizontally in a continuous
+ * 1:1 scrollable carousel, matching Play Books proportions: wide spread cards (80-82% width)
+ * with peeking neighbors, and tapping the center spread restores the reading view.
  */
 @Composable
 internal fun ReaderOverviewGallery(
@@ -75,16 +77,16 @@ internal fun ReaderOverviewGallery(
 ) {
     if (cursors.isEmpty()) return
     val scope = rememberCoroutineScope()
-    val initialIndex = readerOverviewIndexForCursor(cursors, currentCursor)
+    val initialIndex = remember(cursors) {
+        readerOverviewIndexForCursor(cursors, currentCursor)
+    }
     val pagerState = rememberPagerState(
         initialPage = initialIndex,
         pageCount = { cursors.size }
     )
 
-    // When the reader page changes elsewhere (slider, tap zones, chapter switch),
-    // jump the gallery straight there with no glide-through — like a PDF viewer.
-    // While the user is actively dragging the gallery itself we leave it alone so
-    // the finger keeps 1:1 control.
+    // When the reader page changes externally (slider, chapter switch),
+    // jump the gallery straight there with no glide-through.
     LaunchedEffect(currentCursor, cursors) {
         val targetIndex = readerOverviewIndexForCursor(cursors, currentCursor)
         if (targetIndex != pagerState.currentPage && !pagerState.isScrollInProgress) {
@@ -112,43 +114,57 @@ internal fun ReaderOverviewGallery(
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isPortrait = maxHeight > maxWidth
-        // Play Books proportions: uniform cards, neighbours peeking. Portrait cards
-        // are wider (less peek) and shorter (tall pages looked stretched); landscape
-        // keeps the classic narrower card with more peek.
-        val cardFraction = if (isPortrait) 0.82f else 0.62f
-        val heightFraction = if (isPortrait) 0.80f else 0.90f
+        // Google Play Books proportions matching screenshots:
+        // Wide 2-page spread card in landscape (~80% width) with adjacent spreads peeking (~10%)
+        val cardFraction = if (isPortrait) 0.82f else 0.80f
+        val heightFraction = if (isPortrait) 0.80f else 0.96f
         val sidePadding = maxWidth * ((1f - cardFraction) / 2f)
+
+        // Background tap layer behind the pager to dismiss overview when tapping the margins
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onCenterTap() })
+                }
+        )
+
         HorizontalPager(
             state = pagerState,
+            flingBehavior = PagerDefaults.flingBehavior(
+                state = pagerState,
+                pagerSnapDistance = PagerSnapDistance.atMost(10)
+            ),
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(top = 68.dp)
+                .padding(top = 56.dp)
                 .navigationBarsPadding()
-                // Gap between the cards and the bottom slider bar.
-                .padding(bottom = 92.dp),
+                .padding(bottom = 76.dp),
             contentPadding = PaddingValues(horizontal = sidePadding),
-            pageSpacing = 16.dp,
+            pageSpacing = 20.dp,
             reverseLayout = reverseLayout,
             beyondViewportPageCount = 2,
             key = { index -> cursors.getOrNull(index) ?: index },
             verticalAlignment = Alignment.CenterVertically
         ) { index ->
             val cursor = cursors.getOrNull(index) ?: return@HorizontalPager
-            // All cards identical size — no focus scale/alpha — so the scroll feels
-            // like a smooth horizontal PDF viewer, fully 1:1 with the finger.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(heightFraction)
-                    .clip(RoundedCornerShape(10.dp))
-                    .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(10.dp))
-                    .clickable {
-                        if (index == pagerState.currentPage) {
-                            onCenterTap()
-                        } else {
-                            scope.launch { pagerState.animateScrollToPage(index) }
-                        }
+                    .shadow(elevation = 8.dp, shape = RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(4.dp))
+                    .pointerInput(pagerState.currentPage, index) {
+                        detectTapGestures(
+                            onTap = {
+                                if (index == pagerState.currentPage) {
+                                    onCenterTap()
+                                } else {
+                                    scope.launch { pagerState.animateScrollToPage(index) }
+                                }
+                            }
+                        )
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -157,3 +173,7 @@ internal fun ReaderOverviewGallery(
         }
     }
 }
+
+
+
+

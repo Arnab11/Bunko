@@ -1841,14 +1841,11 @@ fun ReaderScreen(
                                 invertDecisionCache = invertDecisionCache,
                                 pageBackground = readerPageBackground,
                                 modifier = cardModifier,
-                                // Cards are ~62% width and shorter than fullscreen, but the
-                                // subpage was paginated for the full viewport at full font
-                                // size — rendering it 1:1 clips the bottom text. Shrink
-                                // the font and use compact padding so it fits the card.
-                                epubFontSizeSpOverride = epubFontSizeSp * 0.66f,
+                                // Cards are ~80% width and near full height matching Google Play Books.
+                                epubFontSizeSpOverride = epubFontSizeSp * 0.85f,
                                 epubContentPaddingOverride = PaddingValues(
-                                    horizontal = 10.dp,
-                                    vertical = 8.dp
+                                    horizontal = 14.dp,
+                                    vertical = 12.dp
                                 )
                             )
                         }
@@ -2177,7 +2174,7 @@ fun ReaderScreen(
         }
         }
 
-        if (!vertical && chapterBoundary == null) {
+        if (!vertical && chapterBoundary == null && !showReaderMenu) {
             key(page, rtl, nextPageTurnStep, previousPageTurnStep, showingFinalPage) {
                 ReaderTapLayer(
                 rightToLeft = rtl,
@@ -2290,7 +2287,7 @@ fun ReaderScreen(
                 }
                 )
             }
-        } else if (!vertical) {
+        } else if (!vertical && !showReaderMenu) {
             ReaderTapLayer(
                 rightToLeft = rtl,
                 onNextSpread = { turnChapterBoundary(ReaderTurnDirection.Next) },
