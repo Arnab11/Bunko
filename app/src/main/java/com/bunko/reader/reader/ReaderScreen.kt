@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -48,6 +49,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -178,12 +180,13 @@ internal const val ReaderPortraitBackPageContentAlpha = 0.05f
 
 internal fun readerPageBackgroundColor(
     darkPaper: Boolean,
-    usePureColors: Boolean
+    usePureColors: Boolean,
+    themePaperColor: Color? = null
 ): Color = when {
     darkPaper && usePureColors -> Color.Black
     darkPaper -> Color(0xFF101010)
     usePureColors -> Color.White
-    else -> Color(0xFFFAF7F2)
+    else -> themePaperColor ?: Color(0xFFFAF7F2)
 }
 
 private val LocalImageExtensions = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "avif")
@@ -1020,8 +1023,24 @@ fun ReaderScreen(
     val vertical = readingDirection == ReaderReadingDirection.Vertical
     val spreadPages = spreadPagesFor(page, rtl)
 
+    val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    val darkPaper = invertMode != InvertMode.Off ||
+        settings.reader.pageBackground == PageBackground.Dark
+    val defaultReaderBg = when {
+        darkPaper && settings.reader.usePurePageBackgroundColors -> Color.Black
+        darkPaper -> Color(0xFF101010)
+        settings.reader.usePurePageBackgroundColors -> Color.White
+        isLightMode -> MaterialTheme.colorScheme.background
+        else -> Color.Black
+    }
+    val menuBg = if (isLightMode) {
+        MaterialTheme.colorScheme.surfaceContainer
+    } else {
+        Color(0xFF141518)
+    }
+
     val screenBgColor by animateColorAsState(
-        targetValue = if (showReaderMenu && !vertical && chapterBoundary == null) Color(0xFF141518) else Color.Black,
+        targetValue = if (showReaderMenu && !vertical && chapterBoundary == null) menuBg else defaultReaderBg,
         animationSpec = tween(durationMillis = 200),
         label = "screenBgColor"
     )
@@ -1262,9 +1281,11 @@ fun ReaderScreen(
         // rest of the time.
         val darkPaper = invertMode != InvertMode.Off ||
             settings.reader.pageBackground == PageBackground.Dark
+        val themePaperColor = if (isLightMode) MaterialTheme.colorScheme.background else null
         val curlBackPageColor = readerPageBackgroundColor(
             darkPaper = darkPaper,
-            usePureColors = settings.reader.usePurePageBackgroundColors
+            usePureColors = settings.reader.usePurePageBackgroundColors,
+            themePaperColor = themePaperColor
         )
         // Every rendering branch letterboxes with the selected paper colour.
         val readerPageBackground = curlBackPageColor

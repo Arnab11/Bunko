@@ -65,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -143,6 +144,14 @@ internal fun ReaderMenuOverlay(
         return if (rightToLeft) safePageCount - 1 - sliderPage else sliderPage
     }
 
+    val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    val barBg = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.96f)
+    val onBar = MaterialTheme.colorScheme.onSurface
+    val onBarVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val dialogSurfaceBg = MaterialTheme.colorScheme.surfaceContainerHigh
+    val dialogBorder = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -161,7 +170,7 @@ internal fun ReaderMenuOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .background(Color(0xEB141518))
+                .background(barBg)
                 .statusBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -171,13 +180,13 @@ internal fun ReaderMenuOverlay(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = Color.White
+                    tint = onBar
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = seriesName,
-                    color = Color.White,
+                    color = onBar,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -185,7 +194,7 @@ internal fun ReaderMenuOverlay(
                 )
                 Text(
                     text = "$chapterName  •  ${page + 1} / $pages",
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = onBarVariant,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -197,7 +206,7 @@ internal fun ReaderMenuOverlay(
                 onClick = { showDisplayOptions = !showDisplayOptions },
                 shape = RoundedCornerShape(12.dp),
                 color = if (showDisplayOptions) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                contentColor = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else Color.White,
+                contentColor = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar,
                 modifier = Modifier.size(40.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -206,7 +215,7 @@ internal fun ReaderMenuOverlay(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Serif,
-                        color = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else Color.White
+                        color = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar
                     )
                 }
             }
@@ -216,7 +225,7 @@ internal fun ReaderMenuOverlay(
                 Icon(
                     imageVector = Icons.Filled.Close,
                     contentDescription = "Close menu",
-                    tint = Color.White
+                    tint = onBar
                 )
             }
         }
@@ -230,12 +239,12 @@ internal fun ReaderMenuOverlay(
                     .padding(top = 64.dp, end = 12.dp, start = 12.dp)
                     .widthIn(max = 350.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, Color(0x2EFFFFFF)), RoundedCornerShape(20.dp))
+                    .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(20.dp))
                     .pointerInput(Unit) {
                         detectTapGestures { /* consume taps inside */ }
                     },
                 shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF1E2024),
+                color = dialogSurfaceBg,
                 tonalElevation = 8.dp,
                 shadowElevation = 16.dp
             ) {
@@ -249,14 +258,15 @@ internal fun ReaderMenuOverlay(
                     // their defaults, custom highlights use the same selected pair.
                     val accent = MaterialTheme.colorScheme.onSecondaryContainer
                     val accentFill = MaterialTheme.colorScheme.secondaryContainer
-                    val unselectedText = Color(0xFF9AA0A6)
-                    val segmentBg = Color(0xFF26282E)
+                    val unselectedText = MaterialTheme.colorScheme.onSurfaceVariant
+                    val segmentBg = MaterialTheme.colorScheme.surfaceContainerHighest
+                    val onSurface = MaterialTheme.colorScheme.onSurface
 
                     // TABS (Text & Lighting)
                     TabRow(
                         selectedTabIndex = selectedTab.ordinal,
                         containerColor = Color.Transparent,
-                        contentColor = Color.White,
+                        contentColor = onSurface,
                         indicator = { tabPositions ->
                             TabRowDefaults.SecondaryIndicator(
                                 Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
@@ -269,7 +279,7 @@ internal fun ReaderMenuOverlay(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(1.dp)
-                                    .background(Color(0x22FFFFFF))
+                                    .background(dividerColor)
                             )
                         }
                     ) {
@@ -337,9 +347,9 @@ internal fun ReaderMenuOverlay(
                                                         .border(
                                                             BorderStroke(
                                                                 1.dp,
-                                                                if (isSelected) accent else Color(0x388E9196)
+                                                                if (isSelected) accent else dialogBorder
                                                             ),
-                                                             CircleShape
+                                                            CircleShape
                                                         ),
                                                     contentAlignment = Alignment.Center
                                                 ) {
@@ -347,7 +357,7 @@ internal fun ReaderMenuOverlay(
                                                         text = "A",
                                                         fontSize = 24.sp,
                                                         fontFamily = fam,
-                                                        color = if (isSelected) accent else Color.White
+                                                        color = if (isSelected) accent else onSurface
                                                     )
                                                 }
                                                 Text(
@@ -367,7 +377,7 @@ internal fun ReaderMenuOverlay(
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(segmentBg)
-                                                .border(BorderStroke(1.dp, Color(0x388E9196)), RoundedCornerShape(12.dp))
+                                                .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(12.dp))
                                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
@@ -380,13 +390,13 @@ internal fun ReaderMenuOverlay(
                                                     text = "T",
                                                     fontSize = 16.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = if (epubFontSizeSp > 12f) Color.White else Color(0x55FFFFFF)
+                                                    color = if (epubFontSizeSp > 12f) onSurface else onSurface.copy(alpha = 0.38f)
                                                 )
                                             }
 
                                             Text(
                                                 text = "${((epubFontSizeSp / 18f) * 100).roundToInt()}%",
-                                                color = Color.White,
+                                                color = onSurface,
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = FontWeight.Medium
                                             )
@@ -399,7 +409,7 @@ internal fun ReaderMenuOverlay(
                                                     text = "T",
                                                     fontSize = 22.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = if (epubFontSizeSp < 36f) Color.White else Color(0x55FFFFFF)
+                                                    color = if (epubFontSizeSp < 36f) onSurface else onSurface.copy(alpha = 0.38f)
                                                 )
                                             }
                                         }
@@ -409,7 +419,7 @@ internal fun ReaderMenuOverlay(
                                         Text(
                                             text = "Text alignment",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = Color(0xFFC4C7C5)
+                                            color = unselectedText
                                         )
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -451,7 +461,7 @@ internal fun ReaderMenuOverlay(
                                     Text(
                                         text = "Page layout",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFC4C7C5)
+                                        color = unselectedText
                                     )
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -502,7 +512,7 @@ internal fun ReaderMenuOverlay(
                                     Text(
                                         text = "Reading direction",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFC4C7C5)
+                                        color = unselectedText
                                     )
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -541,7 +551,7 @@ internal fun ReaderMenuOverlay(
                                     Text(
                                         text = "Turn Animation",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFC4C7C5)
+                                        color = unselectedText
                                     )
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -578,7 +588,7 @@ internal fun ReaderMenuOverlay(
                                         Text(
                                             text = "Spread Shift",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = Color(0xFFC4C7C5)
+                                            color = unselectedText
                                         )
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -589,8 +599,8 @@ internal fun ReaderMenuOverlay(
                                                 modifier = Modifier.weight(1f).height(38.dp),
                                                 shape = RoundedCornerShape(10.dp),
                                                 color = segmentBg,
-                                                border = BorderStroke(1.dp, Color(0x388E9196)),
-                                                contentColor = Color.White
+                                                border = BorderStroke(1.dp, dialogBorder),
+                                                contentColor = onSurface
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Text("-1", fontWeight = FontWeight.Bold)
@@ -601,8 +611,8 @@ internal fun ReaderMenuOverlay(
                                                 modifier = Modifier.weight(1f).height(38.dp),
                                                 shape = RoundedCornerShape(10.dp),
                                                 color = segmentBg,
-                                                border = BorderStroke(1.dp, Color(0x388E9196)),
-                                                contentColor = Color.White
+                                                border = BorderStroke(1.dp, dialogBorder),
+                                                contentColor = onSurface
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Text("+1", fontWeight = FontWeight.Bold)
@@ -626,11 +636,11 @@ internal fun ReaderMenuOverlay(
                                     Text(
                                         text = "Theme",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFC4C7C5)
+                                        color = unselectedText
                                     )
                                     val themes = listOf(
                                         Triple("White", Color.White, Color(0xFF141414)),
-                                        Triple("Paper", Color(0xFFFAF7F2), Color(0xFF2A2218)),
+                                        Triple("Theme", if (isLightMode) MaterialTheme.colorScheme.background else Color(0xFFFAF7F2), if (isLightMode) MaterialTheme.colorScheme.onBackground else Color(0xFF2A2218)),
                                         Triple("Dark", Color(0xFF181818), Color(0xFFE6E6E6)),
                                         Triple("Black", Color.Black, Color.White)
                                     )
@@ -641,7 +651,7 @@ internal fun ReaderMenuOverlay(
                                         themes.forEach { (name, bg, fg) ->
                                             val isSelected = when (name) {
                                                 "White" -> pageBackground == PageBackground.Paper && usePureColors
-                                                "Paper" -> pageBackground == PageBackground.Paper && !usePureColors
+                                                "Theme", "Paper" -> pageBackground == PageBackground.Paper && !usePureColors
                                                 "Dark" -> pageBackground == PageBackground.Dark && !usePureColors
                                                 "Black" -> pageBackground == PageBackground.Dark && usePureColors
                                                 else -> false
@@ -655,7 +665,7 @@ internal fun ReaderMenuOverlay(
                                                             onSetPageBackground(PageBackground.Paper)
                                                             onSetUsePureColors(true)
                                                         }
-                                                        "Paper" -> {
+                                                        "Theme", "Paper" -> {
                                                             onSetPageBackground(PageBackground.Paper)
                                                             onSetUsePureColors(false)
                                                         }
@@ -678,7 +688,7 @@ internal fun ReaderMenuOverlay(
                                                         .border(
                                                             BorderStroke(
                                                                 if (isSelected) 2.5.dp else 1.dp,
-                                                                if (isSelected) accent else Color(0x448E9196)
+                                                                if (isSelected) accent else dialogBorder
                                                             ),
                                                             CircleShape
                                                         ),
@@ -716,7 +726,7 @@ internal fun ReaderMenuOverlay(
                                     Text(
                                         text = "Invert Mode",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFC4C7C5)
+                                        color = unselectedText
                                     )
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -759,7 +769,7 @@ internal fun ReaderMenuOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .background(Color(0xEB141518))
+                .background(barBg)
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -773,7 +783,7 @@ internal fun ReaderMenuOverlay(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.List,
                     contentDescription = "Chapters",
-                    tint = Color.White
+                    tint = onBar
                 )
             }
 
@@ -798,7 +808,7 @@ internal fun ReaderMenuOverlay(
 
             Text(
                 text = "${jumpPage + 1} / $safePageCount",
-                color = Color.White.copy(alpha = 0.85f),
+                color = onBarVariant,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
@@ -808,8 +818,8 @@ internal fun ReaderMenuOverlay(
         if (showChapterList) {
             ModalBottomSheet(
                 onDismissRequest = { showChapterList = false },
-                containerColor = Color(0xFF1E2024),
-                contentColor = Color.White,
+                containerColor = dialogSurfaceBg,
+                contentColor = onBar,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             ) {
                 Column(
@@ -822,10 +832,10 @@ internal fun ReaderMenuOverlay(
                         text = "Chapters",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = onBar,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
                     )
-                    HorizontalDivider(color = Color(0x22FFFFFF))
+                    HorizontalDivider(color = dividerColor)
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -847,7 +857,7 @@ internal fun ReaderMenuOverlay(
                             ) {
                                 Text(
                                     text = entry.displayName,
-                                    color = if (isCurrent) MaterialTheme.colorScheme.onSecondaryContainer else Color.White,
+                                    color = if (isCurrent) MaterialTheme.colorScheme.onSecondaryContainer else onBar,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                                     modifier = Modifier.weight(1f)

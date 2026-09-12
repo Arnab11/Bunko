@@ -110,13 +110,13 @@ internal fun BrowsePageScaffold(
                     Icon(
                         imageVector = navigationIcon,
                         contentDescription = navigationContentDescription,
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onBackground
                     )
                 }
             }
             Text(
                 text = title,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
@@ -233,7 +233,7 @@ internal fun SeriesPosterCard(
             Box(
                 modifier = coverModifier
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF111111)),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
                 if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
@@ -259,7 +259,7 @@ internal fun SeriesPosterCard(
                 )
                 Text(
                     text = series.name,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     minLines = 2,
@@ -304,7 +304,7 @@ internal fun SeriesListItem(
                     .width(80.dp)
                     .aspectRatio(KavitaCoverAspectRatio)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF111111)),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
                 if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
@@ -324,7 +324,7 @@ internal fun SeriesListItem(
                     text = series.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -338,7 +338,7 @@ internal fun SeriesListItem(
                 val statusColor = when (statusText) {
                     "Completed" -> Color(0xFF66BB6A)
                     "In Progress" -> Color(0xFF42A5F5)
-                    else -> Color(0xFFB9BDBD)
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Text(
                     text = statusText,

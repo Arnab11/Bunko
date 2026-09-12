@@ -62,7 +62,7 @@ data class ReaderSettings(
     val pageBackground: PageBackground = PageBackground.Paper,
     val showPortraitPageBackContent: Boolean = true,
     val usePurePageBackgroundColors: Boolean = false,
-    val showSpreadShiftButtons: Boolean = true,
+    val showSpreadShiftButtons: Boolean = false,
     val epubFontSizeSp: Float = 18f,
     val epubFontFamily: String = "Serif",
     val epubTextAlign: EpubTextAlign = EpubTextAlign.Left
@@ -72,10 +72,16 @@ data class ReaderSettings(
 }
 
 data class AppSettings(
-    val reader: ReaderSettings = ReaderSettings()
+    val reader: ReaderSettings = ReaderSettings(),
+    val appTheme: com.bunko.reader.ui.theme.AppTheme = com.bunko.reader.ui.theme.AppTheme.Default,
+    val isDarkMode: Boolean = true,
+    val isAmoledMode: Boolean = false,
 )
 
 class AppSettingsStore(private val context: Context) {
+    private val KEY_APP_THEME = stringPreferencesKey("app_theme")
+    private val KEY_DARK_MODE = booleanPreferencesKey("dark_mode")
+    private val KEY_AMOLED_MODE = booleanPreferencesKey("amoled_mode")
     private val KEY_RTL = booleanPreferencesKey("reader_rtl")
     private val KEY_READING_DIRECTION = stringPreferencesKey("reader_reading_direction")
     private val KEY_PAGE_LAYOUT_MODE = stringPreferencesKey("reader_page_layout_mode")
@@ -97,6 +103,10 @@ class AppSettingsStore(private val context: Context) {
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
+            appTheme = prefs[KEY_APP_THEME]?.let { runCatching { com.bunko.reader.ui.theme.AppTheme.valueOf(it) }.getOrNull() }
+                ?: com.bunko.reader.ui.theme.AppTheme.Default,
+            isDarkMode = prefs[KEY_DARK_MODE] ?: true,
+            isAmoledMode = prefs[KEY_AMOLED_MODE] ?: false,
             reader = ReaderSettings(
                 readingDirection = readerReadingDirection(
                     storedName = prefs[KEY_READING_DIRECTION],
@@ -122,7 +132,7 @@ class AppSettingsStore(private val context: Context) {
                     ?: PageBackground.Paper,
                 showPortraitPageBackContent = prefs[KEY_SHOW_PORTRAIT_PAGE_BACK_CONTENT] ?: true,
                 usePurePageBackgroundColors = prefs[KEY_USE_PURE_PAGE_BACKGROUND_COLORS] ?: false,
-                showSpreadShiftButtons = prefs[KEY_SHOW_SPREAD_SHIFT_BUTTONS] ?: true,
+                showSpreadShiftButtons = prefs[KEY_SHOW_SPREAD_SHIFT_BUTTONS] ?: false,
                 epubFontSizeSp = (prefs[KEY_EPUB_FONT_SIZE_SP] ?: 18f).coerceIn(12f, 36f),
                 epubFontFamily = prefs[KEY_EPUB_FONT_FAMILY] ?: "Serif",
                 epubTextAlign = prefs[KEY_EPUB_TEXT_ALIGN]
@@ -192,6 +202,25 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setEpubTextAlign(value: EpubTextAlign) {
         context.settingsDataStore.edit { it[KEY_EPUB_TEXT_ALIGN] = value.name }
+    }
+
+    suspend fun setAppTheme(value: com.bunko.reader.ui.theme.AppTheme) {
+        context.settingsDataStore.edit { it[KEY_APP_THEME] = value.name }
+    }
+
+    suspend fun setDarkMode(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_DARK_MODE] = value }
+    }
+
+    suspend fun setAmoledMode(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_AMOLED_MODE] = value }
+    }
+
+    suspend fun toggleDarkMode() {
+        context.settingsDataStore.edit { prefs ->
+            val current = prefs[KEY_DARK_MODE] ?: true
+            prefs[KEY_DARK_MODE] = !current
+        }
     }
 }
 

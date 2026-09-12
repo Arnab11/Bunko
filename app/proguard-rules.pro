@@ -14,8 +14,27 @@
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+-keepattributes SourceFile,LineNumberTable
 
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# kotlinx.serialization
+-keepattributes *Annotation*,InnerClasses
+-dontnote kotlinx.serialization.SerializationKt
+-keepclassmembers class * {
+    @kotlinx.serialization.SerialName <fields>;
+}
+-keepclasseswithmembers class * {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+
+# Retrofit & OkHttp
+-dontwarn okhttp3.**
+-dontwarn retrofit2.**
+-keepattributes Signature
+-keepattributes Exceptions
+-keepclassmembers,allowobfuscation interface * {
+    @retrofit2.http.* <methods>;
+}

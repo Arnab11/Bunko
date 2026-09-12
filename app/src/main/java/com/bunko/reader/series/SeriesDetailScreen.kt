@@ -28,9 +28,14 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -142,6 +147,7 @@ fun ChapterPickScreen(
     seriesId: Int,
     seriesName: String,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
+    onBack: () -> Unit = {},
     onPick: (chapterId: Int, volumeId: Int, incognito: Boolean) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -360,145 +366,202 @@ fun ChapterPickScreen(
         }
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .background(BunkoBackground)
-    ) {
-        when {
-            loading -> DarkLoadingState()
-            error != null -> DarkMessageState(
-                title = "Could not load series details",
-                body = error ?: "Unknown error",
-                actionLabel = "Retry",
-                onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
-            )
-            loadedApi == null -> DarkMessageState(
-                title = "Could not load series details",
-                body = "API unavailable",
-                actionLabel = "Retry",
-                onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
-            )
-            else -> PullToRefreshBox(
-                isRefreshing = refreshing,
-                onRefresh = {
-                    if (!refreshing) {
-                        scope.launch { loadSeriesDetails(initialLoad = false) }
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = BunkoBackground,
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 },
-                modifier = Modifier.fillMaxSize(),
-                state = pullRefreshState,
-                indicator = { BunkoPullToRefreshIndicator(pullRefreshState, refreshing) }
-            ) {
-                SeriesDetailContent(
-                    series = displaySeries,
-                    metadata = metadata,
-                    continueChapter = continueChapter,
-                    chapterCards = chapterCards,
-                    volumeCount = volumes.size,
-                    session = session,
-                    api = loadedApi,
-                    isAdmin = isAdmin,
-                    onOpenFilteredSeries = onOpenFilteredSeries,
-                    onPick = { chapterId, volumeId -> onPick(chapterId, volumeId, false) },
-                    onIssueClick = ::openIssue,
-                    onMessage = ::showMessage
-                )
-            }
-        }
-
-        val issue = selectedIssue
-        val seriesActionColor = displaySeries.coverActionColor()
-        val issueActionColor = (selectedIssueDetail ?: issue?.chapter)
-            ?.coverActionColor(fallback = seriesActionColor)
-            ?: seriesActionColor
-        IssueDetailSideSheet(
-            visible = issue != null,
-            seriesName = displaySeries.name,
-            volume = issue?.volume,
-            chapter = selectedIssueDetail ?: issue?.chapter,
-            fileSizeBytes = selectedIssueSize,
-            downloadRecord = downloadRecord,
-            loading = issueLoading,
-            actionBusy = issueActionBusy,
-            session = session,
-            actionColor = issueActionColor,
-            onDismissRequest = {
-                selectedIssue = null
-                selectedIssueDetail = null
-                selectedIssueSize = null
-            },
-            onRead = {
-                issue?.let { onPick(it.chapter.id, it.volume.id, false) }
-            },
-            onReadIncognito = {
-                issue?.let { onPick(it.chapter.id, it.volume.id, true) }
-            },
-            onMarkRead = ::markSelectedIssueRead,
-            onMarkUnread = ::markSelectedIssueUnread,
-            onDownload = {
-                issue?.let { item ->
-                    if (issueActionBusy) return@IssueDetailSideSheet
-                    issueActionBusy = true
-                    scope.launch {
-                        try {
-                            offlineRepository.enqueue(
-                                session = session,
-                                libraryId = libraryId,
-                                seriesId = seriesId,
-                                volumeId = item.volume.id,
-                                chapterId = item.chapter.id,
-                                seriesName = displaySeries.name,
-                                issueName = item.volume.displayName() ?: item.chapter.displayTitle(),
-                                expectedBytes = selectedIssueSize,
-                                expectedPageCount = selectedIssueDetail?.pages ?: item.chapter.pages
-                            )
-                            showMessage("Download queued")
-                        } catch (c: CancellationException) {
-                            throw c
-                        } catch (error: Throwable) {
-                            BunkoLog.w("Could not queue offline download for chapter ${item.chapter.id}.", error)
-                            showMessage(error.message ?: "Could not queue download")
-                        } finally {
-                            issueActionBusy = false
-                        }
-                    }
-                }
-            },
-            onRemoveDownload = {
-                issue?.let { item ->
-                    scope.launch {
-                        selectedIssue = null
-                        selectedIssueDetail = null
-                        selectedIssueSize = null
-                        val result = snackbarHostState.showSnackbar(
-                            message = "Download removed",
-                            actionLabel = "Undo",
-                            withDismissAction = true,
-                            duration = SnackbarDuration.Long
+                title = {
+                    Column(verticalArrangement = Arrangement.Center) {
+                        Text(
+                            text = displaySeries.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        if (result == SnackbarResult.ActionPerformed) return@launch
-                        try {
-                            offlineRepository.remove(session, item.chapter.id)
-                        } catch (c: CancellationException) {
-                            throw c
-                        } catch (t: Throwable) {
-                            BunkoLog.w("Could not remove offline download for chapter ${item.chapter.id}.", t)
-                            snackbarHostState.showSnackbar("Could not remove download")
+                        if (chapterCards.isNotEmpty()) {
+                            Text(
+                                text = "${chapterCards.size} ${if (chapterCards.size == 1) "issue" else "issues"}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { scope.launch { loadSeriesDetails(initialLoad = false) } },
+                        enabled = !refreshing && !loading
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = "Refresh",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
+        },
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+            )
+        }
+    ) { innerPadding ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(BunkoBackground)
+        ) {
+            when {
+                loading -> DarkLoadingState()
+                error != null -> DarkMessageState(
+                    title = "Could not load series details",
+                    body = error ?: "Unknown error",
+                    actionLabel = "Retry",
+                    onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                )
+                loadedApi == null -> DarkMessageState(
+                    title = "Could not load series details",
+                    body = "API unavailable",
+                    actionLabel = "Retry",
+                    onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                )
+                else -> PullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = {
+                        if (!refreshing) {
+                            scope.launch { loadSeriesDetails(initialLoad = false) }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    state = pullRefreshState,
+                    indicator = { BunkoPullToRefreshIndicator(pullRefreshState, refreshing) }
+                ) {
+                    SeriesDetailContent(
+                        series = displaySeries,
+                        metadata = metadata,
+                        continueChapter = continueChapter,
+                        chapterCards = chapterCards,
+                        volumeCount = volumes.size,
+                        session = session,
+                        api = loadedApi,
+                        isAdmin = isAdmin,
+                        onOpenFilteredSeries = onOpenFilteredSeries,
+                        onPick = { chapterId, volumeId -> onPick(chapterId, volumeId, false) },
+                        onIssueClick = ::openIssue,
+                        onMessage = ::showMessage
+                    )
+                }
+            }
+
+            val issue = selectedIssue
+            val seriesActionColor = displaySeries.coverActionColor()
+            val issueActionColor = (selectedIssueDetail ?: issue?.chapter)
+                ?.coverActionColor(fallback = seriesActionColor)
+                ?: seriesActionColor
+            IssueDetailSideSheet(
+                visible = issue != null,
+                seriesName = displaySeries.name,
+                volume = issue?.volume,
+                chapter = selectedIssueDetail ?: issue?.chapter,
+                fileSizeBytes = selectedIssueSize,
+                downloadRecord = downloadRecord,
+                loading = issueLoading,
+                actionBusy = issueActionBusy,
+                session = session,
+                actionColor = issueActionColor,
+                onDismissRequest = {
+                    selectedIssue = null
+                    selectedIssueDetail = null
+                    selectedIssueSize = null
+                },
+                onRead = {
+                    issue?.let { onPick(it.chapter.id, it.volume.id, false) }
+                },
+                onReadIncognito = {
+                    issue?.let { onPick(it.chapter.id, it.volume.id, true) }
+                },
+                onMarkRead = ::markSelectedIssueRead,
+                onMarkUnread = ::markSelectedIssueUnread,
+                onDownload = {
+                    issue?.let { item ->
+                        if (issueActionBusy) return@IssueDetailSideSheet
+                        issueActionBusy = true
+                        scope.launch {
+                            try {
+                                offlineRepository.enqueue(
+                                    session = session,
+                                    libraryId = libraryId,
+                                    seriesId = seriesId,
+                                    volumeId = item.volume.id,
+                                    chapterId = item.chapter.id,
+                                    seriesName = displaySeries.name,
+                                    issueName = item.volume.displayName() ?: item.chapter.displayTitle(),
+                                    expectedBytes = selectedIssueSize,
+                                    expectedPageCount = selectedIssueDetail?.pages ?: item.chapter.pages
+                                )
+                                showMessage("Download queued")
+                            } catch (c: CancellationException) {
+                                throw c
+                            } catch (error: Throwable) {
+                                BunkoLog.w("Could not queue offline download for chapter ${item.chapter.id}.", error)
+                                showMessage(error.message ?: "Could not queue download")
+                            } finally {
+                                issueActionBusy = false
+                            }
+                        }
+                    }
+                },
+                onRemoveDownload = {
+                    issue?.let { item ->
+                        scope.launch {
+                            selectedIssue = null
+                            selectedIssueDetail = null
+                            selectedIssueSize = null
+                            val result = snackbarHostState.showSnackbar(
+                                message = "Download removed",
+                                actionLabel = "Undo",
+                                withDismissAction = true,
+                                duration = SnackbarDuration.Long
+                            )
+                            if (result == SnackbarResult.ActionPerformed) return@launch
+                            try {
+                                offlineRepository.remove(session, item.chapter.id)
+                            } catch (c: CancellationException) {
+                                throw c
+                            } catch (t: Throwable) {
+                                BunkoLog.w("Could not remove offline download for chapter ${item.chapter.id}.", t)
+                                snackbarHostState.showSnackbar("Could not remove download")
+                            }
                         }
                     }
                 }
-            }
-        )
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(16.dp)
-        )
+            )
+        }
     }
 }
 

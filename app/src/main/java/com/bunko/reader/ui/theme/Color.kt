@@ -1,6 +1,9 @@
 package com.bunko.reader.ui.theme
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 
 // Bunko dark color scheme.
@@ -61,11 +64,21 @@ private val InverseSurface = Color(0xFFE3E8E5)
 private val InverseOnSurface = Color(0xFF2C312E)
 private val ScrimColor = Color(0xFF000000)
 
-// App-level surfaces that intentionally preserve Bunko's current browsing
-// UI colors while the Material color scheme remains the neutral baseline.
-val BunkoBackground = Color(0xFF202222)
-val BunkoSurface = Color(0xFF2C3030)
-val BunkoChrome = Color(0xFF171818)
+// App-level surfaces that dynamically resolve from the active Material theme palette
+val BunkoBackground: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.background
+
+val BunkoSurface: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.surfaceContainer
+
+val BunkoChrome: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = MaterialTheme.colorScheme.surfaceContainerHigh
 
 val BunkoDarkColorScheme = darkColorScheme(
     primary = Primary,

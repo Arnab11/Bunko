@@ -314,7 +314,7 @@ private fun RecentSearches(
         if (queries.isEmpty()) {
             Text(
                 text = "Your recent searches will appear here.",
-                color = Color(0xFFB9BDBD),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium
             )
         } else {
@@ -410,7 +410,7 @@ private fun SearchChapterSection(
             chapters.forEach { chapter ->
                 Surface(
                     color = BunkoSurface,
-                    contentColor = Color.White,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                     shape = MaterialTheme.shapes.small,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -423,6 +423,7 @@ private fun SearchChapterSection(
                         Column(Modifier.weight(1f)) {
                             Text(
                                 text = chapter.titleName?.takeIf { it.isNotBlank() } ?: "Chapter ${chapter.id}",
+                                color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -430,7 +431,7 @@ private fun SearchChapterSection(
                             )
                             Text(
                                 text = chapter.searchSubtitle(),
-                                color = Color(0xFFB9BDBD),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -439,7 +440,7 @@ private fun SearchChapterSection(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
-                            tint = Color(0xFFE6EAEA)
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -452,7 +453,7 @@ private fun SearchChapterSection(
 private fun SearchSectionHeader(title: String) {
     Text(
         text = title,
-        color = Color.White,
+        color = MaterialTheme.colorScheme.onBackground,
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.SemiBold
     )

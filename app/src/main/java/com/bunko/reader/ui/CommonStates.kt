@@ -27,11 +27,11 @@ internal fun DarkLoadingState() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             ContainedLoadingIndicator(
-                containerColor = Color(0xFF24352F),
-                indicatorColor = Color(0xFF86D39B)
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                indicatorColor = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.height(12.dp))
-            Text("Loading", color = Color(0xFFD1D5D5))
+            Text("Loading", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -45,9 +45,9 @@ internal fun DarkMessageState(
 ) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(title, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
-            Text(body, color = Color(0xFFB9BDBD), style = MaterialTheme.typography.bodyMedium)
+            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             if (actionLabel != null && onAction != null) {
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = onAction) {

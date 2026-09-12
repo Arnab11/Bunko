@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +24,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.ui.text.font.FontWeight
+import com.bunko.reader.settings.CategoryRowGap
+import com.bunko.reader.settings.ClickableSettingRow
+import com.bunko.reader.settings.RadioSettingRow
+import com.bunko.reader.settings.SettingsSectionCard
+import com.bunko.reader.settings.SwitchSettingRow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
@@ -558,11 +565,12 @@ fun ServerSettingsScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderSettingsScreen(
     settingsStore: AppSettingsStore,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    showTopBar: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
     val settings by settingsStore.flow.collectAsState(initial = AppSettings())
@@ -571,216 +579,238 @@ fun ReaderSettingsScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-    ) {
-        SettingsTopAppBar(title = "Reader Settings", onBack = onBack)
         Column(
             Modifier
-                .widthIn(max = SettingsFormContentMaxWidth)
-                .fillMaxWidth()
-                .align(Alignment.CenterHorizontally)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .fillMaxSize()
+                .then(if (showTopBar) Modifier.statusBarsPadding().navigationBarsPadding() else Modifier)
         ) {
-            Text("Reading direction", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Fallback used when a series has no reading direction of its own on the Kavita server.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+            if (showTopBar) {
+                SettingsTopAppBar(title = "Reader Settings", onBack = onBack)
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                val directions = ReaderReadingDirection.entries
-                directions.forEachIndexed { index, direction ->
-                    ToggleButton(
-                        checked = settings.reader.readingDirection == direction,
-                        onCheckedChange = {
-                            scope.launch { settingsStore.setReadingDirection(direction) }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .semantics { role = Role.RadioButton },
-                        shapes = when (index) {
-                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            directions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                // Section 1: Reading Direction
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Reading Direction",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        RadioSettingRow(
+                            title = "Right to Left (RTL)",
+                            subtitle = "Standard reading mode for manga and Japanese publications",
+                            selected = settings.reader.readingDirection == ReaderReadingDirection.RightToLeft,
+                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.RightToLeft) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Vertical",
+                            subtitle = "Continuous vertical scrolling for webtoons and comics",
+                            selected = settings.reader.readingDirection == ReaderReadingDirection.Vertical,
+                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.Vertical) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Left to Right (LTR)",
+                            subtitle = "Standard reading mode for western comics and novels",
+                            selected = settings.reader.readingDirection == ReaderReadingDirection.LeftToRight,
+                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.LeftToRight) } }
+                        )
+                    }
+                }
+
+                // Section 2: Page Preloading
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Page Preloading",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        Box(modifier = Modifier.padding(16.dp)) {
+                            PrefetchTurnsSetting(
+                                turns = settings.reader.prefetchTurns,
+                                vertical = settings.reader.readingDirection == ReaderReadingDirection.Vertical,
+                                onTurnsChanged = { turns ->
+                                    scope.launch { settingsStore.setPrefetchTurns(turns) }
+                                }
+                            )
                         }
-                    ) {
-                        Text(
-                            when (direction) {
-                                ReaderReadingDirection.RightToLeft -> "RTL"
-                                ReaderReadingDirection.Vertical -> "Vertical"
-                                ReaderReadingDirection.LeftToRight -> "LTR"
+                    }
+                }
+
+                // Section 3: Page Turns & Animation
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Page Turns & Navigation",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        SwitchSettingRow(
+                            title = "Page Transition Animation",
+                            subtitle = "Smooth sliding transitions with depth. Turn off for instant page changes.",
+                            checked = settings.reader.pageTransitionAnimation,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setPageTransitionAnimation(enabled) }
+                            }
+                        )
+
+                        if (settings.reader.readingDirection != ReaderReadingDirection.Vertical) {
+                            CategoryRowGap()
+                            RadioSettingRow(
+                                title = "Slide Turn",
+                                subtitle = "Fast, stable horizontal slide animation",
+                                selected = settings.reader.pageTurnMode == PageTurnMode.Slide,
+                                onClick = { scope.launch { settingsStore.setPageTurnMode(PageTurnMode.Slide) } }
+                            )
+                            CategoryRowGap()
+                            RadioSettingRow(
+                                title = "Curl Turn (Experimental)",
+                                subtitle = "Realistic 3D curled page turn for portrait and landscape spreads",
+                                selected = settings.reader.pageTurnMode == PageTurnMode.Curl,
+                                onClick = { scope.launch { settingsStore.setPageTurnMode(PageTurnMode.Curl) } }
+                            )
+                            CategoryRowGap()
+                            SwitchSettingRow(
+                                title = "Page-Back Show-Through",
+                                subtitle = "Shows a faint mirror of content on the back of curled sheets",
+                                checked = settings.reader.showPortraitPageBackContent,
+                                onCheckedChange = { enabled ->
+                                    scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
+                                }
+                            )
+                            CategoryRowGap()
+                            SwitchSettingRow(
+                                title = "Spread Shift Buttons",
+                                subtitle = "Shows +/- 1 shift buttons in reader menu to correct two-page spread alignments",
+                                checked = settings.reader.showSpreadShiftButtons,
+                                onCheckedChange = { enabled ->
+                                    scope.launch { settingsStore.setShowSpreadShiftButtons(enabled) }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Section 4: Page Margins & Background
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Page Margins & Background",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        RadioSettingRow(
+                            title = "Dark Margins",
+                            subtitle = "Comfortable soft dark margins around pages",
+                            selected = settings.reader.pageBackground == PageBackground.Dark,
+                            onClick = { scope.launch { settingsStore.setPageBackground(PageBackground.Dark) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Paper Margins",
+                            subtitle = "Warm off-white paper color for margins",
+                            selected = settings.reader.pageBackground == PageBackground.Paper,
+                            onClick = { scope.launch { settingsStore.setPageBackground(PageBackground.Paper) } }
+                        )
+                        CategoryRowGap()
+                        SwitchSettingRow(
+                            title = "Pure AMOLED Margins",
+                            subtitle = "Uses pure #000000 black for Dark and pure #FFFFFF for Paper",
+                            checked = settings.reader.usePurePageBackgroundColors,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setUsePurePageBackgroundColors(enabled) }
                             }
                         )
                     }
                 }
-            }
 
-            Text("Page preloading", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Keeps upcoming pages ready while reading. A two-page spread can preload two page images per turn.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
-            PrefetchTurnsSetting(
-                turns = settings.reader.prefetchTurns,
-                vertical = settings.reader.readingDirection == ReaderReadingDirection.Vertical,
-                onTurnsChanged = { turns ->
-                    scope.launch { settingsStore.setPrefetchTurns(turns) }
-                }
-            )
+                // Section 5: Night Mode / Invert
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Night Invert",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
 
-            if (settings.reader.readingDirection != ReaderReadingDirection.Vertical) {
-                SettingRow(
-                    title = "Page transition animation",
-                    desc = "Slides pages with a small amount of depth. Turn this off to use instant page changes.",
-                    checked = settings.reader.pageTransitionAnimation,
-                    onToggle = { enabled ->
-                        scope.launch { settingsStore.setPageTransitionAnimation(enabled) }
-                    }
-                )
+                    SettingsSectionCard {
+                        RadioSettingRow(
+                            title = "Off",
+                            subtitle = "Original page colors preserved as authored",
+                            selected = settings.reader.invertMode == InvertMode.Off,
+                            onClick = { scope.launch { settingsStore.setInvertMode(InvertMode.Off) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Smart Invert",
+                            subtitle = "Inverts text pages for night reading while preserving illustrations",
+                            selected = settings.reader.invertMode == InvertMode.Smart,
+                            onClick = { scope.launch { settingsStore.setInvertMode(InvertMode.Smart) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Always Invert",
+                            subtitle = "Inverts all pages unconditionally",
+                            selected = settings.reader.invertMode == InvertMode.Always,
+                            onClick = { scope.launch { settingsStore.setInvertMode(InvertMode.Always) } }
+                        )
 
-                Text("Page turn", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Slide is the stable reader. Curl is experimental and applies to portrait single-page and landscape spread reading.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
-                ) {
-                    val modes = PageTurnMode.entries
-                    modes.forEachIndexed { index, mode ->
-                        ToggleButton(
-                            checked = settings.reader.pageTurnMode == mode,
-                            onCheckedChange = { scope.launch { settingsStore.setPageTurnMode(mode) } },
-                            modifier = Modifier
-                                .weight(1f)
-                                .semantics { role = Role.RadioButton },
-                            shapes = when (index) {
-                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                                modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        if (settings.reader.invertMode == InvertMode.Smart) {
+                            CategoryRowGap()
+                            val threshold = settings.reader.invertWhiteThreshold
+                            var thresholdDraft by remember(threshold) { mutableStateOf(threshold) }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Illustration Threshold",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Pages at least ${(thresholdDraft * 100f).roundToInt()}% white are treated as text and inverted.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                ValueBubbleSlider(
+                                    value = thresholdDraft,
+                                    onValueChange = { thresholdDraft = it },
+                                    onValueChangeFinished = {
+                                        scope.launch { settingsStore.setInvertWhiteThreshold(thresholdDraft) }
+                                    },
+                                    valueRange = 0.2f..0.9f,
+                                    valueLabel = { value -> "${(value * 100f).roundToInt()}%" }
+                                )
                             }
-                        ) { Text(mode.name) }
-                    }
-                }
-            }
-
-            Text("Page background", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Colour of the margins around a page, and of the back of a curling page. " +
-                    "Invert always uses the dark one.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
-            ) {
-                val backgrounds = PageBackground.entries
-                backgrounds.forEachIndexed { index, background ->
-                    ToggleButton(
-                        checked = settings.reader.pageBackground == background,
-                        onCheckedChange = { scope.launch { settingsStore.setPageBackground(background) } },
-                        modifier = Modifier
-                            .weight(1f)
-                            .semantics { role = Role.RadioButton },
-                        shapes = when (index) {
-                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            backgrounds.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                         }
-                    ) { Text(background.name) }
-                }
-            }
-
-            SettingRow(
-                title = "Pure black / white margins",
-                desc = "Uses #000000 for Dark and #FFFFFF for Paper instead of the softer colours.",
-                checked = settings.reader.usePurePageBackgroundColors,
-                onToggle = { enabled ->
-                    scope.launch { settingsStore.setUsePurePageBackgroundColors(enabled) }
-                }
-            )
-
-            if (settings.reader.readingDirection != ReaderReadingDirection.Vertical) {
-                SettingRow(
-                    title = "Page-back show-through",
-                    desc = "Shows a faint mirror of the page on the back of a curled portrait sheet.",
-                    checked = settings.reader.showPortraitPageBackContent,
-                    onToggle = { enabled ->
-                        scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
                     }
-                )
-
-                SettingRow(
-                    title = "Spread shift buttons",
-                    desc = "Shows the +1 / -1 buttons in the reader menu (landscape) to correct a " +
-                        "one-page spread misalignment. Edge long-press does the same either way.",
-                    checked = settings.reader.showSpreadShiftButtons,
-                    onToggle = { enabled ->
-                        scope.launch { settingsStore.setShowSpreadShiftButtons(enabled) }
-                    }
-                )
-            }
-
-            Text("Invert (night)", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Off shows pages as-is. Smart inverts text pages and skips illustrations. Always inverts every page.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
-            ) {
-                val modes = InvertMode.entries
-                modes.forEachIndexed { index, mode ->
-                    ToggleButton(
-                        checked = settings.reader.invertMode == mode,
-                        onCheckedChange = { scope.launch { settingsStore.setInvertMode(mode) } },
-                        modifier = Modifier
-                            .weight(1f)
-                            .semantics { role = Role.RadioButton },
-                        shapes = when (index) {
-                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                        }
-                    ) { Text(mode.name) }
                 }
             }
-            if (settings.reader.invertMode == InvertMode.Smart) {
-                val threshold = settings.reader.invertWhiteThreshold
-                var thresholdDraft by remember(threshold) { mutableStateOf(threshold) }
-                Text(
-                    "Illustration threshold: pages at least ${(thresholdDraft * 100f).roundToInt()}% white are treated as text and inverted.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-                ValueBubbleSlider(
-                    value = thresholdDraft,
-                    onValueChange = { thresholdDraft = it },
-                    onValueChangeFinished = {
-                        scope.launch { settingsStore.setInvertWhiteThreshold(thresholdDraft) }
-                    },
-                    valueRange = 0.2f..0.9f,
-                    valueLabel = { value -> "${(value * 100f).roundToInt()}%" }
-                )
-            }
-
         }
-    }
     }
 }
 

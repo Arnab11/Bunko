@@ -139,7 +139,7 @@ private fun LibraryHub(
                 items(libraries, key = { it.id }) { library ->
                     Surface(
                         color = BunkoSurface,
-                        contentColor = Color.White,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                         shape = MaterialTheme.shapes.small,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -154,6 +154,7 @@ private fun LibraryHub(
                             Column(Modifier.weight(1f)) {
                                 Text(
                                     library.name,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
@@ -163,7 +164,7 @@ private fun LibraryHub(
                                 seriesCounts[library.id]?.let { count ->
                                     Text(
                                         "$count series",
-                                        color = Color(0xFFB9BDBD),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = MaterialTheme.typography.bodySmall,
                                         maxLines = 1
                                     )
@@ -199,8 +200,8 @@ private fun LibraryIcon(library: LibraryDto, session: KavitaSession) {
 
     Surface(
         modifier = Modifier.size(48.dp),
-        color = Color(0xFF273A32),
-        contentColor = Color(0xFFD3EEE3),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         shape = MaterialTheme.shapes.small
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -638,7 +639,7 @@ private fun BrowseHubItem(
 ) {
     Surface(
         color = BunkoSurface,
-        contentColor = Color.White,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.small,
         modifier = Modifier
             .fillMaxWidth()
@@ -651,8 +652,8 @@ private fun BrowseHubItem(
         ) {
             Surface(
                 modifier = Modifier.size(48.dp),
-                color = Color(0xFF273A32),
-                contentColor = Color(0xFFD3EEE3),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 shape = MaterialTheme.shapes.small
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -666,13 +667,14 @@ private fun BrowseHubItem(
             Column(Modifier.weight(1f)) {
                 Text(
                     text = title,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    color = Color(0xFFB9BDBD),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -770,7 +772,7 @@ private fun WantToReadGrid(
                             } else {
                                 "Select all"
                             },
-                            tint = Color.White
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -792,7 +794,7 @@ private fun WantToReadGrid(
                     Icon(
                         imageVector = Icons.Filled.Checklist,
                         contentDescription = "Select items",
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -938,7 +940,7 @@ private fun HomeShelf(
         ) {
             Text(
                 kind.title,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f)
@@ -946,12 +948,12 @@ private fun HomeShelf(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "Open ${kind.title}",
-                tint = Color(0xFFE6EAEA)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Spacer(Modifier.height(10.dp))
         if (series.isEmpty()) {
-            Text("Nothing here yet", color = Color(0xFF9FA5A5), style = MaterialTheme.typography.bodyMedium)
+            Text("Nothing here yet", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         } else if (isGridView) {
             val cardShape = MaterialTheme.shapes.small
             val shelfHeight = seriesShelfHeight()

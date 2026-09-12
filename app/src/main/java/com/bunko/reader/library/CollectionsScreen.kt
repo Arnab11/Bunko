@@ -129,7 +129,7 @@ private fun CollectionRow(
 ) {
     Surface(
         color = BunkoSurface,
-        contentColor = Color.White,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.small,
         modifier = Modifier
             .fillMaxWidth()
@@ -142,8 +142,8 @@ private fun CollectionRow(
         ) {
             Surface(
                 modifier = Modifier.size(48.dp),
-                color = Color(0xFF273A32),
-                contentColor = Color(0xFFD3EEE3),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 shape = MaterialTheme.shapes.small
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -157,6 +157,7 @@ private fun CollectionRow(
             Column(Modifier.weight(1f)) {
                 Text(
                     text = collection.title,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -169,7 +170,7 @@ private fun CollectionRow(
                             else -> "$count series"
                         }
                     } ?: "Collection",
-                    color = Color(0xFFB9BDBD),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -178,7 +179,7 @@ private fun CollectionRow(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = Color(0xFFE6EAEA)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

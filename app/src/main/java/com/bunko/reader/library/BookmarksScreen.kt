@@ -151,7 +151,7 @@ private fun BookmarkCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF303333))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         Column {
             AsyncImage(
@@ -160,13 +160,13 @@ private fun BookmarkCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(KavitaCoverAspectRatio)
-                    .background(Color(0xFF111111)),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentScale = ContentScale.Crop
             )
             Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
                 Text(
                     text = bookmark.displayTitle(),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
@@ -175,7 +175,7 @@ private fun BookmarkCard(
                 Spacer(Modifier.height(3.dp))
                 Text(
                     text = bookmark.displaySubtitle(),
-                    color = Color(0xFFB9BDBD),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.bunko.reader.ui.theme.accessibleContentColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
@@ -258,7 +259,7 @@ private fun IssueReadSplitButton(
     }
     val colors = ButtonDefaults.buttonColors(
         containerColor = containerColor,
-        contentColor = Color.White
+        contentColor = containerColor.accessibleContentColor()
     )
 
     BoxWithConstraints(modifier) {

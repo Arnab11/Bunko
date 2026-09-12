@@ -115,7 +115,7 @@ internal fun OfflineHomePane(
                 ) {
                     Text(
                         text = "Continue Reading",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -166,7 +166,7 @@ internal fun OfflineHomePane(
             ) {
                 Text(
                     text = "Recently Added",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -277,14 +277,14 @@ internal fun OfflineSearchPane(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = { Text("Search books & comics...", color = Color(0xFF8E9192)) },
+            placeholder = { Text("Search books & comics...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
             leadingIcon = {
-                Icon(imageVector = Icons.Filled.Search, contentDescription = null, tint = Color(0xFFB9BDBD))
+                Icon(imageVector = Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(imageVector = Icons.Filled.Clear, contentDescription = "Clear", tint = Color.White)
+                        Icon(imageVector = Icons.Filled.Clear, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             },
@@ -294,12 +294,12 @@ internal fun OfflineSearchPane(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedContainerColor = Color(0xFF181A1A),
-                unfocusedContainerColor = Color(0xFF181A1A),
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                unfocusedBorderColor = Color(0xFF2A2D2D)
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
             )
         )
 
@@ -307,7 +307,7 @@ internal fun OfflineSearchPane(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = "Type to search your offline library",
-                    color = Color(0xFF8E9192),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
@@ -315,14 +315,14 @@ internal fun OfflineSearchPane(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = "No books found matching \"$searchQuery\"",
-                    color = Color(0xFF8E9192),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
         } else {
             Text(
                 text = "${searchResults.size} results",
-                color = Color(0xFFB9BDBD),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
@@ -385,7 +385,7 @@ internal fun OfflineLibrariesPane(
                 )
                 Text(
                     text = "• ${selectedFormatFilter?.displayName} (${displayedBooks.size})",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -423,7 +423,7 @@ internal fun OfflineLibrariesPane(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2020))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Row(
@@ -446,13 +446,13 @@ internal fun OfflineLibrariesPane(
                         Column(Modifier.weight(1f)) {
                             Text(
                                 text = folderName ?: "Default Storage",
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = "${books.size} total books found",
-                                color = Color(0xFFB9BDBD),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -469,8 +469,8 @@ internal fun OfflineLibrariesPane(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF2C2E2E),
-                                contentColor = Color.White
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface
                             )
                         ) {
                             Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -498,7 +498,7 @@ internal fun OfflineLibrariesPane(
         item {
             Text(
                 text = "Format Libraries",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(top = 8.dp)
@@ -594,7 +594,7 @@ private fun FormatLibraryCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C1C))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         Row(
             modifier = Modifier
@@ -605,33 +605,33 @@ private fun FormatLibraryCard(
         ) {
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = Color(0xFF282A2A),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(44.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
             Column(Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = subtitle,
-                    color = Color(0xFF8E9192),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
             Surface(
                 shape = CircleShape,
-                color = Color(0xFF282A2A)
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Text(
                     text = "$count",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                 )
@@ -656,7 +656,7 @@ fun LocalBookPosterCard(
                 .fillMaxWidth()
                 .aspectRatio(KavitaCoverAspectRatio)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF1B1D1D))
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
         ) {
             if (book.hasCover) {
                 AsyncImage(
@@ -705,7 +705,7 @@ fun LocalBookPosterCard(
         ) {
             Text(
                 text = book.title,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 minLines = 2,
@@ -733,7 +733,7 @@ fun LocalBookPosterCard(
                 Text(
                     text = book.formattedSize,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF8E9192)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -762,7 +762,7 @@ fun LocalBookListItem(
                 modifier = Modifier
                     .size(width = 80.dp, height = 114.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF111111)),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
                 if (book.hasCover) {
@@ -783,7 +783,7 @@ fun LocalBookListItem(
             ) {
                 Text(
                     text = book.title,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
@@ -809,7 +809,7 @@ fun LocalBookListItem(
                     Text(
                         text = book.formattedSize,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF8E9192)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     if (book.lastReadPage > 0) {
@@ -902,7 +902,7 @@ fun EmptyLibraryState(
         ) {
             Surface(
                 shape = CircleShape,
-                color = Color(0xFF1E2020),
+                color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.size(80.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -919,7 +919,7 @@ fun EmptyLibraryState(
                 text = if (hasBooksOverall) "No matching books" else "No books found",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
 
             Text(
@@ -929,7 +929,7 @@ fun EmptyLibraryState(
                     "Choose a folder containing CBZ, ZIP, EPUB, or PDF files to get started."
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF8E9192),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.width(300.dp)
             )
@@ -955,8 +955,8 @@ fun EmptyLibraryState(
                         onClick = onRescan,
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF282A2A),
-                            contentColor = Color.White
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         )
                     ) {
                         Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))

@@ -41,7 +41,7 @@ internal fun ReaderChapterBoundaryScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF111412)),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -56,7 +56,7 @@ internal fun ReaderChapterBoundaryScreen(
                 Text(
                     text = seriesName,
                     style = MaterialTheme.typography.labelLarge,
-                    color = Color(0xFFADB5B0),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -64,7 +64,7 @@ internal fun ReaderChapterBoundaryScreen(
             Text(
                 text = if (movingForward) "Chapter complete" else "Start of chapter",
                 style = MaterialTheme.typography.headlineSmall,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onSurface
             )
             ChapterBoundaryName(
                 label = if (movingForward) "Finished" else "Current chapter",
@@ -73,12 +73,12 @@ internal fun ReaderChapterBoundaryScreen(
             Text(
                 text = if (movingForward) "Next" else "Previous",
                 style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFFADB5B0)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = boundary.neighbor.displayName,
                 style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -116,12 +116,12 @@ private fun ChapterBoundaryName(label: String, name: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = Color(0xFFADB5B0)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = name,
             style = MaterialTheme.typography.titleMedium,
-            color = Color(0xFFDCE2DE),
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis

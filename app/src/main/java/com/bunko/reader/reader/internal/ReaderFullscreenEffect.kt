@@ -10,10 +10,14 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.luminance
+
 /** Internal to reader, not for external use. */
 @Composable
 internal fun ReaderFullscreenEffect(showStatusBar: Boolean) {
     val view = LocalView.current
+    val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     DisposableEffect(view) {
         val activity = view.context.findActivity()
         if (activity == null) {
@@ -34,6 +38,8 @@ internal fun ReaderFullscreenEffect(showStatusBar: Boolean) {
     SideEffect {
         val activity = view.context.findActivity() ?: return@SideEffect
         WindowInsetsControllerCompat(activity.window, view).apply {
+            isAppearanceLightStatusBars = isLightMode
+            isAppearanceLightNavigationBars = isLightMode
             hide(WindowInsetsCompat.Type.navigationBars())
             if (showStatusBar) {
                 show(WindowInsetsCompat.Type.statusBars())

@@ -1,4 +1,4 @@
-﻿package com.bunko.reader.library
+package com.bunko.reader.library
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -130,7 +130,7 @@ private fun DownloadedGrid(
                         } else {
                             "Select all"
                         },
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 IconButton(
@@ -144,7 +144,7 @@ private fun DownloadedGrid(
                     Icon(
                         imageVector = Icons.Filled.Delete,
                         contentDescription = "Delete selected downloads",
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             } else if (records.isNotEmpty()) {
@@ -152,7 +152,7 @@ private fun DownloadedGrid(
                     Icon(
                         imageVector = Icons.Filled.Checklist,
                         contentDescription = "Select items",
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -200,7 +200,7 @@ private fun DownloadedIssueCard(
                     onClick = onClick,
                     onLongClick = onLongClick
                 ),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF303333))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
         ) {
             Column {
                 AsyncImage(
@@ -209,13 +209,13 @@ private fun DownloadedIssueCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(KavitaCoverAspectRatio)
-                        .background(Color(0xFF111111)),
+                        .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                     contentScale = ContentScale.Crop
                 )
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
                     Text(
                         text = record.issueName,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
@@ -224,7 +224,7 @@ private fun DownloadedIssueCard(
                     Spacer(Modifier.height(3.dp))
                     Text(
                         text = record.seriesName,
-                        color = Color(0xFFB9BDBD),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

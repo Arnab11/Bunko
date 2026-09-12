@@ -2,7 +2,6 @@ package com.bunko.reader
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -11,11 +10,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,17 +28,23 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import com.bunko.reader.cache.ImageCacheManager
 import com.bunko.reader.cache.ImageCacheUsage
 import com.bunko.reader.reader.ReaderSessionPreferenceCache
+import com.bunko.reader.settings.CategoryRowGap
+import com.bunko.reader.settings.ClickableSettingRow
+import com.bunko.reader.settings.SettingsSectionCard
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CacheSettingsScreen(onBack: () -> Unit) {
+fun CacheSettingsScreen(
+    onBack: () -> Unit,
+    showTopBar: Boolean = true
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var usage by remember { mutableStateOf<ImageCacheUsage?>(null) }
@@ -65,93 +72,94 @@ fun CacheSettingsScreen(onBack: () -> Unit) {
         Column(
             Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+                .then(if (showTopBar) Modifier.statusBarsPadding().navigationBarsPadding() else Modifier)
         ) {
-            SettingsTopAppBar(title = "Storage & cache", onBack = onBack)
+            if (showTopBar) {
+                SettingsTopAppBar(title = "Storage & Cache", onBack = onBack)
+            }
             Column(
                 modifier = Modifier
-                    .widthIn(max = SettingsFormContentMaxWidth)
-                    .fillMaxWidth()
-                    .align(Alignment.CenterHorizontally)
+                    .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 val currentUsage = usage
-                Text("Image cache", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Cached images make recently read pages and covers reopen faster. " +
-                        "Offline downloads are stored separately and are not affected.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    "Reader direction and invert choices are cached per series for 30 days.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                CacheUsageRow(
-                    title = "Cover images",
-                    usage = currentUsage?.coverBytes,
-                    limit = currentUsage?.coverLimitBytes,
-                    enabled = !clearing,
-                    onClear = { clear { ImageCacheManager.clearCoverCache(ctx) } }
-                )
-                CacheUsageRow(
-                    title = "Reader pages",
-                    usage = currentUsage?.readerBytes,
-                    limit = currentUsage?.readerLimitBytes,
-                    enabled = !clearing,
-                    onClear = { clear { ImageCacheManager.clearReaderCache(ctx) } }
-                )
-                Spacer(Modifier.padding(top = 4.dp))
-                OutlinedButton(
-                    onClick = {
-                        clear {
-                            ImageCacheManager.clearAll(ctx)
-                            ReaderSessionPreferenceCache.clear(ctx.cacheDir)
-                        }
-                    },
-                    enabled = !clearing
-                ) {
-                    Text(if (clearing) "Clearing..." else "Clear all caches")
+
+                // Cache Usage Section
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Image & Data Cache",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        ClickableSettingRow(
+                            icon = Icons.Filled.Image,
+                            title = "Cover Images",
+                            subtitle = if (currentUsage == null) "Calculating..." else "${formatCacheBytes(currentUsage.coverBytes)} of ${formatCacheBytes(currentUsage.coverLimitBytes)}",
+                            trailingText = if (clearing) "..." else "Clear",
+                            onClick = { if (!clearing) clear { ImageCacheManager.clearCoverCache(ctx) } }
+                        )
+                        CategoryRowGap()
+                        ClickableSettingRow(
+                            icon = Icons.AutoMirrored.Filled.MenuBook,
+                            title = "Reader Pages",
+                            subtitle = if (currentUsage == null) "Calculating..." else "${formatCacheBytes(currentUsage.readerBytes)} of ${formatCacheBytes(currentUsage.readerLimitBytes)}",
+                            trailingText = if (clearing) "..." else "Clear",
+                            onClick = { if (!clearing) clear { ImageCacheManager.clearReaderCache(ctx) } }
+                        )
+                    }
                 }
-                Text(
-                    "Android may clear these caches when storage is needed. You can also clear " +
-                        "them from the system App info screen.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedButton(onClick = ::refresh, enabled = !clearing) {
-                    Text("Refresh usage")
+
+                // Cache Management Actions Section
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Maintenance",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        ClickableSettingRow(
+                            icon = Icons.Filled.DeleteSweep,
+                            title = "Clear All Caches",
+                            subtitle = "Frees up all cached images and series reading preferences",
+                            trailingText = if (clearing) "Clearing..." else "Clear All",
+                            onClick = {
+                                if (!clearing) {
+                                    clear {
+                                        ImageCacheManager.clearAll(ctx)
+                                        ReaderSessionPreferenceCache.clear(ctx.cacheDir)
+                                    }
+                                }
+                            }
+                        )
+                        CategoryRowGap()
+                        ClickableSettingRow(
+                            icon = Icons.Filled.Refresh,
+                            title = "Refresh Usage",
+                            subtitle = "Recalculate cache sizes currently stored on device",
+                            trailingText = "Refresh",
+                            onClick = ::refresh
+                        )
+                    }
                 }
+
+                Text(
+                    text = "Cached images make recently opened covers and pages reopen instantaneously. Offline downloads are stored separately and are never deleted when clearing cache.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
             }
         }
     }
-}
-
-@Composable
-private fun CacheUsageRow(
-    title: String,
-    usage: Long?,
-    limit: Long?,
-    enabled: Boolean,
-    onClear: () -> Unit
-) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = {
-            Text(
-                if (usage == null || limit == null) "Calculating..."
-                else "${formatCacheBytes(usage)} of up to ${formatCacheBytes(limit)}"
-            )
-        },
-        trailingContent = {
-            OutlinedButton(onClick = onClear, enabled = enabled) { Text("Clear") }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
 }
 
 private fun formatCacheBytes(bytes: Long): String {

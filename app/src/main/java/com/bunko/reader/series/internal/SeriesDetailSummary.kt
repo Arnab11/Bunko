@@ -43,6 +43,7 @@ import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.bunko.reader.ui.theme.accessibleContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -142,7 +143,7 @@ internal fun SeriesDetailSummary(
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = text,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = if (summaryExpanded) Int.MAX_VALUE else 8,
                     overflow = TextOverflow.Ellipsis,
@@ -305,7 +306,7 @@ private fun DetailChipBlock(
         if (showTitle) {
             Text(
                 text = title,
-                color = Color(0xFFB9BDBD),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -409,7 +410,7 @@ private fun SeriesReadSplitButton(
     }
     val colors = ButtonDefaults.buttonColors(
         containerColor = containerColor,
-        contentColor = Color.White
+        contentColor = containerColor.accessibleContentColor()
     )
     val mainMenuItems = buildList {
         add(SeriesMenuAction.WantToRead)
@@ -696,7 +697,7 @@ private fun SeriesCover(series: SeriesDto, session: KavitaSession, modifier: Mod
     Box(
         modifier = modifier
             .aspectRatio(KavitaCoverAspectRatio)
-            .background(Color(0xFF111111)),
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest),
         contentAlignment = Alignment.Center
     ) {
         if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
@@ -707,7 +708,7 @@ private fun SeriesCover(series: SeriesDto, session: KavitaSession, modifier: Mod
                 contentScale = ContentScale.Crop
             )
         } else {
-            Text(seriesInitial(series.name), color = Color(0xFFB9BDBD), style = MaterialTheme.typography.headlineMedium)
+            Text(seriesInitial(series.name), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.headlineMedium)
         }
     }
 }
@@ -732,7 +733,7 @@ private fun SeriesDetailHeroInfo(
         ) {
             Text(
                 text = series.name,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 maxLines = 3,
@@ -748,7 +749,7 @@ private fun SeriesDetailHeroInfo(
             ).forEach { line ->
                 Text(
                     text = line,
-                    color = Color(0xFFE6EAEA),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis

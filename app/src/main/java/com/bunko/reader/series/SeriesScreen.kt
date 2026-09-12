@@ -212,7 +212,7 @@ fun SeriesScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 },
@@ -243,7 +243,7 @@ fun SeriesScreen(
                                 Text(
                                     text = series.size.seriesCountLabel(),
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White.copy(alpha = 0.68f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -257,7 +257,7 @@ fun SeriesScreen(
                             Icon(
                                 imageVector = Icons.Filled.Search,
                                 contentDescription = "Search titles",
-                                tint = Color.White
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         Box {
@@ -265,7 +265,7 @@ fun SeriesScreen(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
                                     contentDescription = "Sort series",
-                                    tint = Color.White
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                             DropdownMenuPopup(
@@ -307,12 +307,12 @@ fun SeriesScreen(
                                                 textColor = if (selected) {
                                                     MaterialTheme.colorScheme.onSecondaryContainer
                                                 } else {
-                                                    Color.White
+                                                    MaterialTheme.colorScheme.onSurface
                                                 },
                                                 trailingIconColor = if (selected) {
                                                     MaterialTheme.colorScheme.onSecondaryContainer
                                                 } else {
-                                                    Color.White.copy(alpha = 0.68f)
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
                                                 }
                                             )
                                         )
@@ -330,7 +330,7 @@ fun SeriesScreen(
                                 Icon(
                                     imageVector = Icons.Filled.MoreVert,
                                     contentDescription = "Library actions",
-                                    tint = Color.White
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                             DropdownMenuPopup(
@@ -374,9 +374,9 @@ fun SeriesScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = BunkoBackground,
                     scrolledContainerColor = BunkoChrome,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -437,7 +437,7 @@ private fun LibrarySearchField(
 ) {
     Surface(
         color = BunkoSurface,
-        contentColor = Color.White,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.extraLarge,
         modifier = modifier.height(48.dp)
     ) {
@@ -454,15 +454,15 @@ private fun LibrarySearchField(
                     .weight(1f)
                     .focusRequester(focusRequester),
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-                cursorBrush = SolidColor(Color(0xFF98D8C0)),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 decorationBox = { innerTextField ->
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (query.isBlank()) {
                             Text(
                                 text = placeholder,
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = Color.White.copy(alpha = 0.64f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -524,7 +524,7 @@ private fun SeriesLibraryGrid(
 private fun HomeSearchLink(query: String, onSearchHome: (String) -> Unit) {
     Surface(
         color = BunkoSurface,
-        contentColor = Color.White,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.small,
         modifier = Modifier
             .fillMaxWidth()

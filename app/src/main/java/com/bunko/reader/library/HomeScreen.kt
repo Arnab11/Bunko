@@ -178,7 +178,8 @@ fun LibraryScreen(
     onSelectSeries: (SeriesDto) -> Unit,
     onOpenOfflineBook: (LocalBook) -> Unit = {},
     onRequireLogin: () -> Unit = {},
-    onSwitchToOffline: (() -> Unit)? = null
+    onSwitchToOffline: (() -> Unit)? = null,
+    onToggleTheme: (() -> Unit)? = null
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -525,7 +526,8 @@ fun LibraryScreen(
             onOpenOfflineBook = onOpenOfflineBook,
             onChangeOfflineFolder = { folderLauncher.launch(null) },
             onRescanOffline = ::rescanOffline,
-            onToggleLibraryMode = ::toggleLibraryMode
+            onToggleLibraryMode = ::toggleLibraryMode,
+            onToggleTheme = onToggleTheme
         )
         SnackbarHost(
             hostState = snackbarHostState,

@@ -14,12 +14,22 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import com.bunko.reader.ui.theme.LocalThemeTransitionState
+import kotlinx.coroutines.delay
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -151,7 +161,8 @@ internal fun HomeShell(
     onOpenOfflineBook: (LocalBook) -> Unit = {},
     onChangeOfflineFolder: () -> Unit = {},
     onRescanOffline: () -> Unit = {},
-    onToggleLibraryMode: () -> Unit = {}
+    onToggleLibraryMode: () -> Unit = {},
+    onToggleTheme: (() -> Unit)? = null
 ) {
     var destination by rememberSaveable(
         initialSearchQuery,
@@ -198,7 +209,7 @@ internal fun HomeShell(
             Icon(
                 imageVector = Icons.Filled.Search,
                 contentDescription = "Search",
-                tint = if (destination == HomeDestination.Search) MaterialTheme.colorScheme.primary else Color.White
+                tint = if (destination == HomeDestination.Search) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
             )
         }
 
@@ -208,20 +219,20 @@ internal fun HomeShell(
                     Icon(
                         imageVector = Icons.Filled.Sort,
                         contentDescription = "Sort options",
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 DropdownMenu(
                     expanded = sortMenuExpanded,
                     onDismissRequest = { sortMenuExpanded = false },
-                    containerColor = Color(0xFF282A2A)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     LocalBookSort.entries.forEach { sortOption ->
                         DropdownMenuItem(
                             text = {
                                 Text(
                                     text = sortOption.label,
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = if (sortOption == selectedSort) FontWeight.Bold else FontWeight.Normal
                                 )
                             },
@@ -246,7 +257,7 @@ internal fun HomeShell(
                 Icon(
                     imageVector = if (isGridView) Icons.Filled.ViewList else Icons.Filled.GridView,
                     contentDescription = if (isGridView) "Switch to list view" else "Switch to grid view",
-                    tint = Color.White
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         } else {
@@ -255,20 +266,20 @@ internal fun HomeShell(
                     Icon(
                         imageVector = Icons.Filled.Sort,
                         contentDescription = "Sort and filter options",
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 DropdownMenu(
                     expanded = sortMenuExpanded,
                     onDismissRequest = { sortMenuExpanded = false },
-                    containerColor = Color(0xFF282A2A)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     SeriesLibrarySort.entries.forEach { sortOption ->
                         DropdownMenuItem(
                             text = {
                                 Text(
                                     text = sortOption.label,
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = if (sortOption == kavitaSort) FontWeight.Bold else FontWeight.Normal
                                 )
                             },
@@ -293,7 +304,7 @@ internal fun HomeShell(
                 Icon(
                     imageVector = if (isGridView) Icons.Filled.ViewList else Icons.Filled.GridView,
                     contentDescription = if (isGridView) "Switch to list view" else "Switch to grid view",
-                    tint = Color.White
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
@@ -302,8 +313,6 @@ internal fun HomeShell(
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
             .background(BunkoBackground)
     ) {
         val wide = maxWidth >= 720.dp
@@ -314,9 +323,14 @@ internal fun HomeShell(
                     isOffline = isOffline,
                     onOpenSettings = onOpenSettings,
                     onSwitchMode = onToggleLibraryMode,
+                    onToggleTheme = onToggleTheme,
                     actions = topBarActions
                 )
-                Row(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
                     HomeNavigationRail(
                         selected = destination,
                         onSelect = ::selectDestination
@@ -370,6 +384,12 @@ internal fun HomeShell(
                         modifier = Modifier.weight(1f)
                     )
                 }
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Spacer(Modifier.navigationBarsPadding())
+                }
             }
         } else {
             Column(Modifier.fillMaxSize()) {
@@ -378,6 +398,7 @@ internal fun HomeShell(
                     isOffline = isOffline,
                     onOpenSettings = onOpenSettings,
                     onSwitchMode = onToggleLibraryMode,
+                    onToggleTheme = onToggleTheme,
                     actions = topBarActions
                 )
                 HomeContent(
@@ -444,17 +465,27 @@ internal fun HomeTopBar(
     isOffline: Boolean = false,
     onOpenSettings: () -> Unit,
     onSwitchMode: (() -> Unit)? = null,
+    onToggleTheme: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     var modeMenuExpanded by remember { mutableStateOf(false) }
+    val titleBounds = remember { mutableStateOf(Rect.Zero) }
+    val themeTransition = LocalThemeTransitionState.current
+    val coroutineScope = rememberCoroutineScope()
+    val currentOnToggleTheme by rememberUpdatedState(onToggleTheme)
+    val currentThemeTransition by rememberUpdatedState(themeTransition)
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF181A1A))
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth()
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         Column(Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -462,17 +493,38 @@ internal fun HomeTopBar(
             ) {
                 Text(
                     text = "Bunko",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .onGloballyPositioned { coordinates ->
+                            titleBounds.value = coordinates.boundsInWindow()
+                        }
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { localOffset ->
+                                    val transition = currentThemeTransition
+                                    if (transition?.isAnimating == true) return@detectTapGestures
+                                    val windowOffset = Offset(
+                                        titleBounds.value.left + localOffset.x,
+                                        titleBounds.value.top + localOffset.y
+                                    )
+                                    transition?.startTransition(windowOffset)
+                                    coroutineScope.launch {
+                                        delay(50)
+                                        currentOnToggleTheme?.invoke()
+                                    }
+                                }
+                            )
+                        }
                 )
 
                 Box {
                     Surface(
                         onClick = { modeMenuExpanded = true },
                         shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.12f),
-                        contentColor = Color.White
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -495,15 +547,15 @@ internal fun HomeTopBar(
                     DropdownMenu(
                         expanded = modeMenuExpanded,
                         onDismissRequest = { modeMenuExpanded = false },
-                        containerColor = Color(0xFF282A2A)
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Kavita Server", color = Color.White, fontWeight = FontWeight.Medium) },
+                            text = { Text("Kavita Server", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Filled.CloudSync,
                                     contentDescription = null,
-                                    tint = if (!isOffline) MaterialTheme.colorScheme.primary else Color(0xFFB9BDBD)
+                                    tint = if (!isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
                             trailingIcon = {
@@ -521,12 +573,12 @@ internal fun HomeTopBar(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Offline Library", color = Color.White, fontWeight = FontWeight.Medium) },
+                            text = { Text("Offline Library", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Filled.Folder,
                                     contentDescription = null,
-                                    tint = if (isOffline) MaterialTheme.colorScheme.primary else Color(0xFFB9BDBD)
+                                    tint = if (isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
                             trailingIcon = {
@@ -548,7 +600,7 @@ internal fun HomeTopBar(
             }
             Text(
                 text = subtitle,
-                color = Color(0xFFB9BDBD),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -559,10 +611,11 @@ internal fun HomeTopBar(
             Icon(
                 imageVector = Icons.Filled.Settings,
                 contentDescription = "Settings",
-                tint = Color.White
+                tint = MaterialTheme.colorScheme.onSurface
             )
         }
     }
+}
 }
 
 /** Backward-compatible overload for existing Kavita Home calls. */
@@ -600,14 +653,14 @@ internal fun HomeNavigationRail(
         ModalWideNavigationRail(
             modifier = Modifier
                 .fillMaxHeight()
-                .background(Color(0xFF181A1A)),
+                .background(MaterialTheme.colorScheme.surfaceContainer),
             state = railState,
             hideOnCollapse = false,
             colors = WideNavigationRailDefaults.colors(
-                containerColor = Color(0xFF181A1A),
-                contentColor = Color.White,
-                modalContainerColor = BunkoBackground,
-                modalContentColor = Color.White
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modalContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                modalContentColor = MaterialTheme.colorScheme.onSurface
             ),
             header = null
         ) {
@@ -635,17 +688,24 @@ internal fun HomeBottomNavigation(
     selected: HomeDestination,
     onSelect: (HomeDestination) -> Unit
 ) {
-    ShortNavigationBar(
-        containerColor = Color(0xFF181A1A),
-        contentColor = Color.White
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        MainNavDestinations.forEach { destination ->
-            ShortNavigationBarItem(
-                selected = selected == destination,
-                onClick = { onSelect(destination) },
-                icon = { NavDestinationIcon(destination, selected == destination) },
-                label = { Text(destination.label) }
-            )
+        Box(Modifier.navigationBarsPadding()) {
+            ShortNavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ) {
+                MainNavDestinations.forEach { destination ->
+                    ShortNavigationBarItem(
+                        selected = selected == destination,
+                        onClick = { onSelect(destination) },
+                        icon = { NavDestinationIcon(destination, selected == destination) },
+                        label = { Text(destination.label) }
+                    )
+                }
+            }
         }
     }
 }

@@ -90,17 +90,17 @@ internal fun ChapterSectionHeader(title: String, count: Int) {
     ) {
         Text(
             text = title,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onBackground,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
         Surface(
-            color = Color(0xFF596061),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = MaterialTheme.shapes.small
         ) {
             Text(
                 text = count.toString(),
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
             )
@@ -129,14 +129,14 @@ internal fun ChapterGridCard(item: ChapterCardItem, session: KavitaSession, onCl
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF303333))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(KavitaCoverAspectRatio)
-                    .background(Color(0xFF111111)),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
                 if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
@@ -147,7 +147,7 @@ internal fun ChapterGridCard(item: ChapterCardItem, session: KavitaSession, onCl
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    Text("CH", color = Color(0xFFB9BDBD), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("CH", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
             }
             Box(Modifier.fillMaxWidth()) {
@@ -161,7 +161,7 @@ internal fun ChapterGridCard(item: ChapterCardItem, session: KavitaSession, onCl
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
                     Text(
                         text = label,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,

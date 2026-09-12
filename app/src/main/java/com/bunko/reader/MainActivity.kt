@@ -5,7 +5,11 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import androidx.activity.ComponentActivity
+import android.os.Build
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,15 +38,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.bunko.reader.ui.theme.AppTheme
+import com.bunko.reader.ui.theme.resolveBunkoColorScheme
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.bunko.reader.settings.SettingsAdaptiveScreen
+import com.bunko.reader.ui.theme.rememberThemeTransitionState
 import androidx.navigation.compose.rememberNavController
 import coil.Coil
 import coil.ImageLoader
@@ -67,8 +77,41 @@ import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.OfflineStartupScreen
 
 class MainActivity : ComponentActivity() {
+    private data class EdgeToEdgeState(
+        val isDarkMode: Boolean,
+        val appTheme: AppTheme,
+        val isAmoled: Boolean,
+    )
+
+    private var appliedEdgeToEdgeState: EdgeToEdgeState? = null
+
+    private fun applyEdgeToEdge(
+        isDarkMode: Boolean,
+        appTheme: AppTheme = AppTheme.Default,
+        isAmoled: Boolean = false,
+    ) {
+        val nextState = EdgeToEdgeState(isDarkMode, appTheme, isAmoled)
+        if (appliedEdgeToEdgeState == nextState) return
+
+        val lightScheme = resolveBunkoColorScheme(this, appTheme, isDarkMode = false, isAmoled = false)
+        val darkScheme = resolveBunkoColorScheme(this, appTheme, isDarkMode = true, isAmoled = isAmoled)
+        val synchronizedBarStyle = SystemBarStyle.auto(
+            lightScrim = lightScheme.surfaceContainer.toArgb(),
+            darkScrim = darkScheme.surfaceContainer.toArgb(),
+        ) { isDarkMode }
+        enableEdgeToEdge(
+            statusBarStyle = synchronizedBarStyle,
+            navigationBarStyle = synchronizedBarStyle,
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
+        appliedEdgeToEdgeState = nextState
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyEdgeToEdge(isDarkMode = true)
 
         val sessionStore = KavitaSessionStore(this)
         val settingsStore = AppSettingsStore(this)
@@ -85,10 +128,37 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            BunkoTheme {
+            val appSettings by settingsStore.flow.collectAsState(initial = AppSettings())
+            val themeTransitionState = rememberThemeTransitionState()
+
+            LaunchedEffect(appSettings.isDarkMode, appSettings.appTheme, appSettings.isAmoledMode) {
+                if (themeTransitionState.isAnimating) {
+                    snapshotFlow {
+                        themeTransitionState.animationProgress.value to themeTransitionState.isAnimating
+                    }.first { (progress, isAnimating) ->
+                        !isAnimating || progress >= SYSTEM_BAR_THEME_SWITCH_PROGRESS
+                    }
+                }
+                applyEdgeToEdge(
+                    isDarkMode = appSettings.isDarkMode,
+                    appTheme = appSettings.appTheme,
+                    isAmoled = appSettings.isAmoledMode,
+                )
+            }
+
+            BunkoTheme(
+                theme = appSettings.appTheme,
+                isDarkMode = appSettings.isDarkMode,
+                isAmoledMode = appSettings.isAmoledMode,
+                transitionState = themeTransitionState
+            ) {
                 AppRoot(sessionStore, settingsStore, loginDefaults)
             }
         }
+    }
+
+    companion object {
+        private const val SYSTEM_BAR_THEME_SWITCH_PROGRESS = 0.55f
     }
 }
 
@@ -167,10 +237,14 @@ fun AppRoot(
     val startupCompleted by localRepository.startupCompletedFlow.collectAsState(initial = null)
     val activeMode by localRepository.activeModeFlow.collectAsState(initial = null)
 
-    LaunchedEffect(Unit) {
-        val session = sessionStore.load()
-        if (session.baseUrl.isNotBlank() && (session.jwt.isNotBlank() || session.apiKey.isNotBlank())) {
-            localRepository.setStartupCompleted(true)
+    val forceStartup = (ctx as? android.app.Activity)?.intent?.getBooleanExtra("force_startup", false) ?: false
+
+    LaunchedEffect(forceStartup) {
+        if (!forceStartup) {
+            val session = sessionStore.load()
+            if (session.baseUrl.isNotBlank() && (session.jwt.isNotBlank() || session.apiKey.isNotBlank())) {
+                localRepository.setStartupCompleted(true)
+            }
         }
     }
 
@@ -184,7 +258,7 @@ fun AppRoot(
     }
 
     val resolvedStart = remember {
-        if (!startupCompleted!!) {
+        if (forceStartup || !startupCompleted!!) {
             "startup"
         } else {
             "libraries"
@@ -330,6 +404,9 @@ fun AppRoot(
                     },
                     onRequireLogin = {
                         nav.navigate("login")
+                    },
+                    onToggleTheme = {
+                        scope.launch { settingsStore.toggleDarkMode() }
                     }
                 )
             }
@@ -448,13 +525,14 @@ fun AppRoot(
                 val seriesId = backStack.arguments!!.getInt("seriesId")
                 val seriesName = backStack.arguments!!.getString("seriesName") ?: ""
                 ChapterPickScreen(
-                    sessionStore,
-                    libraryId,
-                    seriesId,
-                    seriesName,
+                    sessionStore = sessionStore,
+                    libraryId = libraryId,
+                    seriesId = seriesId,
+                    seriesName = seriesName,
                     onOpenFilteredSeries = { target, id, label ->
                         nav.navigate("search-series/${target.routeValue}/$id/${Uri.encode(label)}")
-                    }
+                    },
+                    onBack = { nav.popBackStack() }
                 ) { chapterId, volumeId, incognito ->
                     nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=$incognito")
                 }
@@ -497,10 +575,11 @@ fun AppRoot(
             }
 
             composable("settings") {
-                SettingsHubScreen(
-                    onServer = { nav.navigate("settings/server") },
-                    onReader = { nav.navigate("settings/reader") },
-                    onStorage = { nav.navigate("settings/cache") },
+                SettingsAdaptiveScreen(
+                    settingsStore = settingsStore,
+                    localRepository = localRepository,
+                    sessionStore = sessionStore,
+                    onConfigureServerDetails = { nav.navigate("settings/server") },
                     onBack = { nav.popBackStack() }
                 )
             }
