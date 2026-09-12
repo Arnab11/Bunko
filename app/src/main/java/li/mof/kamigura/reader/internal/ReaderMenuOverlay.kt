@@ -196,8 +196,8 @@ internal fun ReaderMenuOverlay(
             Surface(
                 onClick = { showDisplayOptions = !showDisplayOptions },
                 shape = RoundedCornerShape(12.dp),
-                color = if (showDisplayOptions) Color(0xFF384357) else Color.Transparent,
-                contentColor = if (showDisplayOptions) Color(0xFF8AB4F8) else Color.White,
+                color = if (showDisplayOptions) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                contentColor = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else Color.White,
                 modifier = Modifier.size(40.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -206,7 +206,7 @@ internal fun ReaderMenuOverlay(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Serif,
-                        color = if (showDisplayOptions) Color(0xFF8AB4F8) else Color.White
+                        color = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else Color.White
                     )
                 }
             }
@@ -235,7 +235,7 @@ internal fun ReaderMenuOverlay(
                         detectTapGestures { /* consume taps inside */ }
                     },
                 shape = RoundedCornerShape(20.dp),
-                color = Color(0xF51E2024),
+                color = Color(0xFF1E2024),
                 tonalElevation = 8.dp,
                 shadowElevation = 16.dp
             ) {
@@ -245,10 +245,12 @@ internal fun ReaderMenuOverlay(
                         .padding(bottom = 16.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    val accentBlue = Color(0xFF8AB4F8)
+                    // Selected states mirror Reader Settings: M3 ToggleButtons keep
+                    // their defaults, custom highlights use the same selected pair.
+                    val accent = MaterialTheme.colorScheme.onSecondaryContainer
+                    val accentFill = MaterialTheme.colorScheme.secondaryContainer
                     val unselectedText = Color(0xFF9AA0A6)
                     val segmentBg = Color(0xFF26282E)
-                    val segmentCheckedBg = Color(0xFF384357)
 
                     // TABS (Text & Lighting)
                     TabRow(
@@ -258,7 +260,7 @@ internal fun ReaderMenuOverlay(
                         indicator = { tabPositions ->
                             TabRowDefaults.SecondaryIndicator(
                                 Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
-                                color = accentBlue,
+                                color = accent,
                                 height = 3.dp
                             )
                         },
@@ -278,7 +280,7 @@ internal fun ReaderMenuOverlay(
                                 Text(
                                     text = "Text",
                                     fontWeight = if (selectedTab == MenuOptionTab.Text) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (selectedTab == MenuOptionTab.Text) accentBlue else unselectedText
+                                    color = if (selectedTab == MenuOptionTab.Text) accent else unselectedText
                                 )
                             }
                         )
@@ -289,7 +291,7 @@ internal fun ReaderMenuOverlay(
                                 Text(
                                     text = "Lighting",
                                     fontWeight = if (selectedTab == MenuOptionTab.Lighting) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (selectedTab == MenuOptionTab.Lighting) accentBlue else unselectedText
+                                    color = if (selectedTab == MenuOptionTab.Lighting) accent else unselectedText
                                 )
                             }
                         )
@@ -331,11 +333,11 @@ internal fun ReaderMenuOverlay(
                                                     modifier = Modifier
                                                         .size(52.dp)
                                                         .clip(CircleShape)
-                                                        .background(if (isSelected) accentBlue else segmentBg)
+                                                        .background(if (isSelected) accentFill else segmentBg)
                                                         .border(
                                                             BorderStroke(
                                                                 1.dp,
-                                                                if (isSelected) accentBlue else Color(0x388E9196)
+                                                                if (isSelected) accent else Color(0x388E9196)
                                                             ),
                                                              CircleShape
                                                         ),
@@ -345,14 +347,14 @@ internal fun ReaderMenuOverlay(
                                                         text = "A",
                                                         fontSize = 24.sp,
                                                         fontFamily = fam,
-                                                        color = if (isSelected) Color(0xFF101318) else Color.White
+                                                        color = if (isSelected) accent else Color.White
                                                     )
                                                 }
                                                 Text(
                                                     text = label,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                                    color = if (isSelected) accentBlue else unselectedText
+                                                    color = if (isSelected) accent else unselectedText
                                                 )
                                             }
                                         }
@@ -426,13 +428,7 @@ internal fun ReaderMenuOverlay(
                                                         0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                                                         alignments.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                    },
-                                                    colors = ToggleButtonDefaults.toggleButtonColors(
-                                                        containerColor = segmentBg,
-                                                        contentColor = unselectedText,
-                                                        checkedContainerColor = segmentCheckedBg,
-                                                        checkedContentColor = accentBlue
-                                                    )
+                                                    }
                                                 ) {
                                                     Icon(
                                                         imageVector = when (align) {
@@ -478,13 +474,7 @@ internal fun ReaderMenuOverlay(
                                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                                                     layoutOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                },
-                                                colors = ToggleButtonDefaults.toggleButtonColors(
-                                                    containerColor = segmentBg,
-                                                    contentColor = unselectedText,
-                                                    checkedContainerColor = segmentCheckedBg,
-                                                    checkedContentColor = accentBlue
-                                                )
+                                                }
                                             ) {
                                                 Column(
                                                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -535,13 +525,7 @@ internal fun ReaderMenuOverlay(
                                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                                                     directions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                },
-                                                colors = ToggleButtonDefaults.toggleButtonColors(
-                                                    containerColor = segmentBg,
-                                                    contentColor = unselectedText,
-                                                    checkedContainerColor = segmentCheckedBg,
-                                                    checkedContentColor = accentBlue
-                                                )
+                                                }
                                             ) {
                                                 Text(
                                                     text = label,
@@ -575,13 +559,7 @@ internal fun ReaderMenuOverlay(
                                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                                                     modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                },
-                                                colors = ToggleButtonDefaults.toggleButtonColors(
-                                                    containerColor = segmentBg,
-                                                    contentColor = unselectedText,
-                                                    checkedContainerColor = segmentCheckedBg,
-                                                    checkedContentColor = accentBlue
-                                                )
+                                                }
                                             ) {
                                                 Text(
                                                     when (mode) {
@@ -700,7 +678,7 @@ internal fun ReaderMenuOverlay(
                                                         .border(
                                                             BorderStroke(
                                                                 if (isSelected) 2.5.dp else 1.dp,
-                                                                if (isSelected) accentBlue else Color(0x448E9196)
+                                                                if (isSelected) accent else Color(0x448E9196)
                                                             ),
                                                             CircleShape
                                                         ),
@@ -726,7 +704,7 @@ internal fun ReaderMenuOverlay(
                                                     text = name,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                                    color = if (isSelected) accentBlue else unselectedText
+                                                    color = if (isSelected) accent else unselectedText
                                                 )
                                             }
                                         }
@@ -756,13 +734,7 @@ internal fun ReaderMenuOverlay(
                                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                                                     modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                },
-                                                colors = ToggleButtonDefaults.toggleButtonColors(
-                                                    containerColor = segmentBg,
-                                                    contentColor = unselectedText,
-                                                    checkedContainerColor = segmentCheckedBg,
-                                                    checkedContentColor = accentBlue
-                                                )
+                                                }
                                             ) {
                                                 Text(
                                                     when (mode) {
@@ -835,7 +807,7 @@ internal fun ReaderMenuOverlay(
         if (showChapterList) {
             ModalBottomSheet(
                 onDismissRequest = { showChapterList = false },
-                containerColor = Color(0xF51E2024),
+                containerColor = Color(0xFF1E2024),
                 contentColor = Color.White,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             ) {
@@ -867,14 +839,14 @@ internal fun ReaderMenuOverlay(
                                         showChapterList = false
                                         onSelectChapter?.invoke(entry)
                                     }
-                                    .background(if (isCurrent) Color(0x228AB4F8) else Color.Transparent)
+                                    .background(if (isCurrent) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else Color.Transparent)
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = entry.displayName,
-                                    color = if (isCurrent) Color(0xFF8AB4F8) else Color.White,
+                                    color = if (isCurrent) MaterialTheme.colorScheme.onSecondaryContainer else Color.White,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                                     modifier = Modifier.weight(1f)
@@ -883,7 +855,7 @@ internal fun ReaderMenuOverlay(
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "Current Chapter",
-                                        tint = Color(0xFF8AB4F8),
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }

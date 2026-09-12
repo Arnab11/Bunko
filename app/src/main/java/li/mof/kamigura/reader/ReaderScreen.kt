@@ -5,14 +5,9 @@ import android.view.ViewConfiguration
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -51,7 +46,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -93,6 +87,8 @@ import li.mof.kamigura.reader.internal.ReaderChapterBoundary
 import li.mof.kamigura.reader.internal.ReaderChapterBoundaryScreen
 import li.mof.kamigura.reader.internal.ReaderChapterEntry
 import li.mof.kamigura.reader.internal.ReaderMenuOverlay
+import li.mof.kamigura.reader.internal.ReaderOverviewGallery
+import li.mof.kamigura.reader.internal.readerOverviewCursors
 import li.mof.kamigura.reader.internal.ReaderPageView
 import li.mof.kamigura.reader.internal.ReaderTapLayer
 import li.mof.kamigura.reader.internal.ReaderVerticalScroll
@@ -836,27 +832,7 @@ fun ReaderScreen(
             bottom = safeBottomPadding
         )
 
-        val overviewScale by animateFloatAsState(
-            targetValue = if (showReaderMenu && !vertical && chapterBoundary == null) 0.68f else 1.0f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioLowBouncy,
-                stiffness = Spring.StiffnessMediumLow
-            ),
-            label = "overviewScale"
-        )
-
-        val overviewAlpha by animateFloatAsState(
-            targetValue = if (showReaderMenu && !vertical && chapterBoundary == null) 1.0f else 0.0f,
-            animationSpec = tween(durationMillis = 200),
-            label = "overviewAlpha"
-        )
-
-        val overviewDragOffset = remember { Animatable(0f) }
-        LaunchedEffect(showReaderMenu) {
-            if (!showReaderMenu) {
-                overviewDragOffset.snapTo(0f)
-            }
-        }
+        val isOverviewMenuOpen = showReaderMenu && !vertical && chapterBoundary == null
 
         LaunchedEffect(
             epubSpineBlocks,
@@ -922,20 +898,23 @@ fun ReaderScreen(
             invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
             pageBackground: Color,
             singlePageAlignmentOverride: Alignment? = null,
-            modifier: Modifier = Modifier
+            modifier: Modifier = Modifier,
+            epubFontSizeSpOverride: Float? = null,
+            epubContentPaddingOverride: PaddingValues? = null
         ) {
+            val effectiveEpubFontSizeSp = epubFontSizeSpOverride ?: epubFontSizeSp
             if (isEpub && epubSubpages.isNotEmpty()) {
                 if (portrait || singlePageAlignmentOverride != null) {
                     val safeIndex = cursor.coerceIn(0, epubSubpages.lastIndex)
                     ReaderEpubPageView(
                         subpage = epubSubpages[safeIndex],
-                        fontSizeSp = epubFontSizeSp,
+                        fontSizeSp = effectiveEpubFontSizeSp,
                         pageBackground = pageBackground,
                         invertMode = invertMode,
                         epubFontFamily = settings.reader.epubFontFamily,
                         epubTextAlign = settings.reader.epubTextAlign,
                         imageLoader = imageLoader,
-                        contentPadding = portraitPadding,
+                        contentPadding = epubContentPaddingOverride ?: portraitPadding,
                         modifier = modifier
                     )
                 } else {
@@ -945,13 +924,13 @@ fun ReaderScreen(
                             if (spread.leftPage in epubSubpages.indices) {
                                 ReaderEpubPageView(
                                     subpage = epubSubpages[spread.leftPage],
-                                    fontSizeSp = epubFontSizeSp,
+                                    fontSizeSp = effectiveEpubFontSizeSp,
                                     pageBackground = pageBackground,
                                     invertMode = invertMode,
                                     epubFontFamily = settings.reader.epubFontFamily,
                                     epubTextAlign = settings.reader.epubTextAlign,
                                     imageLoader = imageLoader,
-                                    contentPadding = landscapeLeftPadding,
+                                    contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
@@ -966,13 +945,13 @@ fun ReaderScreen(
                             if (spread.rightPage in epubSubpages.indices) {
                                 ReaderEpubPageView(
                                     subpage = epubSubpages[spread.rightPage],
-                                    fontSizeSp = epubFontSizeSp,
+                                    fontSizeSp = effectiveEpubFontSizeSp,
                                     pageBackground = pageBackground,
                                     invertMode = invertMode,
                                     epubFontFamily = settings.reader.epubFontFamily,
                                     epubTextAlign = settings.reader.epubTextAlign,
                                     imageLoader = imageLoader,
-                                    contentPadding = landscapeRightPadding,
+                                    contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
@@ -1825,121 +1804,32 @@ fun ReaderScreen(
                     epubTextAlign = settings.reader.epubTextAlign
                 )
             } else {
-                val isOverview = showReaderMenu && !vertical && chapterBoundary == null
-                val cardWidthPx = viewportWidthPx * overviewScale
-                val cardSpacingPx = with(density) { 16.dp.toPx() }
-                val cardStepPx = cardWidthPx + cardSpacingPx
-
-                val leftCursor = if (rtl) {
-                    turnTarget(ReaderTurnDirection.Next, nextPageTurnStep, false)
-                } else {
-                    turnTarget(ReaderTurnDirection.Previous, previousPageTurnStep, false)
-                }
-
-                val rightCursor = if (rtl) {
-                    turnTarget(ReaderTurnDirection.Previous, previousPageTurnStep, false)
-                } else {
-                    turnTarget(ReaderTurnDirection.Next, nextPageTurnStep, false)
-                }
-
-                val left2Cursor = if (leftCursor != null) {
-                    val l = readerPageLayout(leftCursor, pages, portrait, pageDimensions, isEpub)
-                    if (rtl) {
-                        readerTurnTargetPage(leftCursor, pages, ReaderTurnDirection.Next, l.nextStep, false)
-                    } else {
-                        readerTurnTargetPage(leftCursor, pages, ReaderTurnDirection.Previous, l.previousStep, false)
-                    }
-                } else null
-
-                val right2Cursor = if (rightCursor != null) {
-                    val l = readerPageLayout(rightCursor, pages, portrait, pageDimensions, isEpub)
-                    if (rtl) {
-                        readerTurnTargetPage(rightCursor, pages, ReaderTurnDirection.Previous, l.previousStep, false)
-                    } else {
-                        readerTurnTargetPage(rightCursor, pages, ReaderTurnDirection.Next, l.nextStep, false)
-                    }
-                } else null
-
+                val isOverview = isOverviewMenuOpen
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (isOverview) {
-                                Modifier.pointerInput(page, pages, rtl, cardStepPx, leftCursor, rightCursor) {
-                                    detectHorizontalDragGestures(
-                                        onDragStart = { },
-                                        onHorizontalDrag = { change, dragAmount ->
-                                            change.consume()
-                                            scope.launch {
-                                                overviewDragOffset.snapTo(overviewDragOffset.value + dragAmount)
-                                            }
-                                        },
-                                        onDragEnd = {
-                                            scope.launch {
-                                                val drag = overviewDragOffset.value
-                                                val threshold = cardStepPx * 0.20f
-                                                if (drag > threshold && leftCursor != null) {
-                                                    overviewDragOffset.animateTo(
-                                                        cardStepPx,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                                            stiffness = Spring.StiffnessMediumLow
-                                                        )
-                                                    )
-                                                    page = leftCursor
-                                                    lastRemoteProgressPages[currentChapterId] = leftCursor
-                                                    overviewDragOffset.snapTo(0f)
-                                                } else if (drag < -threshold && rightCursor != null) {
-                                                    overviewDragOffset.animateTo(
-                                                        -cardStepPx,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                                            stiffness = Spring.StiffnessMediumLow
-                                                        )
-                                                    )
-                                                    page = rightCursor
-                                                    lastRemoteProgressPages[currentChapterId] = rightCursor
-                                                    overviewDragOffset.snapTo(0f)
-                                                } else {
-                                                    overviewDragOffset.animateTo(
-                                                        0f,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioLowBouncy,
-                                                            stiffness = Spring.StiffnessMediumLow
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        onDragCancel = {
-                                            scope.launch {
-                                                overviewDragOffset.animateTo(0f)
-                                            }
-                                        }
-                                    )
-                                }
-                            } else Modifier
-                        ),
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Left 2 Page / Spread
-                    if (overviewAlpha > 0.001f && left2Cursor != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    translationX = -2 * cardStepPx + overviewDragOffset.value
-                                    scaleX = overviewScale
-                                    scaleY = overviewScale
-                                    alpha = overviewAlpha
-                                    clip = true
-                                    shape = RoundedCornerShape(10.dp)
-                                    shadowElevation = 16.dp.toPx()
-                                }
-                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(10.dp))
-                        ) {
+                    if (isOverview) {
+                        val overviewCursors = remember(pages, portrait, pageDimensions, isEpub) {
+                            readerOverviewCursors(
+                                pageCount = pages,
+                                portrait = portrait,
+                                pageDimensions = pageDimensions,
+                                isEpub = isEpub
+                            )
+                        }
+                        ReaderOverviewGallery(
+                            cursors = overviewCursors,
+                            currentCursor = page,
+                            reverseLayout = rtl,
+                            onSelect = { cursor ->
+                                page = cursor
+                                lastRemoteProgressPages[currentChapterId] = cursor
+                            },
+                            onCenterTap = { showReaderMenu = false }
+                        ) { cursor, cardModifier ->
                             RenderReaderPage(
-                                cursor = left2Cursor,
+                                cursor = cursor,
                                 pageCount = pages,
                                 portrait = portrait,
                                 pageDimensions = pageDimensions,
@@ -1950,161 +1840,24 @@ fun ReaderScreen(
                                 whiteThreshold = settings.reader.invertWhiteThreshold,
                                 invertDecisionCache = invertDecisionCache,
                                 pageBackground = readerPageBackground,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = cardModifier,
+                                // Cards are ~62% width and shorter than fullscreen, but the
+                                // subpage was paginated for the full viewport at full font
+                                // size — rendering it 1:1 clips the bottom text. Shrink
+                                // the font and use compact padding so it fits the card.
+                                epubFontSizeSpOverride = epubFontSizeSp * 0.66f,
+                                epubContentPaddingOverride = PaddingValues(
+                                    horizontal = 10.dp,
+                                    vertical = 8.dp
+                                )
                             )
                         }
-                    }
-
-                    // Left Peeking Page / Spread
-                    if (overviewAlpha > 0.001f && leftCursor != null) {
+                    } else {
+                        // Main reader viewport (overview gallery lives in the branch above)
                         Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    translationX = -cardStepPx + overviewDragOffset.value
-                                    scaleX = overviewScale
-                                    scaleY = overviewScale
-                                    alpha = overviewAlpha
-                                    clip = true
-                                    shape = RoundedCornerShape(10.dp)
-                                    shadowElevation = 16.dp.toPx()
-                                }
-                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(10.dp))
-                                .clickable {
-                                    scope.launch {
-                                        overviewDragOffset.animateTo(
-                                            cardStepPx,
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            )
-                                        )
-                                        page = leftCursor
-                                        lastRemoteProgressPages[currentChapterId] = leftCursor
-                                        overviewDragOffset.snapTo(0f)
-                                    }
-                                }
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            RenderReaderPage(
-                                cursor = leftCursor,
-                                pageCount = pages,
-                                portrait = portrait,
-                                pageDimensions = pageDimensions,
-                                rightToLeft = rtl,
-                                pageModel = ::pageModel,
-                                imageLoader = activeImageLoader,
-                                invertMode = invertMode,
-                                whiteThreshold = settings.reader.invertWhiteThreshold,
-                                invertDecisionCache = invertDecisionCache,
-                                pageBackground = readerPageBackground,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-
-                    // Right 2 Page / Spread
-                    if (overviewAlpha > 0.001f && right2Cursor != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    translationX = 2 * cardStepPx + overviewDragOffset.value
-                                    scaleX = overviewScale
-                                    scaleY = overviewScale
-                                    alpha = overviewAlpha
-                                    clip = true
-                                    shape = RoundedCornerShape(10.dp)
-                                    shadowElevation = 16.dp.toPx()
-                                }
-                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(10.dp))
-                        ) {
-                            RenderReaderPage(
-                                cursor = right2Cursor,
-                                pageCount = pages,
-                                portrait = portrait,
-                                pageDimensions = pageDimensions,
-                                rightToLeft = rtl,
-                                pageModel = ::pageModel,
-                                imageLoader = activeImageLoader,
-                                invertMode = invertMode,
-                                whiteThreshold = settings.reader.invertWhiteThreshold,
-                                invertDecisionCache = invertDecisionCache,
-                                pageBackground = readerPageBackground,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-
-                    // Right Peeking Page / Spread
-                    if (overviewAlpha > 0.001f && rightCursor != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    translationX = cardStepPx + overviewDragOffset.value
-                                    scaleX = overviewScale
-                                    scaleY = overviewScale
-                                    alpha = overviewAlpha
-                                    clip = true
-                                    shape = RoundedCornerShape(10.dp)
-                                    shadowElevation = 16.dp.toPx()
-                                }
-                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(10.dp))
-                                .clickable {
-                                    scope.launch {
-                                        overviewDragOffset.animateTo(
-                                            -cardStepPx,
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            )
-                                        )
-                                        page = rightCursor
-                                        lastRemoteProgressPages[currentChapterId] = rightCursor
-                                        overviewDragOffset.snapTo(0f)
-                                    }
-                                }
-                        ) {
-                            RenderReaderPage(
-                                cursor = rightCursor,
-                                pageCount = pages,
-                                portrait = portrait,
-                                pageDimensions = pageDimensions,
-                                rightToLeft = rtl,
-                                pageModel = ::pageModel,
-                                imageLoader = activeImageLoader,
-                                invertMode = invertMode,
-                                whiteThreshold = settings.reader.invertWhiteThreshold,
-                                invertDecisionCache = invertDecisionCache,
-                                pageBackground = readerPageBackground,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-
-                    // Main / Center Viewport Card
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                translationX = overviewDragOffset.value
-                                scaleX = overviewScale
-                                scaleY = overviewScale
-                                clip = overviewScale < 0.999f
-                                shape = RoundedCornerShape(10.dp)
-                                shadowElevation = if (overviewScale < 0.999f) 16.dp.toPx() else 0f
-                            }
-                            .then(
-                                if (overviewScale < 0.999f) {
-                                    Modifier.border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(10.dp))
-                                } else Modifier
-                            )
-                            .then(
-                                if (overviewScale < 0.999f) {
-                                    Modifier.clickable { showReaderMenu = false }
-                                } else Modifier
-                            )
-                    ) {
             // Keep PageCurl mounted whenever the curl mode is active (not just during a
             // turn): the neighbour pages it composes at rest are exactly the images the
             // next turn needs, so the gesture starts warm instead of kicking off image
@@ -2422,6 +2175,7 @@ fun ReaderScreen(
             }
             }
         }
+        }
 
         if (!vertical && chapterBoundary == null) {
             key(page, rtl, nextPageTurnStep, previousPageTurnStep, showingFinalPage) {
@@ -2669,7 +2423,9 @@ fun ReaderScreen(
                 onSetPageTurnMode = { newMode ->
                     scope.launch { settingsStore.setPageTurnMode(newMode) }
                 },
-                chapters = chapterSequence,
+                // Fall back to the current chapter so the list is never empty
+                // (e.g. offline opens where the volumes call failed).
+                chapters = chapterSequence.ifEmpty { listOf(currentChapter) },
                 currentChapterId = currentChapterId,
                 onSelectChapter = { target ->
                     switchChapter(target, false)
