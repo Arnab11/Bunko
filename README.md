@@ -82,7 +82,7 @@ Several Kavita clients already exist. Bunko focuses on **tablet/phone parity** a
 
 ## Install
 
-Download the APK from [Releases](https://github.com/BunkoApp/Bunko/releases) and sideload it onto an Android 8.0+ device.
+Download the APK from [Releases](https://github.com/Arnab11/Bunko/releases) and sideload it onto an Android 8.0+ device.
 
 ## Usage
 
@@ -107,7 +107,7 @@ Bunko is written in Kotlin 2.x with Jetpack Compose and Material 3 / Material 3 
 
 Kavita integration is intentionally centralized around `app/src/main/java/com/bunko/reader/KavitaApi.kt`. UI layers should consume Bunko models and repositories rather than constructing Kavita calls directly.
 
-Design notes and implementation scratchpads live under `docs/`. They are internal working notes and may be git-ignored, stale, or written for local development rather than public API documentation. For public discussion, bug reports, and feature requests, please use [GitHub issues](https://github.com/BunkoApp/Bunko/issues).
+Design notes and implementation scratchpads live under `docs/`. They are internal working notes and may be git-ignored, stale, or written for local development rather than public API documentation. For public discussion, bug reports, and feature requests, please use [GitHub issues](https://github.com/Arnab11/Bunko/issues).
 
 ## Third-party
 
