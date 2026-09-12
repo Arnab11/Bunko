@@ -847,6 +847,7 @@ fun ReaderScreen(
                         fontSizeSp = epubFontSizeSp,
                         pageBackground = pageBackground,
                         invertMode = invertMode,
+                        epubFontFamily = settings.reader.epubFontFamily,
                         imageLoader = imageLoader,
                         modifier = modifier
                     )
@@ -860,6 +861,7 @@ fun ReaderScreen(
                                     fontSizeSp = epubFontSizeSp,
                                     pageBackground = pageBackground,
                                     invertMode = invertMode,
+                                    epubFontFamily = settings.reader.epubFontFamily,
                                     imageLoader = imageLoader,
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -878,6 +880,7 @@ fun ReaderScreen(
                                     fontSizeSp = epubFontSizeSp,
                                     pageBackground = pageBackground,
                                     invertMode = invertMode,
+                                    epubFontFamily = settings.reader.epubFontFamily,
                                     imageLoader = imageLoader,
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -1726,7 +1729,8 @@ fun ReaderScreen(
                     onBackToSeries = onBack,
                     onMenuToggle = { showReaderMenu = !showReaderMenu },
                     epubSubpages = epubSubpages,
-                    epubFontSizeSp = epubFontSizeSp
+                    epubFontSizeSp = epubFontSizeSp,
+                    epubFontFamily = settings.reader.epubFontFamily
                 )
             } else {
             // Keep PageCurl mounted whenever the curl mode is active (not just during a
@@ -2266,6 +2270,22 @@ fun ReaderScreen(
                 epubFontSizeSp = epubFontSizeSp,
                 onSetEpubFontSizeSp = { newSize ->
                     scope.launch { settingsStore.setEpubFontSizeSp(newSize) }
+                },
+                epubFontFamily = settings.reader.epubFontFamily,
+                onSetEpubFontFamily = { newFamily ->
+                    scope.launch { settingsStore.setEpubFontFamily(newFamily) }
+                },
+                pageBackground = settings.reader.pageBackground,
+                onSetPageBackground = { newBg ->
+                    scope.launch { settingsStore.setPageBackground(newBg) }
+                },
+                usePureColors = settings.reader.usePurePageBackgroundColors,
+                onSetUsePureColors = { newPure ->
+                    scope.launch { settingsStore.setUsePurePageBackgroundColors(newPure) }
+                },
+                pageTurnMode = settings.reader.pageTurnMode,
+                onSetPageTurnMode = { newMode ->
+                    scope.launch { settingsStore.setPageTurnMode(newMode) }
                 }
             )
         }

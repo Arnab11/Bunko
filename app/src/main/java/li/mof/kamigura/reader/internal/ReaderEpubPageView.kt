@@ -50,6 +50,7 @@ internal fun ReaderEpubPageView(
     fontSizeSp: Float,
     pageBackground: Color,
     invertMode: InvertMode = InvertMode.Off,
+    epubFontFamily: String = "Serif",
     modifier: Modifier = Modifier,
     imageLoader: ImageLoader? = null
 ) {
@@ -58,6 +59,12 @@ internal fun ReaderEpubPageView(
     val dividerColor = if (isDark) Color(0xFF333333) else Color(0xFFDCD7CC)
     val quoteBarColor = if (isDark) Color(0xFF666666) else Color(0xFF9E988D)
     val imageColorFilter = if (invertMode == InvertMode.Always) NegativeColorFilter else null
+    val activeFontFamily = when (epubFontFamily.lowercase()) {
+        "sans", "sansserif", "sans-serif" -> FontFamily.SansSerif
+        "mono", "monospace" -> FontFamily.Monospace
+        "cursive" -> FontFamily.Cursive
+        else -> FontFamily.Serif
+    }
 
     Box(
         modifier = modifier
@@ -111,7 +118,7 @@ internal fun ReaderEpubPageView(
                                 text = block.text,
                                 fontSize = (fontSizeSp * headingScale).sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Serif,
+                                fontFamily = activeFontFamily,
                                 color = textColor,
                                 lineHeight = (fontSizeSp * headingScale * 1.35f).sp,
                                 modifier = Modifier.padding(vertical = 4.dp)
@@ -133,7 +140,7 @@ internal fun ReaderEpubPageView(
                                     text = block.text,
                                     fontSize = fontSizeSp.sp,
                                     fontStyle = FontStyle.Italic,
-                                    fontFamily = FontFamily.Serif,
+                                    fontFamily = activeFontFamily,
                                     color = textColor,
                                     lineHeight = (fontSizeSp * 1.45f).sp
                                 )
@@ -142,7 +149,7 @@ internal fun ReaderEpubPageView(
                             Text(
                                 text = block.text,
                                 fontSize = fontSizeSp.sp,
-                                fontFamily = FontFamily.Serif,
+                                fontFamily = activeFontFamily,
                                 color = textColor,
                                 lineHeight = (fontSizeSp * 1.45f).sp
                             )

@@ -95,7 +95,8 @@ internal fun ReaderVerticalScroll(
     onBackToSeries: () -> Unit,
     onMenuToggle: () -> Unit,
     epubSubpages: List<EpubSubpage> = emptyList(),
-    epubFontSizeSp: Float = 18f
+    epubFontSizeSp: Float = 18f,
+    epubFontFamily: String = "Serif"
 ) {
     LaunchedEffect(listState, pageCount) {
         snapshotFlow { listState.layoutInfo }
@@ -172,6 +173,7 @@ internal fun ReaderVerticalScroll(
                     ReaderEpubPageView(
                         subpage = epubSubpages[page],
                         fontSizeSp = epubFontSizeSp,
+                        epubFontFamily = epubFontFamily,
                         pageBackground = pageBackground,
                         invertMode = invertMode,
                         imageLoader = imageLoader,
