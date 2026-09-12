@@ -1,5 +1,13 @@
 package com.bunko.reader.reader.internal
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,14 +17,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -67,6 +82,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -88,10 +105,11 @@ private enum class MenuOptionTab {
     Lighting
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 /** Internal to reader, not for external use. */
 @Composable
 internal fun ReaderMenuOverlay(
+    visible: Boolean = true,
     seriesName: String,
     chapterName: String,
     page: Int,
@@ -152,11 +170,27 @@ internal fun ReaderMenuOverlay(
     val dialogBorder = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     val dividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
 
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val resStatusBarHeight = remember(context) {
+        val resId = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+        if (resId > 0) context.resources.getDimensionPixelSize(resId) else 0
+    }
+    val stableStatusBarHeight = maxOf(
+        WindowInsets.statusBarsIgnoringVisibility
+            .union(WindowInsets.displayCutout)
+            .asPaddingValues()
+            .calculateTopPadding(),
+        with(density) { resStatusBarHeight.toDp() }
+    )
+    val liveStatusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val statusBarTopPadding = maxOf(stableStatusBarHeight, liveStatusBarHeight)
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
         // Scrim to dismiss options when open
-        if (showDisplayOptions) {
+        if (showDisplayOptions && visible) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -165,17 +199,31 @@ internal fun ReaderMenuOverlay(
                     }
             )
         }
-        // TOP APP BAR
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .background(barBg)
-                .statusBarsPadding()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // TOP APP BAR (animates down from above with status bar)
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(
+                initialOffsetY = { -it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ) + fadeIn(animationSpec = tween(180)),
+            exit = slideOutVertically(
+                targetOffsetY = { -it },
+                animationSpec = tween(150)
+            ) + fadeOut(animationSpec = tween(150)),
+            modifier = Modifier.align(Alignment.TopCenter)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(barBg)
+                    .padding(top = statusBarTopPadding)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -229,14 +277,27 @@ internal fun ReaderMenuOverlay(
                 )
             }
         }
+        }
 
         // GOOGLE PLAY BOOKS STYLE DISPLAY OPTIONS POPUP
-        if (showDisplayOptions) {
+        AnimatedVisibility(
+            visible = visible && showDisplayOptions,
+            enter = fadeIn(animationSpec = tween(180)) + slideInVertically(
+                initialOffsetY = { -it / 4 },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ),
+            exit = fadeOut(animationSpec = tween(120)) + slideOutVertically(
+                targetOffsetY = { -it / 4 },
+                animationSpec = tween(120)
+            ),
+            modifier = Modifier.align(Alignment.TopEnd)
+        ) {
             Surface(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(top = 64.dp, end = 12.dp, start = 12.dp)
+                    .padding(top = statusBarTopPadding + 64.dp, end = 12.dp, start = 12.dp)
                     .widthIn(max = 350.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(20.dp))
@@ -765,16 +826,30 @@ internal fun ReaderMenuOverlay(
         }
 
         // BOTTOM BAR (CHAPTERS BUTTON + PAGE SLIDER + PAGE COUNT)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .background(barBg)
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ) + fadeIn(animationSpec = tween(180)),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(150)
+            ) + fadeOut(animationSpec = tween(150)),
+            modifier = Modifier.align(Alignment.BottomCenter)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(barBg)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             // Chapters / Table of Contents Button (Left of Slider)
             IconButton(
                 onClick = { showChapterList = true },
@@ -812,6 +887,7 @@ internal fun ReaderMenuOverlay(
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
+        }
         }
 
         // CHAPTERS MODAL BOTTOM SHEET

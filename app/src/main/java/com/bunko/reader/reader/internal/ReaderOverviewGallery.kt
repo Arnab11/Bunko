@@ -3,14 +3,21 @@ package com.bunko.reader.reader.internal
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
@@ -27,11 +34,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import com.bunko.reader.FileDimensionDto
 
@@ -99,11 +110,13 @@ private fun Modifier.scaledLayout(
  * 1:1 scrollable carousel, matching Play Books proportions: wide spread cards (80-82% width)
  * with peeking neighbors, and tapping the center spread restores the reading view.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderOverviewGallery(
     cursors: List<Int>,
     currentCursor: Int,
     reverseLayout: Boolean,
+    progress: Float = 1f,
     onSelect: (Int) -> Unit,
     onCenterTap: () -> Unit,
     modifier: Modifier = Modifier,
@@ -160,11 +173,26 @@ internal fun ReaderOverviewGallery(
                 }
         )
 
+        val context = LocalContext.current
+        val density = LocalDensity.current
+        val resStatusBarHeight = remember(context) {
+            val resId = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+            if (resId > 0) context.resources.getDimensionPixelSize(resId) else 0
+        }
+        val stableStatusBarHeight = maxOf(
+            WindowInsets.statusBarsIgnoringVisibility
+                .union(WindowInsets.displayCutout)
+                .asPaddingValues()
+                .calculateTopPadding(),
+            with(density) { resStatusBarHeight.toDp() }
+        )
+        val liveStatusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val galleryTopInset = maxOf(stableStatusBarHeight, liveStatusBarHeight)
+
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .padding(top = 56.dp)
+                .padding(top = galleryTopInset + 56.dp)
                 .navigationBarsPadding()
                 .padding(bottom = 88.dp)
         ) {
@@ -176,6 +204,12 @@ internal fun ReaderOverviewGallery(
             val cardHeight = screenHeight * scale
             val sidePadding = (screenWidth - cardWidth) / 2f
 
+            val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            val topInsetPx = with(density) { (galleryTopInset + 56.dp).toPx() }
+            val bottomInsetPx = with(density) { (88.dp + navBarBottom).toPx() }
+            val centerShiftYPx = (topInsetPx - bottomInsetPx) / 2f
+            val sideSlidePx = with(density) { 140.dp.toPx() }
+
             HorizontalPager(
                 state = pagerState,
                 flingBehavior = PagerDefaults.flingBehavior(
@@ -186,17 +220,38 @@ internal fun ReaderOverviewGallery(
                 contentPadding = PaddingValues(horizontal = sidePadding),
                 pageSpacing = 20.dp,
                 reverseLayout = reverseLayout,
-                beyondViewportPageCount = 2,
+                beyondViewportPageCount = 0,
                 key = { index -> cursors.getOrNull(index) ?: index },
                 verticalAlignment = Alignment.CenterVertically
             ) { index ->
                 val cursor = cursors.getOrNull(index) ?: return@HorizontalPager
+                val isCenter = index == pagerState.currentPage
+                val currentElevation = (8.dp * progress).coerceAtLeast(0.dp)
+                val currentCornerRadius = (4.dp * progress).coerceAtLeast(0.dp)
+
                 Box(
                     modifier = Modifier
+                        .zIndex(if (isCenter) 2f else 1f)
+                        .graphicsLayer {
+                            if (isCenter) {
+                                val targetScale = 1f + (1f - progress) * (1f / scale - 1f)
+                                scaleX = targetScale
+                                scaleY = targetScale
+                                translationY = -(1f - progress) * centerShiftYPx
+                            } else {
+                                alpha = progress
+                                val slideDir = if (reverseLayout) {
+                                    if (index < pagerState.currentPage) 1f else -1f
+                                } else {
+                                    if (index < pagerState.currentPage) -1f else 1f
+                                }
+                                translationX = slideDir * (1f - progress) * sideSlidePx
+                            }
+                        }
                         .width(cardWidth)
                         .height(cardHeight)
-                        .shadow(elevation = 8.dp, shape = RoundedCornerShape(4.dp))
-                        .clip(RoundedCornerShape(4.dp))
+                        .shadow(elevation = currentElevation, shape = RoundedCornerShape(currentCornerRadius))
+                        .clip(RoundedCornerShape(currentCornerRadius))
                         .pointerInput(pagerState.currentPage, index) {
                             detectTapGestures(
                                 onTap = {

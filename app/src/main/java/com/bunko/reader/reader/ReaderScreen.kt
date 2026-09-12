@@ -4,7 +4,10 @@ import android.os.SystemClock
 import android.view.ViewConfiguration
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -1039,8 +1042,41 @@ fun ReaderScreen(
         Color(0xFF141518)
     }
 
+    val isOverviewMenuOpen = showReaderMenu && !vertical && chapterBoundary == null
+    val overviewProgress by animateFloatAsState(
+        targetValue = if (isOverviewMenuOpen) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 260,
+            easing = FastOutSlowInEasing
+        ),
+        label = "overviewProgress"
+    )
+
+    // Separate alpha track for the menu overlay so the header/footer fade out
+    // smoothly on a normal tap-to-dismiss (when overview is not active).  When
+    // the overview IS active/exiting, effectiveMenuAlpha delegates to
+    // overviewProgress so both layers animate in perfect lock-step.
+    val menuContentVisible = showReaderMenu && chapterBoundary == null
+    val menuAlpha by animateFloatAsState(
+        targetValue = if (menuContentVisible) 1f else 0f,
+        animationSpec = tween(durationMillis = 160, easing = LinearEasing),
+        label = "menuAlpha"
+    )
+    // Drive effectiveMenuAlpha based on context:
+    //  • Overview open (isOverviewMenuOpen true)   → 1f  (fully visible)
+    //  • Overview dismissing (progress > 0 but menu off) → 0f (hide BEFORE zoom starts)
+    //  • Normal menu dismiss (no overview active)  → menuAlpha (160ms linear fade)
+    //
+    // Hiding instantly on overview exit means the entire 260ms zoom plays with
+    // zero overlay — no ghost-backgrounds visible at any point.
+    val effectiveMenuAlpha = when {
+        isOverviewMenuOpen        -> 1f
+        overviewProgress > 0f    -> 0f
+        else                     -> menuAlpha
+    }
+
     val screenBgColor by animateColorAsState(
-        targetValue = if (showReaderMenu && !vertical && chapterBoundary == null) menuBg else defaultReaderBg,
+        targetValue = if (overviewProgress > 0f) menuBg else defaultReaderBg,
         animationSpec = tween(durationMillis = 200),
         label = "screenBgColor"
     )
@@ -1081,8 +1117,6 @@ fun ReaderScreen(
             end = safeEndPadding,
             bottom = safeBottomPadding
         )
-
-        val isOverviewMenuOpen = showReaderMenu && !vertical && chapterBoundary == null
 
         LaunchedEffect(
             epubSpineBlocks,
@@ -2064,51 +2098,23 @@ fun ReaderScreen(
                     epubTextAlign = settings.reader.epubTextAlign
                 )
             } else {
-                val isOverview = isOverviewMenuOpen
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isOverview) {
-                        val overviewCursors = remember(pages, portrait, pageDimensions, isEpub) {
-                            readerOverviewCursors(
-                                pageCount = pages,
-                                portrait = portrait,
-                                pageDimensions = pageDimensions,
-                                isEpub = isEpub
-                            )
-                        }
-                        ReaderOverviewGallery(
-                            cursors = overviewCursors,
-                            currentCursor = page,
-                            reverseLayout = rtl,
-                            onSelect = { cursor ->
-                                page = cursor
-                                lastRemoteProgressPages[currentChapterId] = cursor
+                    // Main reader viewport — kept permanently mounted to avoid page unmount/remount
+                    // thrashing and bitmap reloads. When overview is active or animating, hidden
+                    // so ONLY the overview center card renders, completely eliminating any halo/double-drawing.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                // Cross-fade the main viewport back in as the overview
+                                // exits, so both layers animate together with no black frame.
+                                alpha = (1f - overviewProgress).coerceIn(0f, 1f)
                             },
-                            onCenterTap = { showReaderMenu = false }
-                        ) { cursor, cardModifier ->
-                            RenderReaderPage(
-                                cursor = cursor,
-                                pageCount = pages,
-                                portrait = portrait,
-                                pageDimensions = pageDimensions,
-                                rightToLeft = rtl,
-                                pageModel = ::pageModel,
-                                imageLoader = activeImageLoader,
-                                invertMode = invertMode,
-                                whiteThreshold = settings.reader.invertWhiteThreshold,
-                                invertDecisionCache = invertDecisionCache,
-                                pageBackground = readerPageBackground,
-                                modifier = cardModifier
-                            )
-                        }
-                    } else {
-                        // Main reader viewport (overview gallery lives in the branch above)
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
+                        contentAlignment = Alignment.Center
+                    ) {
             // Keep PageCurl mounted whenever the curl mode is active (not just during a
             // turn): the neighbour pages it composes at rest are exactly the images the
             // next turn needs, so the gesture starts warm instead of kicking off image
@@ -2423,8 +2429,51 @@ fun ReaderScreen(
                 }
             }
             }
+
+            // Keep the overview gallery mounted for the entire duration of the exit
+            // animation (driven by overviewProgress → 0). Removing the gallery
+            // immediately when isOverviewMenuOpen goes false (via AnimatedVisibility's
+            // own fadeOut) caused a dark flicker because the main viewport was still
+            // invisible at that instant. By gating on `overviewProgress > 0f` and using
+            // ExitTransition.None, the gallery stays rendered until progress fully
+            // reaches 0, while the main page cross-fades in simultaneously.
+            if (overviewProgress > 0f || isOverviewMenuOpen) {
+                val overviewCursors = remember(pages, portrait, pageDimensions, isEpub) {
+                    readerOverviewCursors(
+                        pageCount = pages,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions,
+                        isEpub = isEpub
+                    )
+                }
+                ReaderOverviewGallery(
+                    cursors = overviewCursors,
+                    currentCursor = page,
+                    reverseLayout = rtl,
+                    progress = overviewProgress,
+                    onSelect = { cursor ->
+                        page = cursor
+                        lastRemoteProgressPages[currentChapterId] = cursor
+                    },
+                    onCenterTap = { showReaderMenu = false }
+                ) { cursor, cardModifier ->
+                    RenderReaderPage(
+                        cursor = cursor,
+                        pageCount = pages,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions,
+                        rightToLeft = rtl,
+                        pageModel = ::pageModel,
+                        imageLoader = activeImageLoader,
+                        invertMode = invertMode,
+                        whiteThreshold = settings.reader.invertWhiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        pageBackground = readerPageBackground,
+                        modifier = cardModifier
+                    )
+                }
             }
-            }
+        }
         }
         }
 
@@ -2550,8 +2599,17 @@ fun ReaderScreen(
             )
         }
 
-        if (showReaderMenu && chapterBoundary == null) {
+        // Mount the menu overlay layer whenever any portion of its alpha is still
+        // positive — either during the overview exit (overviewProgress > 0) or
+        // during the normal menu fade-out (menuAlpha > 0).
+        if (effectiveMenuAlpha > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = effectiveMenuAlpha }
+            ) {
             ReaderMenuOverlay(
+                visible = menuContentVisible,
                 seriesName = seriesName,
                 chapterName = currentChapter.displayName,
                 page = page,
@@ -2642,6 +2700,7 @@ fun ReaderScreen(
                     switchChapter(target, false)
                 }
             )
+            }
         }
 
     }
