@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -15,15 +16,19 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +38,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,6 +64,7 @@ internal fun ValueBubbleSlider(
     steps: Int = 0,
     reverseTrackColors: Boolean = false,
     showStopIndicator: Boolean = true,
+    roundThumb: Boolean = false,
     onValueChangeFinished: (() -> Unit)? = null
 ) {
     var showBubble by remember { mutableStateOf(false) }
@@ -83,7 +92,8 @@ internal fun ValueBubbleSlider(
     }
 
     BoxWithConstraints(modifier = modifier) {
-        val thumbCenter = SliderThumbWidth / 2 + (maxWidth - SliderThumbWidth).coerceAtLeast(0.dp) * fraction
+        val effectiveThumbWidth = if (roundThumb) 14.dp else SliderThumbWidth
+        val thumbCenter = effectiveThumbWidth / 2 + (maxWidth - effectiveThumbWidth).coerceAtLeast(0.dp) * fraction
         val indicatorOffset = (thumbCenter - ValueIndicatorMinWidth / 2)
             .coerceIn(0.dp, (maxWidth - ValueIndicatorMinWidth).coerceAtLeast(0.dp))
         val sliderModifier = Modifier
@@ -148,7 +158,56 @@ internal fun ValueBubbleSlider(
             onValueChangeFinished?.invoke()
         }
 
-        if (showStopIndicator) {
+        if (roundThumb) {
+            val roundThumbComposable: @Composable (SliderState) -> Unit = {
+                Box(
+                    modifier = Modifier
+                        .size(14.dp)
+                        .shadow(elevation = 2.dp, shape = CircleShape)
+                        .background(
+                            color = if (reverseTrackColors) colorScheme.secondaryContainer else colorScheme.primary,
+                            shape = CircleShape
+                        )
+                )
+            }
+            val roundTrackComposable: @Composable (SliderState) -> Unit = { sliderState ->
+                val rangeSpan = sliderState.valueRange.endInclusive - sliderState.valueRange.start
+                val progress = if (rangeSpan > 0f) {
+                    ((sliderState.value - sliderState.valueRange.start) / rangeSpan).coerceIn(0f, 1f)
+                } else 0f
+                val activeColor = if (reverseTrackColors) colorScheme.secondaryContainer else colorScheme.primary
+                val inactiveColor = Color(0x33FFFFFF)
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(CircleShape)
+                        .background(inactiveColor)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .fillMaxHeight()
+                            .background(activeColor)
+                    )
+                }
+            }
+
+            Slider(
+                value = value,
+                onValueChange = sliderOnValueChange,
+                onValueChangeFinished = sliderOnValueChangeFinished,
+                valueRange = valueRange,
+                steps = steps,
+                enabled = enabled,
+                interactionSource = interactionSource,
+                colors = sliderColors,
+                thumb = roundThumbComposable,
+                track = roundTrackComposable,
+                modifier = sliderModifier
+            )
+        } else if (showStopIndicator) {
             Slider(
                 value = value,
                 onValueChange = sliderOnValueChange,

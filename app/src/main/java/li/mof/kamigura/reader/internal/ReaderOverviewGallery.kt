@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerSnapDistance
@@ -24,7 +26,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import li.mof.kamigura.FileDimensionDto
@@ -58,6 +64,34 @@ internal fun readerOverviewIndexForCursor(cursors: List<Int>, cursor: Int): Int 
         if (value <= cursor) best = index
     }
     return best
+}
+
+/**
+ * Measures the child at full reader dimensions [fullWidth] x [fullHeight] so that text wrapping,
+ * line count, headings, and formatting are 100% identical to normal reading mode, then scales
+ * the layout uniformly by [scale] without overflow or rendering artifacts.
+ */
+private fun Modifier.scaledLayout(
+    scale: Float,
+    fullWidth: Dp,
+    fullHeight: Dp
+): Modifier = this.layout { measurable, _ ->
+    val placeable = measurable.measure(
+        Constraints.fixed(
+            fullWidth.roundToPx(),
+            fullHeight.roundToPx()
+        )
+    )
+    layout(
+        (fullWidth * scale).roundToPx(),
+        (fullHeight * scale).roundToPx()
+    ) {
+        placeable.placeWithLayer(0, 0) {
+            scaleX = scale
+            scaleY = scale
+            transformOrigin = TransformOrigin(0f, 0f)
+        }
+    }
 }
 
 /**
@@ -113,12 +147,9 @@ internal fun ReaderOverviewGallery(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val isPortrait = maxHeight > maxWidth
-        // Google Play Books proportions matching screenshots:
-        // Wide 2-page spread card in landscape (~80% width) with adjacent spreads peeking (~10%)
-        val cardFraction = if (isPortrait) 0.82f else 0.80f
-        val heightFraction = if (isPortrait) 0.80f else 0.96f
-        val sidePadding = maxWidth * ((1f - cardFraction) / 2f)
+        val screenWidth = maxWidth
+        val screenHeight = maxHeight
+        val isPortrait = screenHeight > screenWidth
 
         // Background tap layer behind the pager to dismiss overview when tapping the margins
         Box(
@@ -129,46 +160,66 @@ internal fun ReaderOverviewGallery(
                 }
         )
 
-        HorizontalPager(
-            state = pagerState,
-            flingBehavior = PagerDefaults.flingBehavior(
-                state = pagerState,
-                pagerSnapDistance = PagerSnapDistance.atMost(10)
-            ),
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(top = 56.dp)
                 .navigationBarsPadding()
-                .padding(bottom = 76.dp),
-            contentPadding = PaddingValues(horizontal = sidePadding),
-            pageSpacing = 20.dp,
-            reverseLayout = reverseLayout,
-            beyondViewportPageCount = 2,
-            key = { index -> cursors.getOrNull(index) ?: index },
-            verticalAlignment = Alignment.CenterVertically
-        ) { index ->
-            val cursor = cursors.getOrNull(index) ?: return@HorizontalPager
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(heightFraction)
-                    .shadow(elevation = 8.dp, shape = RoundedCornerShape(4.dp))
-                    .clip(RoundedCornerShape(4.dp))
-                    .pointerInput(pagerState.currentPage, index) {
-                        detectTapGestures(
-                            onTap = {
-                                if (index == pagerState.currentPage) {
-                                    onCenterTap()
-                                } else {
-                                    scope.launch { pagerState.animateScrollToPage(index) }
+                .padding(bottom = 88.dp)
+        ) {
+            val pagerHeight = maxHeight
+            val maxCardWidth = screenWidth * (if (isPortrait) 0.78f else 0.74f)
+            val maxCardHeight = pagerHeight * 0.88f
+            val scale = minOf(maxCardWidth / screenWidth, maxCardHeight / screenHeight)
+            val cardWidth = screenWidth * scale
+            val cardHeight = screenHeight * scale
+            val sidePadding = (screenWidth - cardWidth) / 2f
+
+            HorizontalPager(
+                state = pagerState,
+                flingBehavior = PagerDefaults.flingBehavior(
+                    state = pagerState,
+                    pagerSnapDistance = PagerSnapDistance.atMost(10)
+                ),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = sidePadding),
+                pageSpacing = 20.dp,
+                reverseLayout = reverseLayout,
+                beyondViewportPageCount = 2,
+                key = { index -> cursors.getOrNull(index) ?: index },
+                verticalAlignment = Alignment.CenterVertically
+            ) { index ->
+                val cursor = cursors.getOrNull(index) ?: return@HorizontalPager
+                Box(
+                    modifier = Modifier
+                        .width(cardWidth)
+                        .height(cardHeight)
+                        .shadow(elevation = 8.dp, shape = RoundedCornerShape(4.dp))
+                        .clip(RoundedCornerShape(4.dp))
+                        .pointerInput(pagerState.currentPage, index) {
+                            detectTapGestures(
+                                onTap = {
+                                    if (index == pagerState.currentPage) {
+                                        onCenterTap()
+                                    } else {
+                                        scope.launch { pagerState.animateScrollToPage(index) }
+                                    }
                                 }
-                            }
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier.scaledLayout(
+                            scale = scale,
+                            fullWidth = screenWidth,
+                            fullHeight = screenHeight
                         )
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                pageContent(cursor, Modifier.fillMaxSize())
+                    ) {
+                        pageContent(cursor, Modifier.fillMaxSize())
+                    }
+                }
             }
         }
     }

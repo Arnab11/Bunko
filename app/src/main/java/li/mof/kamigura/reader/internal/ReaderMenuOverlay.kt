@@ -792,6 +792,7 @@ internal fun ReaderMenuOverlay(
                 enabled = safePageCount > 1,
                 reverseTrackColors = rightToLeft,
                 showStopIndicator = false,
+                roundThumb = true,
                 modifier = Modifier.weight(1f)
             )
 

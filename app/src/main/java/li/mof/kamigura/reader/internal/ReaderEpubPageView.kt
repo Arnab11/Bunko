@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
@@ -34,6 +36,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.ImageLoader
@@ -63,7 +66,8 @@ internal fun ReaderEpubPageView(
     epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
     modifier: Modifier = Modifier,
     imageLoader: ImageLoader? = null,
-    contentPadding: PaddingValues? = null
+    contentPadding: PaddingValues? = null,
+    blockSpacingDp: Dp = 10.dp
 ) {
     val isDark = pageBackground.luminance() < 0.5f
     val textColor = if (isDark) Color(0xFFEDEDED) else Color(0xFF141414)
@@ -83,7 +87,7 @@ internal fun ReaderEpubPageView(
         EpubTextAlign.Justify -> TextAlign.Justify
     }
 
-    val insets = WindowInsets.safeDrawing.asPaddingValues()
+    val insets = WindowInsets.navigationBars.union(WindowInsets.displayCutout).asPaddingValues()
     val layoutDirection = LocalLayoutDirection.current
     val effectivePadding = contentPadding ?: PaddingValues(
         start = insets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp),
@@ -100,7 +104,7 @@ internal fun ReaderEpubPageView(
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(blockSpacingDp)
         ) {
             for (block in subpage.blocks) {
                 when (block) {

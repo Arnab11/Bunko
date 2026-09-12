@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -806,12 +809,12 @@ fun ReaderScreen(
         val viewportHeightPx = with(density) { maxHeight.toPx() }
         val viewportHeight = maxHeight
 
-        val safeDrawingInsets = WindowInsets.safeDrawing.asPaddingValues()
+        val stableInsets = WindowInsets.navigationBars.union(WindowInsets.displayCutout).asPaddingValues()
         val layoutDirection = LocalLayoutDirection.current
-        val safeTopPadding = (safeDrawingInsets.calculateTopPadding() + 16.dp).coerceAtLeast(28.dp)
-        val safeBottomPadding = (safeDrawingInsets.calculateBottomPadding() + 24.dp).coerceAtLeast(36.dp)
-        val safeStartPadding = safeDrawingInsets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp)
-        val safeEndPadding = safeDrawingInsets.calculateEndPadding(layoutDirection).coerceAtLeast(20.dp)
+        val safeTopPadding = (stableInsets.calculateTopPadding() + 16.dp).coerceAtLeast(28.dp)
+        val safeBottomPadding = (stableInsets.calculateBottomPadding() + 24.dp).coerceAtLeast(36.dp)
+        val safeStartPadding = stableInsets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp)
+        val safeEndPadding = stableInsets.calculateEndPadding(layoutDirection).coerceAtLeast(20.dp)
 
         val portraitPadding = PaddingValues(
             start = safeStartPadding,
@@ -900,9 +903,11 @@ fun ReaderScreen(
             singlePageAlignmentOverride: Alignment? = null,
             modifier: Modifier = Modifier,
             epubFontSizeSpOverride: Float? = null,
-            epubContentPaddingOverride: PaddingValues? = null
+            epubContentPaddingOverride: PaddingValues? = null,
+            epubBlockSpacingOverride: Dp? = null
         ) {
             val effectiveEpubFontSizeSp = epubFontSizeSpOverride ?: epubFontSizeSp
+            val effectiveBlockSpacing = epubBlockSpacingOverride ?: 10.dp
             if (isEpub && epubSubpages.isNotEmpty()) {
                 if (portrait || singlePageAlignmentOverride != null) {
                     val safeIndex = cursor.coerceIn(0, epubSubpages.lastIndex)
@@ -915,6 +920,7 @@ fun ReaderScreen(
                         epubTextAlign = settings.reader.epubTextAlign,
                         imageLoader = imageLoader,
                         contentPadding = epubContentPaddingOverride ?: portraitPadding,
+                        blockSpacingDp = effectiveBlockSpacing,
                         modifier = modifier
                     )
                 } else {
@@ -931,6 +937,7 @@ fun ReaderScreen(
                                     epubTextAlign = settings.reader.epubTextAlign,
                                     imageLoader = imageLoader,
                                     contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
+                                    blockSpacingDp = effectiveBlockSpacing,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
@@ -952,6 +959,7 @@ fun ReaderScreen(
                                     epubTextAlign = settings.reader.epubTextAlign,
                                     imageLoader = imageLoader,
                                     contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
+                                    blockSpacingDp = effectiveBlockSpacing,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
@@ -1271,22 +1279,21 @@ fun ReaderScreen(
             when (direction) {
                 ReaderTurnDirection.Next -> if (completeWhenPastEnd) {
                     val next = neighbors.next
-                    if (next == null) {
-                        completeChapter()
-                    } else {
+                    if (next != null) {
                         completeChapter(exitAfter = false)
                         chapterBoundary = ReaderChapterBoundary(
                             direction = direction,
                             current = currentChapter,
                             neighbor = next
                         )
+                    } else {
+                        // At the end of the book: record completed progress but do not automatically close the reader
+                        completeChapter(exitAfter = false)
                     }
                 }
                 ReaderTurnDirection.Previous -> if (page == 0) {
                     val previous = neighbors.previous
-                    if (previous == null) {
-                        resetChapterAndExit()
-                    } else {
+                    if (previous != null) {
                         resetChapterAndExit(exitAfter = false)
                         chapterBoundary = ReaderChapterBoundary(
                             direction = direction,
@@ -1774,12 +1781,12 @@ fun ReaderScreen(
                         if (verticalBoundariesEnabled && !completingRead) {
                             when (direction) {
                                 ReaderTurnDirection.Next -> {
-                                    if (neighbors.next == null) completeChapter()
-                                    else completeChapter(exitAfter = false)
+                                    completeChapter(exitAfter = false)
                                 }
                                 ReaderTurnDirection.Previous -> {
-                                    if (neighbors.previous == null) resetChapterAndExit()
-                                    else resetChapterAndExit(exitAfter = false)
+                                    if (neighbors.previous != null) {
+                                        resetChapterAndExit(exitAfter = false)
+                                    }
                                 }
                             }
                         }
@@ -1840,13 +1847,7 @@ fun ReaderScreen(
                                 whiteThreshold = settings.reader.invertWhiteThreshold,
                                 invertDecisionCache = invertDecisionCache,
                                 pageBackground = readerPageBackground,
-                                modifier = cardModifier,
-                                // Cards are ~80% width and near full height matching Google Play Books.
-                                epubFontSizeSpOverride = epubFontSizeSp * 0.85f,
-                                epubContentPaddingOverride = PaddingValues(
-                                    horizontal = 14.dp,
-                                    vertical = 12.dp
-                                )
+                                modifier = cardModifier
                             )
                         }
                     } else {
@@ -2206,51 +2207,11 @@ fun ReaderScreen(
                 onTurnDragEnd = ::settleTurnDrag,
                 onTurnDragCancel = ::cancelTurnDrag,
                 directionLockEnabled = useCurl,
-                closeSwipeEnabled = activeTransition == null &&
-                    activeCurlDirection == null &&
-                    !transitionSettling &&
-                    !showReaderMenu,
+                closeSwipeEnabled = false,
                 closeVisualDistancePx = viewportHeightPx,
-                onCloseDrag = { offset ->
-                    closeAnimationJob?.cancel()
-                    closeDragOffsetY = offset
-                },
-                onCloseDragEnd = { commit ->
-                    closeAnimationJob?.cancel()
-                    closeAnimationJob = scope.launch {
-                        val start = closeDragOffsetY
-                        val target = if (commit) viewportHeightPx else 0f
-                        Animatable(start).animateTo(
-                            targetValue = target,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            )
-                        ) {
-                            closeDragOffsetY = value
-                        }
-                        if (commit) {
-                            onBack()
-                        } else {
-                            closeDragOffsetY = 0f
-                        }
-                    }
-                },
-                onCloseDragCancel = {
-                    closeAnimationJob?.cancel()
-                    closeAnimationJob = scope.launch {
-                        Animatable(closeDragOffsetY).animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            )
-                        ) {
-                            closeDragOffsetY = value
-                        }
-                        closeDragOffsetY = 0f
-                    }
-                },
+                onCloseDrag = {},
+                onCloseDragEnd = {},
+                onCloseDragCancel = {},
                 onDoubleTap = {
                     val start = zoomPan
                     val target = start.withDoubleTapZoom(
