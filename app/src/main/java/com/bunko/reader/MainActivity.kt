@@ -1,4 +1,4 @@
-﻿package com.bunko.reader
+package com.bunko.reader
 
 import android.os.Bundle
 import android.content.Intent
@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -21,7 +23,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
+import com.bunko.reader.ui.theme.BunkoBackground
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,6 +63,8 @@ import com.bunko.reader.series.ChapterPickScreen
 import com.bunko.reader.series.SeriesScreen
 import com.bunko.reader.update.AvailableUpdate
 import com.bunko.reader.update.GitHubUpdateChecker
+import com.bunko.reader.offline.LocalBookRepository
+import com.bunko.reader.offline.OfflineStartupScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -99,6 +105,7 @@ fun AppRoot(
     var availableUpdate by remember { mutableStateOf<AvailableUpdate?>(null) }
     var updateNoticeShown by rememberSaveable { mutableStateOf(false) }
     val offlineRepository = remember(ctx) { OfflineIssueRepository(ctx) }
+    val localRepository = remember(ctx) { LocalBookRepository(ctx) }
     var installedImageLoader by remember { mutableStateOf<ImageLoader?>(null) }
 
     fun installImageLoader(loader: ImageLoader?) {
@@ -156,7 +163,91 @@ fun AppRoot(
         installImageLoader(nextImageLoader)
     }
 
-    NavHost(navController = nav, startDestination = "login") {
+    val scope = rememberCoroutineScope()
+    val startupCompleted by localRepository.startupCompletedFlow.collectAsState(initial = null)
+    val activeMode by localRepository.activeModeFlow.collectAsState(initial = null)
+
+    LaunchedEffect(Unit) {
+        val session = sessionStore.load()
+        if (session.baseUrl.isNotBlank() && (session.jwt.isNotBlank() || session.apiKey.isNotBlank())) {
+            localRepository.setStartupCompleted(true)
+        }
+    }
+
+    if (startupCompleted == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BunkoBackground)
+        )
+        return
+    }
+
+    val resolvedStart = remember {
+        if (!startupCompleted!!) {
+            "startup"
+        } else {
+            "libraries"
+        }
+    }
+
+    NavHost(navController = nav, startDestination = resolvedStart) {
+        composable("startup") {
+            OfflineStartupScreen(
+                localRepository = localRepository,
+                sessionStore = sessionStore,
+                offlineRepository = offlineRepository,
+                onOpenOfflineLibrary = {
+                    scope.launch { localRepository.setActiveMode("offline") }
+                    nav.navigate("libraries") {
+                        popUpTo("startup") { inclusive = true }
+                    }
+                },
+                onOpenDownloaded = { nav.navigate("downloaded") },
+                onConnectKavita = {
+                    scope.launch { localRepository.setActiveMode("kavita") }
+                    val client = KavitaClient(ctx, sessionStore)
+                    val session = sessionStore.load()
+                    val (_, okHttp) = client.buildApi()
+                    installImageLoader(client.buildImageLoader(okHttp, session))
+                    sessionRevision += 1
+                    val destination = if (
+                        loginDefaults.debugLibraryId > 0 && loginDefaults.debugSeriesId > 0
+                    ) {
+                        "chapters/${loginDefaults.debugLibraryId}/${loginDefaults.debugSeriesId}/" +
+                            Uri.encode(loginDefaults.debugSeriesName)
+                    } else {
+                        "libraries"
+                    }
+                    nav.navigate(destination) {
+                        popUpTo("startup") { inclusive = true }
+                    }
+                },
+                onOpenServerSettings = { nav.navigate("settings/server") }
+            )
+        }
+
+        composable(
+            route = "local-reader/{bookId}?page={page}",
+            arguments = listOf(
+                navArgument("bookId") { type = NavType.StringType },
+                navArgument("page") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                }
+            )
+        ) { backStack ->
+            val bookId = backStack.arguments!!.getString("bookId").orEmpty()
+            val initialPage = backStack.arguments!!.getInt("page").takeIf { it >= 0 }
+            ReaderScreen(
+                sessionStore = sessionStore,
+                settingsStore = settingsStore,
+                localBookId = bookId,
+                localRepository = localRepository,
+                initialPage = initialPage,
+                onBack = { nav.popBackStack() }
+            )
+        }
             composable("login") {
                 LoginScreen(
                     sessionStore = sessionStore,
@@ -209,6 +300,8 @@ fun AppRoot(
                 LibraryScreen(
                     sessionStore = sessionStore,
                     sessionRevision = sessionRevision,
+                    localRepository = localRepository,
+                    initialIsOffline = (activeMode == "offline"),
                     initialSearchQuery = backStack.arguments!!.getString("search").orEmpty(),
                     availableUpdate = availableUpdate?.takeUnless { updateNoticeShown },
                     onOpenUpdate = { releaseUrl ->
@@ -231,6 +324,12 @@ fun AppRoot(
                     onSelectSeries = { series ->
                         val libraryId = series.libraryId ?: 0
                         nav.navigate("chapters/$libraryId/${series.id}/${series.name}")
+                    },
+                    onOpenOfflineBook = { book ->
+                        nav.navigate("local-reader/${book.id}?page=${book.lastReadPage}")
+                    },
+                    onRequireLogin = {
+                        nav.navigate("login")
                     }
                 )
             }

@@ -1,6 +1,7 @@
 package com.bunko.reader.library.internal
 
 import android.net.Uri
+import com.bunko.reader.offline.LocalBook
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -102,6 +103,9 @@ import com.bunko.reader.ui.browse.BrowsePageScaffold
 import com.bunko.reader.ui.browse.LazyGridLoadMoreEffect
 import com.bunko.reader.ui.browse.PagingFooter
 import com.bunko.reader.ui.browse.PosterGrid
+import com.bunko.reader.series.SeriesLibrarySort
+import com.bunko.reader.series.sortedForLibrary
+import com.bunko.reader.ui.browse.SeriesListItem
 import com.bunko.reader.ui.browse.SeriesPosterCard
 import com.bunko.reader.ui.browse.SeriesShelfItemSpacing
 import com.bunko.reader.ui.browse.SeriesShelfItemWidth
@@ -326,6 +330,17 @@ internal fun HomeContent(
     onOpenCollections: () -> Unit,
     onOpenDownloaded: () -> Unit,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
+    isOffline: Boolean = false,
+    offlineBooks: List<LocalBook> = emptyList(),
+    offlineFolderName: String? = null,
+    isOfflineScanning: Boolean = false,
+    onOpenOfflineBook: (LocalBook) -> Unit = {},
+    onChangeOfflineFolder: () -> Unit = {},
+    onRescanOffline: () -> Unit = {},
+    selectedSort: LocalBookSort = LocalBookSort.Title,
+    kavitaSort: SeriesLibrarySort = SeriesLibrarySort.Title,
+    isGridView: Boolean = true,
+    onSelectDestination: (HomeDestination) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val homeListState = rememberLazyListState()
@@ -347,6 +362,73 @@ internal fun HomeContent(
     }
 
     Column(modifier.fillMaxSize()) {
+        if (isOffline) {
+            val pullState = rememberPullToRefreshState()
+            PullToRefreshBox(
+                isRefreshing = isOfflineScanning,
+                onRefresh = onRescanOffline,
+                modifier = Modifier.fillMaxSize(),
+                state = pullState,
+                indicator = { BunkoPullToRefreshIndicator(pullState, isOfflineScanning) }
+            ) {
+                when (destination) {
+                    HomeDestination.Home -> {
+                        OfflineHomePane(
+                            books = offlineBooks,
+                            isGridView = isGridView,
+                            onOpenBook = onOpenOfflineBook,
+                            onSeeAll = { onSelectDestination(HomeDestination.Browse) },
+                            onChangeFolder = onChangeOfflineFolder,
+                            onRescan = onRescanOffline,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    HomeDestination.Libraries -> {
+                        OfflineLibrariesPane(
+                            folderName = offlineFolderName,
+                            books = offlineBooks,
+                            isScanning = isOfflineScanning,
+                            isGridView = isGridView,
+                            onChangeFolder = onChangeOfflineFolder,
+                            onRescan = onRescanOffline,
+                            onOpenBook = onOpenOfflineBook,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    HomeDestination.WantToRead -> {
+                        OfflineWantToReadPane(
+                            books = offlineBooks,
+                            isGridView = isGridView,
+                            onOpenBook = onOpenOfflineBook,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    HomeDestination.Browse -> {
+                        OfflineBrowsePane(
+                            books = offlineBooks,
+                            sort = selectedSort,
+                            isGridView = isGridView,
+                            onOpenBook = onOpenOfflineBook,
+                            onChangeFolder = onChangeOfflineFolder,
+                            onRescan = onRescanOffline,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    HomeDestination.Search -> {
+                        OfflineSearchPane(
+                            books = offlineBooks,
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = { searchQuery = it },
+                            isGridView = isGridView,
+                            onOpenBook = onOpenOfflineBook,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+            return@Column
+        }
+
         if (destination != HomeDestination.Browse && loading) {
             DarkLoadingState()
             return@Column
@@ -361,6 +443,11 @@ internal fun HomeContent(
             return@Column
         }
 
+        val displayOnDeck = remember(onDeck, kavitaSort) { onDeck.sortedForLibrary(kavitaSort) }
+        val displayRecentlyUpdated = remember(recentlyUpdated, kavitaSort) { recentlyUpdated.sortedForLibrary(kavitaSort) }
+        val displayNewlyAdded = remember(newlyAdded, kavitaSort) { newlyAdded.sortedForLibrary(kavitaSort) }
+        val displayWantToRead = remember(wantToRead, kavitaSort) { wantToRead.sortedForLibrary(kavitaSort) }
+
         when (destination) {
             HomeDestination.Home -> {
                 val pullState = rememberPullToRefreshState()
@@ -371,7 +458,7 @@ internal fun HomeContent(
                     state = pullState,
                     indicator = { BunkoPullToRefreshIndicator(pullState, refreshing) }
                 ) {
-                    if (onDeck.isEmpty() && recentlyUpdated.isEmpty() && newlyAdded.isEmpty()) {
+                    if (displayOnDeck.isEmpty() && displayRecentlyUpdated.isEmpty() && displayNewlyAdded.isEmpty()) {
                         DarkMessageState(
                             title = "No series",
                             body = "This server did not return visible home shelves."
@@ -384,19 +471,20 @@ internal fun HomeContent(
                             verticalArrangement = Arrangement.spacedBy(22.dp)
                         ) {
                             item {
-                                HomeShelf(HomeShelfKind.OnDeck, onDeck, session, onOpenShelf, onSelectSeries)
+                                HomeShelf(HomeShelfKind.OnDeck, displayOnDeck, session, isGridView, onOpenShelf, onSelectSeries)
                             }
                             item {
                                 HomeShelf(
                                     HomeShelfKind.RecentlyUpdated,
-                                    recentlyUpdated,
+                                    displayRecentlyUpdated,
                                     session,
+                                    isGridView,
                                     onOpenShelf,
                                     onSelectSeries
                                 )
                             }
                             item {
-                                HomeShelf(HomeShelfKind.NewlyAdded, newlyAdded, session, onOpenShelf, onSelectSeries)
+                                HomeShelf(HomeShelfKind.NewlyAdded, displayNewlyAdded, session, isGridView, onOpenShelf, onSelectSeries)
                             }
                         }
                     }
@@ -425,8 +513,9 @@ internal fun HomeContent(
                     )
                 } else {
                     WantToReadGrid(
-                        series = wantToRead,
+                        series = displayWantToRead,
                         session = session,
+                        isGridView = isGridView,
                         refreshing = refreshing,
                         onRefresh = onRefresh,
                         onSelectSeries = onSelectSeries,
@@ -596,6 +685,7 @@ private fun BrowseHubItem(
 private fun WantToReadGrid(
     series: List<SeriesDto>,
     session: KavitaSession,
+    isGridView: Boolean = true,
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onSelectSeries: (SeriesDto) -> Unit,
@@ -717,7 +807,7 @@ private fun WantToReadGrid(
         ) {
             if (series.isEmpty()) {
                 DarkMessageState(title = "Want to Read", body = "No series added yet.")
-            } else {
+            } else if (isGridView) {
                 PosterGrid(
                     items = series,
                     key = { it.id },
@@ -746,6 +836,38 @@ private fun WantToReadGrid(
                         },
                         onSelectionChange = { toggleSelection(item.id) }
                     )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(series, key = { it.id }) { item ->
+                        SeriesListItem(
+                            series = item,
+                            session = session,
+                            selectionMode = selectionMode,
+                            selected = item.id in selectedIdSet,
+                            onClick = {
+                                if (selectionMode) toggleSelection(item.id) else onSelectSeries(item)
+                            },
+                            onLongClick = {
+                                if (!selectionMode) selectionMode = true
+                                toggleSelection(item.id)
+                            },
+                            onSelectionChange = { toggleSelection(item.id) }
+                        )
+                    }
+                    if (loadingMore || loadMoreError != null) {
+                        item {
+                            PagingFooter(
+                                loading = loadingMore,
+                                error = loadMoreError,
+                                onRetry = onLoadMore
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -802,6 +924,7 @@ private fun HomeShelf(
     kind: HomeShelfKind,
     series: List<SeriesDto>,
     session: KavitaSession,
+    isGridView: Boolean = true,
     onOpenShelf: (HomeShelfKind) -> Unit,
     onSelectSeries: (SeriesDto) -> Unit
 ) {
@@ -829,12 +952,8 @@ private fun HomeShelf(
         Spacer(Modifier.height(10.dp))
         if (series.isEmpty()) {
             Text("Nothing here yet", color = Color(0xFF9FA5A5), style = MaterialTheme.typography.bodyMedium)
-        } else {
+        } else if (isGridView) {
             val cardShape = MaterialTheme.shapes.small
-            // A shelf of fixed-width poster cards. Dimensions live in BrowseComponents so Home
-            // and Search stay in sync. A plain LazyRow is used instead of a Carousel: the
-            // carousel keeps a masked cut-off item at the right edge whose clip rect trembled
-            // against the overscroll spring, and the uniform cards here don't need that masking.
             val shelfHeight = seriesShelfHeight()
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -851,6 +970,21 @@ private fun HomeShelf(
                             .width(SeriesShelfItemWidth)
                             .height(shelfHeight)
                             .clickable { onSelectSeries(item) }
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                series.take(6).forEach { item ->
+                    SeriesListItem(
+                        series = item,
+                        session = session,
+                        onClick = { onSelectSeries(item) }
                     )
                 }
             }

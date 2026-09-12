@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon.png" width="128" alt="Bunko Icon" />
+</p>
+
 # Bunko
 > An Android manga reader for [Kavita](https://www.kavitareader.com/),
 > designed for self-scanned libraries and tablet-first reading.

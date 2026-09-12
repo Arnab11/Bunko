@@ -138,6 +138,17 @@ import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
+import android.content.Context
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import androidx.activity.compose.BackHandler
+import com.bunko.reader.download.OfflineIssueRecord
+import com.bunko.reader.download.OfflinePage
+import com.bunko.reader.download.compareNaturalFileNames
+import com.bunko.reader.offline.LocalBookFormat
+import com.bunko.reader.offline.LocalBookRepository
+import java.io.File
+import java.util.zip.ZipFile
 
 // Process-lived scope for chapter-exit writes (mark read/unread, final progress) so they
 // survive the reader being popped off the back stack the instant the user leaves.
@@ -175,6 +186,57 @@ internal fun readerPageBackgroundColor(
     else -> Color(0xFFFAF7F2)
 }
 
+private val LocalImageExtensions = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "avif")
+
+private suspend fun loadLocalEpubSpines(ctx: Context, file: File): List<List<EpubBlock>> = withContext(Dispatchers.IO) {
+    val result = mutableListOf<List<EpubBlock>>()
+    try {
+        val cacheDir = File(ctx.cacheDir, "epub_resources_${file.nameWithoutExtension.hashCode()}")
+        if (!cacheDir.exists()) cacheDir.mkdirs()
+
+        ZipFile(file).use { zip ->
+            zip.entries().asSequence().forEach { entry ->
+                val lower = entry.name.lowercase()
+                if (!entry.isDirectory && (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp") || lower.endsWith(".gif"))) {
+                    val dest = File(cacheDir, entry.name.substringAfterLast('/'))
+                    if (!dest.exists() || dest.length() == 0L) {
+                        zip.getInputStream(entry).use { input ->
+                            dest.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                }
+            }
+
+            val xhtmlEntries = zip.entries().asSequence()
+                .filter { !it.isDirectory && (it.name.endsWith(".xhtml") || it.name.endsWith(".html") || it.name.endsWith(".htm")) }
+                .sortedWith { a, b -> compareNaturalFileNames(a.name, b.name) }
+                .toList()
+
+            var spineIndex = 0
+            for (entry in xhtmlEntries) {
+                val html = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+                val blocks = ReaderEpubPaginator.parseHtmlToBlocks(
+                    html = html,
+                    chapterId = spineIndex,
+                    baseUrl = "",
+                    apiKey = "",
+                    bookResourceUrlBuilder = { _, _, _, resourcePath ->
+                        val fileName = resourcePath.substringAfterLast('/')
+                        File(cacheDir, fileName).absolutePath
+                    }
+                )
+                if (blocks.isNotEmpty()) {
+                    result.add(blocks)
+                    spineIndex++
+                }
+            }
+        }
+    } catch (t: Throwable) {
+        BunkoLog.w("Error parsing local epub spines", t)
+    }
+    result
+}
+
 internal fun readerPortraitBackPageContentAlpha(showContent: Boolean): Float {
     return if (showContent) ReaderPortraitBackPageContentAlpha else 0f
 }
@@ -184,10 +246,12 @@ internal fun readerPortraitBackPageContentAlpha(showContent: Boolean): Float {
 fun ReaderScreen(
     sessionStore: KavitaSessionStore,
     settingsStore: AppSettingsStore,
-    libraryId: Int,
-    seriesId: Int,
-    volumeId: Int,
-    chapterId: Int,
+    libraryId: Int = 0,
+    seriesId: Int = 0,
+    volumeId: Int = 0,
+    chapterId: Int = 0,
+    localBookId: String? = null,
+    localRepository: LocalBookRepository? = null,
     incognito: Boolean = false,
     initialPage: Int? = null,
     onBack: () -> Unit
@@ -287,9 +351,33 @@ fun ReaderScreen(
         }.awaitAll()
     }
 
-    DisposableEffect(readerImageLoader) {
+    DisposableEffect(readerImageLoader, localBookId) {
         val activeLoader = readerImageLoader
-        onDispose { activeLoader?.shutdown() }
+        onDispose {
+            activeLoader?.shutdown()
+            if (localBookId != null && localRepository != null && pages > 0) {
+                ReaderExitWriteScope.launch {
+                    localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
+                }
+            }
+        }
+    }
+
+    val handleBack = {
+        if (localBookId != null && localRepository != null && pages > 0) {
+            ReaderExitWriteScope.launch {
+                localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
+            }
+        }
+        onBack()
+    }
+
+    BackHandler {
+        if (showReaderMenu) {
+            showReaderMenu = false
+        } else {
+            handleBack()
+        }
     }
 
     fun clampPage(value: Int): Int = value.coerceIn(0, (pages - 1).coerceAtLeast(0))
@@ -376,8 +464,11 @@ fun ReaderScreen(
             offline = offlineChapter != null
         )
         pendingRemoteProgress = null
-        // Exit immediately when there is no neighbor; otherwise the same writes continue
-        // behind the chapter-boundary screen.
+        if (localBookId != null && localRepository != null) {
+            ReaderExitWriteScope.launch {
+                localRepository.saveProgress(localBookId, finalPage, pages, isCompleted = true)
+            }
+        }
         if (exitAfter) onBack()
         if (incognito) return
         val loadedApi = api
@@ -428,6 +519,11 @@ fun ReaderScreen(
         val resetChapterId = currentChapterId
         progressRevisionClocks.getOrPut(resetChapterId) { AtomicLong(0L) }.incrementAndGet()
         pendingRemoteProgress = null
+        if (localBookId != null && localRepository != null) {
+            ReaderExitWriteScope.launch {
+                localRepository.saveProgress(localBookId, 0, pages, isCompleted = false)
+            }
+        }
         // Exit immediately when there is no neighbor; otherwise remain on the boundary.
         if (exitAfter) onBack()
         if (incognito) return
@@ -564,6 +660,133 @@ fun ReaderScreen(
         // is correct even before `settings` has emitted.
         val persistedReaderSettings = settingsStore.flow.first().reader
         invertMode = persistedReaderSettings.invertMode
+
+        if (localBookId != null && localRepository != null) {
+            val prefKey = "local:$localBookId"
+            sessionPreferenceKey = prefKey
+            ReaderSessionPreferenceCache.load(ctx.cacheDir, System.currentTimeMillis())
+            val cachedPreferences = ReaderSessionPreferenceCache.get(
+                prefKey,
+                System.currentTimeMillis()
+            )
+            if (cachedPreferences != null) {
+                readingDirection = cachedPreferences.readingDirection
+                invertMode = cachedPreferences.invertMode
+            } else {
+                readingDirection = persistedReaderSettings.readingDirection
+            }
+            try {
+                val book = localRepository.getBook(localBookId)
+                if (book == null) {
+                    error = "Book not found in library."
+                    return@LaunchedEffect
+                }
+                seriesName = book.title
+                currentChapter = ReaderChapterEntry(
+                    chapterId = 0,
+                    volumeId = 0,
+                    volumeName = null,
+                    chapterName = book.title
+                )
+                chapterSequence = listOf(currentChapter)
+
+                val file = localRepository.prepareBookFile(book)
+                if (!file.isFile || file.length() == 0L) {
+                    error = "Could not open book file from storage."
+                    return@LaunchedEffect
+                }
+
+                when (book.format) {
+                    LocalBookFormat.CBZ, LocalBookFormat.ZIP -> {
+                        val resolvedPages = withContext(Dispatchers.IO) {
+                            ZipFile(file).use { zip ->
+                                zip.entries().asSequence()
+                                    .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in LocalImageExtensions }
+                                    .sortedWith { a, b -> compareNaturalFileNames(a.name, b.name) }
+                                    .mapIndexed { index, entry ->
+                                        OfflinePage.ArchiveEntry(file.absolutePath, entry.name, index)
+                                    }
+                                    .toList()
+                            }
+                        }
+                        pages = resolvedPages.size
+                        offlineChapter = OfflineChapter(
+                            record = OfflineIssueRecord(
+                                serverKey = "local",
+                                chapterId = 0,
+                                libraryId = 0,
+                                seriesId = 0,
+                                volumeId = 0,
+                                seriesName = book.title,
+                                issueName = book.title,
+                                downloadId = 0L,
+                                archivePath = file.absolutePath,
+                                localPage = initialPage ?: book.lastReadPage,
+                                pageCount = resolvedPages.size
+                            ),
+                            pages = resolvedPages,
+                            dimensions = emptyMap()
+                        )
+                        page = (initialPage ?: book.lastReadPage).coerceIn(0, (pages - 1).coerceAtLeast(0))
+                        readerReady = pages > 0
+                        verticalRestoreNonce++
+                    }
+                    LocalBookFormat.PDF -> {
+                        val resolvedPages = withContext(Dispatchers.IO) {
+                            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                                PdfRenderer(pfd).use { renderer ->
+                                    (0 until renderer.pageCount).map { index ->
+                                        renderer.openPage(index).use { p ->
+                                            OfflinePage.PdfPage(file.absolutePath, index, p.width, p.height)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        pages = resolvedPages.size
+                        offlineChapter = OfflineChapter(
+                            record = OfflineIssueRecord(
+                                serverKey = "local",
+                                chapterId = 0,
+                                libraryId = 0,
+                                seriesId = 0,
+                                volumeId = 0,
+                                seriesName = book.title,
+                                issueName = book.title,
+                                downloadId = 0L,
+                                archivePath = file.absolutePath,
+                                localPage = initialPage ?: book.lastReadPage,
+                                pageCount = resolvedPages.size
+                            ),
+                            pages = resolvedPages,
+                            dimensions = emptyMap()
+                        )
+                        page = (initialPage ?: book.lastReadPage).coerceIn(0, (pages - 1).coerceAtLeast(0))
+                        readerReady = pages > 0
+                        verticalRestoreNonce++
+                    }
+                    LocalBookFormat.EPUB -> {
+                        isEpub = true
+                        val spineBlocks = loadLocalEpubSpines(ctx, file)
+                        if (spineBlocks.isEmpty()) {
+                            error = "Could not parse EPUB content."
+                            return@LaunchedEffect
+                        }
+                        epubSpineBlocks = spineBlocks
+                        page = (initialPage ?: book.lastReadPage)
+                        verticalRestoreNonce++
+                    }
+                    else -> {
+                        error = "Format ${book.extension} is not supported."
+                    }
+                }
+            } catch (t: Throwable) {
+                BunkoLog.w("Could not load local book in Reader.", t)
+                error = t.message ?: t.toString()
+            }
+            return@LaunchedEffect
+        }
+
         val loadedSession = sessionStore.load()
         session = loadedSession
         val activeProfileId = runCatching { sessionStore.activeProfile()?.id }.getOrNull()
@@ -703,6 +926,7 @@ fun ReaderScreen(
     }
 
     LaunchedEffect(
+        localBookId,
         currentChapterId,
         readerReady,
         pages,
@@ -714,6 +938,10 @@ fun ReaderScreen(
         if (!readerReady) return@LaunchedEffect
         if (incognito) return@LaunchedEffect
         if (pages <= 0 || page !in 0 until pages) return@LaunchedEffect
+        if (localBookId != null && localRepository != null) {
+            localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
+            return@LaunchedEffect
+        }
         val loadedSession = session ?: return@LaunchedEffect
         if (offlineChapter != null) {
             offlineRepository.saveLocalProgress(loadedSession, currentChapterId, page)
@@ -775,7 +1003,7 @@ fun ReaderScreen(
     }
 
     val s = session
-    if (s == null) {
+    if (s == null && localBookId == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Loading session...") }
         return
     }
@@ -783,7 +1011,7 @@ fun ReaderScreen(
     val client = remember { KavitaClient(ctx, sessionStore) }
     val activeImageLoader = readerImageLoader ?: fallbackImageLoader
     fun pageModel(index: Int): Any? = offlineChapter?.pages?.getOrNull(index)
-        ?: if (index in 0 until pages) {
+        ?: if (s != null && index in 0 until pages) {
             client.pageImageUrl(s.baseUrl, s.apiKey, currentChapterId, index)
         } else {
             null
@@ -877,7 +1105,11 @@ fun ReaderScreen(
                 val total = allSubpages.size.coerceAtLeast(1)
                 epubSubpages = allSubpages
                 pages = total
-                var targetPage = (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+                var targetPage = if (oldProgressRatio == 0f && page > 0) {
+                    page.coerceIn(0, total - 1)
+                } else {
+                    (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+                }
                 if (!portrait && targetPage % 2 != 0 && targetPage > 0) {
                     targetPage -= 1
                 }
@@ -1132,14 +1364,14 @@ fun ReaderScreen(
             pageDimensions,
             offlineChapter,
             activeImageLoader,
-            s.baseUrl,
-            s.apiKey,
+            s?.baseUrl,
+            s?.apiKey,
             settings.reader.prefetchTurns,
             vertical,
             invertMode,
             settings.reader.invertWhiteThreshold
         ) {
-            if (offlineChapter != null || pages <= 0) return@LaunchedEffect
+            if (offlineChapter != null || pages <= 0 || s == null) return@LaunchedEffect
             val targets = if (vertical) {
                 val indices = readerVerticalPrefetchPageIndicesAround(
                     page = page,
@@ -1803,7 +2035,7 @@ fun ReaderScreen(
                             )
                         }
                     },
-                    onBackToSeries = onBack,
+                    onBackToSeries = handleBack,
                     onMenuToggle = { showReaderMenu = !showReaderMenu },
                     epubSubpages = epubSubpages,
                     epubFontSizeSp = epubFontSizeSp,
@@ -2293,7 +2525,7 @@ fun ReaderScreen(
                 switching = chapterSwitching,
                 hasError = error != null,
                 onContinue = ::continueFromChapterBoundary,
-                onBackToSeries = onBack
+                onBackToSeries = handleBack
             )
         }
 
@@ -2306,7 +2538,7 @@ fun ReaderScreen(
                 readingDirection = readingDirection,
                 pageLayoutMode = settings.reader.pageLayoutMode,
                 showSpreadShift = !vertical && !portrait && settings.reader.showSpreadShiftButtons,
-                onBack = onBack,
+                onBack = handleBack,
                 onDismiss = { showReaderMenu = false },
                 onSetReadingDirection = { direction ->
                     // Per-book session override only. The global fallback lives in Reader

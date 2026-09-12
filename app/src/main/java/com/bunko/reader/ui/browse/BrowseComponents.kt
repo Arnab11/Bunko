@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -56,6 +61,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.SeriesDto
@@ -63,6 +71,7 @@ import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.seriesCoverUrl
 import com.bunko.reader.ui.seriesInitial
 import com.bunko.reader.ui.theme.BunkoBackground
+import com.bunko.reader.ui.theme.BunkoSurface
 import com.bunko.reader.ui.theme.ReadingProgressInProgress
 import com.bunko.reader.ui.theme.ReadingProgressRead
 import com.bunko.reader.ui.theme.ReadingProgressTrack
@@ -126,7 +135,7 @@ internal fun BrowsePageScaffold(
 }
 
 @Composable
-internal fun <T> PosterGrid(
+fun <T> PosterGrid(
     items: List<T>,
     key: (T) -> Any,
     modifier: Modifier = Modifier,
@@ -205,8 +214,8 @@ internal fun SeriesPosterCard(
 ) {
     Card(
         modifier = modifier,
-        shape = shape,
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF303333))
+        shape = RectangleShape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column {
             // In a fixed-height carousel the item width varies, so the cover fills the
@@ -222,7 +231,9 @@ internal fun SeriesPosterCard(
                     .aspectRatio(KavitaCoverAspectRatio)
             }
             Box(
-                modifier = coverModifier.background(Color(0xFF111111)),
+                modifier = coverModifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF111111)),
                 contentAlignment = Alignment.Center
             ) {
                 if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
@@ -254,7 +265,98 @@ internal fun SeriesPosterCard(
                     minLines = 2,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun SeriesListItem(
+    series: SeriesDto,
+    session: KavitaSession,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onSelectionChange: (() -> Unit)? = null
+) {
+    Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(80.dp)
+                    .aspectRatio(KavitaCoverAspectRatio)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF111111)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+                    SeriesCoverImage(
+                        seriesName = series.name,
+                        coverUrl = seriesCoverUrl(session, series.id)
+                    )
+                } else {
+                    SeriesCoverPlaceholder(seriesName = series.name)
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = series.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val total = series.pages ?: 0
+                val read = series.pagesRead ?: 0
+                val statusText = when {
+                    total > 0 && read >= total -> "Completed"
+                    read > 0 -> "In Progress"
+                    else -> "Unread"
+                }
+                val statusColor = when (statusText) {
+                    "Completed" -> Color(0xFF66BB6A)
+                    "In Progress" -> Color(0xFF42A5F5)
+                    else -> Color(0xFFB9BDBD)
+                }
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = statusColor,
+                    fontWeight = FontWeight.Medium
+                )
+                SeriesReadingProgressBar(
+                    progress = series.readingProgress(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                )
+            }
+            if (selectionMode && onSelectionChange != null) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onSelectionChange() }
                 )
             }
         }

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon.png" width="128" alt="Bunko Icon" />
+</p>
+
 # Bunko 文庫
 > Kavita 向けの Android 漫画リーダー。
 > 自炊本・タブレット読書・見開き体験を重視しています。

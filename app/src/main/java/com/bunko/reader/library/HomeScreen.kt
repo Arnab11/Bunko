@@ -1,6 +1,12 @@
 package com.bunko.reader.library
 
+import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.bunko.reader.offline.LocalBook
+import com.bunko.reader.offline.LocalBookRepository
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -140,7 +146,7 @@ enum class HomeShelfKind(
     val title: String,
     val emptyMessage: String
 ) {
-    OnDeck("on-deck", "On Deck", "No on-deck series"),
+    OnDeck("on-deck", "Continue Reading", "No series in progress"),
     RecentlyUpdated("recently-updated", "Recently Updated Series", "No recently updated series"),
     NewlyAdded("newly-added", "Newly Added Series", "No newly added series");
 
@@ -156,6 +162,8 @@ enum class HomeShelfKind(
 fun LibraryScreen(
     sessionStore: KavitaSessionStore,
     sessionRevision: Int,
+    localRepository: LocalBookRepository,
+    initialIsOffline: Boolean = false,
     initialSearchQuery: String = "",
     availableUpdate: AvailableUpdate? = null,
     onOpenUpdate: (String) -> Unit = {},
@@ -167,13 +175,61 @@ fun LibraryScreen(
     onOpenDownloaded: () -> Unit,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onSelectLibrary: (LibraryDto) -> Unit,
-    onSelectSeries: (SeriesDto) -> Unit
+    onSelectSeries: (SeriesDto) -> Unit,
+    onOpenOfflineBook: (LocalBook) -> Unit = {},
+    onRequireLogin: () -> Unit = {},
+    onSwitchToOffline: (() -> Unit)? = null
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val offlineRepository = remember(ctx) { OfflineIssueRepository(ctx) }
     val searchHistoryStore = remember(ctx) { SearchHistoryStore(ctx) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    var isOffline by rememberSaveable(initialIsOffline) { mutableStateOf(initialIsOffline) }
+    val folderInfo by localRepository.folderFlow.collectAsState(initial = Pair(null, null))
+    val offlineBooks by localRepository.booksFlow.collectAsState(initial = emptyList())
+    val isOfflineScanning by localRepository.isScanning.collectAsState()
+
+    val folderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching {
+                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                ctx.contentResolver.takePersistableUriPermission(uri, takeFlags)
+            }
+            val displayName = DocumentsContract.getTreeDocumentId(uri).substringAfterLast('/')
+                .ifBlank { "eBooks & Comics" }
+            scope.launch {
+                localRepository.setDefaultFolder(uri, displayName)
+            }
+        }
+    }
+
+    fun rescanOffline() {
+        localRepository.rescan()
+    }
+
+    fun toggleLibraryMode() {
+        if (isOffline) {
+            scope.launch {
+                val session = sessionStore.load()
+                if (session.baseUrl.isNotBlank() && (session.jwt.isNotBlank() || session.apiKey.isNotBlank())) {
+                    localRepository.setActiveMode("kavita")
+                    isOffline = false
+                } else {
+                    onRequireLogin()
+                }
+            }
+        } else {
+            scope.launch {
+                localRepository.setActiveMode("offline")
+                isOffline = true
+            }
+        }
+    }
 
     fun showMessage(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
@@ -293,8 +349,10 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(sessionRevision) {
-        loadHome(clearFirst = true)
+    LaunchedEffect(sessionRevision, isOffline) {
+        if (!isOffline) {
+            loadHome(clearFirst = true)
+        }
     }
 
     // A refresh runs on the composition scope, so cancel any in-flight one when the active
@@ -305,6 +363,10 @@ fun LibraryScreen(
     }
 
     fun refreshHome() {
+        if (isOffline) {
+            rescanOffline()
+            return
+        }
         if (refreshing) return
         val retryInitialLoad = error != null
         refreshJob = scope.launch {
@@ -454,7 +516,16 @@ fun LibraryScreen(
             onSelectSeries = onSelectSeries,
             onRemoveWantToRead = ::removeFromWantToRead,
             onLoadMoreWantToRead = { scope.launch { loadNextWantToReadPage() } },
-            onLoadAllWantToRead = ::loadAllWantToRead
+            onLoadAllWantToRead = ::loadAllWantToRead,
+            onSwitchToOffline = onSwitchToOffline,
+            isOffline = isOffline,
+            offlineBooks = offlineBooks,
+            offlineFolderName = folderInfo.second,
+            isOfflineScanning = isOfflineScanning,
+            onOpenOfflineBook = onOpenOfflineBook,
+            onChangeOfflineFolder = { folderLauncher.launch(null) },
+            onRescanOffline = ::rescanOffline,
+            onToggleLibraryMode = ::toggleLibraryMode
         )
         SnackbarHost(
             hostState = snackbarHostState,
