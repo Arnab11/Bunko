@@ -19,13 +19,24 @@ internal fun readerPageLayout(
     page: Int,
     pageCount: Int,
     portrait: Boolean,
-    pageDimensions: Map<Int, FileDimensionDto>
+    pageDimensions: Map<Int, FileDimensionDto>,
+    isEpub: Boolean = false
 ): ReaderPageLayout {
     if (portrait) {
         return ReaderPageLayout(
             singlePage = true,
             nextStep = 1,
             previousStep = 1,
+            singleAlignment = Alignment.Center
+        )
+    }
+
+    if (isEpub) {
+        val singlePage = page + 1 >= pageCount
+        return ReaderPageLayout(
+            singlePage = singlePage,
+            nextStep = if (singlePage) 1 else 2,
+            previousStep = if (page <= 1) 1 else (if (page % 2 != 0) 1 else 2),
             singleAlignment = Alignment.Center
         )
     }
@@ -60,10 +71,11 @@ internal fun readerVisiblePageIndices(
     page: Int,
     pageCount: Int,
     portrait: Boolean,
-    pageDimensions: Map<Int, FileDimensionDto>
+    pageDimensions: Map<Int, FileDimensionDto>,
+    isEpub: Boolean = false
 ): List<Int> {
     if (page !in 0 until pageCount) return emptyList()
-    val layout = readerPageLayout(page, pageCount, portrait, pageDimensions)
+    val layout = readerPageLayout(page, pageCount, portrait, pageDimensions, isEpub)
     if (layout.singlePage) return listOf(page)
     return listOf(page, page + 1).filter { it in 0 until pageCount }
 }

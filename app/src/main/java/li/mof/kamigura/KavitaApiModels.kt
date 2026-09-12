@@ -119,7 +119,27 @@ data class SeriesDto(
     val avgHoursToRead: Float? = null,
     val primaryColor: String? = null,
     val secondaryColor: String? = null,
+    val format: Int? = null,
     val volumes: List<VolumeDto> = emptyList()
+)
+
+@Serializable
+data class BookInfoDto(
+    val pages: Int? = null,
+    val seriesId: Int? = null,
+    val volumeId: Int? = null,
+    val libraryId: Int? = null,
+    val bookTitle: String? = null,
+    val chapterTitle: String? = null,
+    val seriesName: String? = null
+)
+
+@Serializable
+data class BookChapterItemDto(
+    val title: String? = null,
+    val part: String? = null,
+    val page: Int? = null,
+    val children: List<BookChapterItemDto> = emptyList()
 )
 
 @Serializable
@@ -173,6 +193,7 @@ data class ChapterDto(
     val avgHoursToRead: Float? = null,
     val primaryColor: String? = null,
     val secondaryColor: String? = null,
+    val format: Int? = null,
     val writers: List<PersonDto>? = null,
     val coverArtists: List<PersonDto>? = null,
     val pencillers: List<PersonDto>? = null,

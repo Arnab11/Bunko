@@ -1,5 +1,6 @@
 package li.mof.kamigura
 
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -104,6 +105,22 @@ interface KavitaApi {
         @Query("includeDimensions") includeDimensions: Boolean = false,
         @Query("extractPdf") extractPdf: Boolean = false
     ): ChapterInfoDto
+
+    @GET("api/Book/{chapterId}/book-page")
+    suspend fun bookPage(
+        @Path("chapterId") chapterId: Int,
+        @Query("page") page: Int
+    ): ResponseBody
+
+    @GET("api/Book/{chapterId}/chapters")
+    suspend fun bookChapters(
+        @Path("chapterId") chapterId: Int
+    ): List<BookChapterItemDto>
+
+    @GET("api/Book/{chapterId}/book-info")
+    suspend fun bookInfo(
+        @Path("chapterId") chapterId: Int
+    ): BookInfoDto
 
     @GET("api/Reader/get-progress")
     suspend fun getProgress(@Query("chapterId") chapterId: Int): ProgressDto

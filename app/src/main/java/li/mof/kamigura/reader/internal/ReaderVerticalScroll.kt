@@ -93,7 +93,9 @@ internal fun ReaderVerticalScroll(
     onBoundaryReached: (ReaderTurnDirection) -> Unit,
     onContinueBoundary: (ReaderTurnDirection) -> Unit,
     onBackToSeries: () -> Unit,
-    onMenuToggle: () -> Unit
+    onMenuToggle: () -> Unit,
+    epubSubpages: List<EpubSubpage> = emptyList(),
+    epubFontSizeSp: Float = 18f
 ) {
     LaunchedEffect(listState, pageCount) {
         snapshotFlow { listState.layoutInfo }
@@ -141,14 +143,23 @@ internal fun ReaderVerticalScroll(
             items = (0 until pageCount).toList(),
             key = { page -> "page-$page" }
         ) { page ->
-            val aspectRatio = readerVerticalPageAspectRatio(
-                dimension = pageDimensions[page],
-                fallbackAspectRatio = fallbackPageAspectRatio
-            )
-            Box(
+            val isEpub = epubSubpages.isNotEmpty()
+            val itemModifier = if (isEpub) {
+                Modifier
+                    .fillMaxWidth()
+                    .height(viewportHeight)
+            } else {
+                val aspectRatio = readerVerticalPageAspectRatio(
+                    dimension = pageDimensions[page],
+                    fallbackAspectRatio = fallbackPageAspectRatio
+                )
                 Modifier
                     .fillMaxWidth()
                     .aspectRatio(aspectRatio)
+            }
+
+            Box(
+                itemModifier
                     .pointerInput(onMenuToggle) {
                         detectTapGestures { position ->
                             if (position.x in size.width / 3f..size.width * 2f / 3f) {
@@ -157,20 +168,31 @@ internal fun ReaderVerticalScroll(
                         }
                     }
             ) {
-                ReaderPageView(
-                    cursor = page,
-                    pageCount = pageCount,
-                    portrait = true,
-                    pageDimensions = pageDimensions,
-                    rightToLeft = false,
-                    pageModel = pageModel,
-                    imageLoader = imageLoader,
-                    invertMode = invertMode,
-                    whiteThreshold = whiteThreshold,
-                    invertDecisionCache = invertDecisionCache,
-                    pageBackground = pageBackground,
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (isEpub && page in epubSubpages.indices) {
+                    ReaderEpubPageView(
+                        subpage = epubSubpages[page],
+                        fontSizeSp = epubFontSizeSp,
+                        pageBackground = pageBackground,
+                        invertMode = invertMode,
+                        imageLoader = imageLoader,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    ReaderPageView(
+                        cursor = page,
+                        pageCount = pageCount,
+                        portrait = true,
+                        pageDimensions = pageDimensions,
+                        rightToLeft = false,
+                        pageModel = pageModel,
+                        imageLoader = imageLoader,
+                        invertMode = invertMode,
+                        whiteThreshold = whiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        pageBackground = pageBackground,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
         item(key = "next-boundary") {

@@ -59,7 +59,10 @@ internal fun ReaderMenuOverlay(
     onSetInvertMode: (InvertMode) -> Unit,
     onNextSingle: () -> Unit,
     onPreviousSingle: () -> Unit,
-    onJumpToPage: (Int) -> Unit
+    onJumpToPage: (Int) -> Unit,
+    isEpub: Boolean = false,
+    epubFontSizeSp: Float = 18f,
+    onSetEpubFontSizeSp: ((Float) -> Unit)? = null
 ) {
     val rightToLeft = readingDirection == ReaderReadingDirection.RightToLeft
     val safePageCount = pages.coerceAtLeast(1)
@@ -193,6 +196,41 @@ internal fun ReaderMenuOverlay(
                                 else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                             }
                         ) { Text(mode.name) }
+                    }
+                }
+            }
+
+            if (isEpub && onSetEpubFontSizeSp != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Font Size", color = Color.White)
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { onSetEpubFontSizeSp((epubFontSizeSp - 2f).coerceAtLeast(12f)) },
+                            enabled = epubFontSizeSp > 12f
+                        ) {
+                            Text("A-")
+                        }
+                        Text(
+                            text = "${epubFontSizeSp.toInt()} sp",
+                            color = Color.White,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Button(
+                            onClick = { onSetEpubFontSizeSp((epubFontSizeSp + 2f).coerceAtMost(36f)) },
+                            enabled = epubFontSizeSp < 36f
+                        ) {
+                            Text("A+")
+                        }
                     }
                 }
             }

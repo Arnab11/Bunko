@@ -48,7 +48,8 @@ data class ReaderSettings(
     val pageBackground: PageBackground = PageBackground.Paper,
     val showPortraitPageBackContent: Boolean = true,
     val usePurePageBackgroundColors: Boolean = false,
-    val showSpreadShiftButtons: Boolean = true
+    val showSpreadShiftButtons: Boolean = true,
+    val epubFontSizeSp: Float = 18f
 ) {
     val rightToLeft: Boolean
         get() = readingDirection == ReaderReadingDirection.RightToLeft
@@ -73,6 +74,7 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_USE_PURE_PAGE_BACKGROUND_COLORS =
         booleanPreferencesKey("reader_use_pure_page_background_colors")
     private val KEY_SHOW_SPREAD_SHIFT_BUTTONS = booleanPreferencesKey("reader_show_spread_shift_buttons")
+    private val KEY_EPUB_FONT_SIZE_SP = floatPreferencesKey("reader_epub_font_size_sp")
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
@@ -98,7 +100,8 @@ class AppSettingsStore(private val context: Context) {
                     ?: PageBackground.Paper,
                 showPortraitPageBackContent = prefs[KEY_SHOW_PORTRAIT_PAGE_BACK_CONTENT] ?: true,
                 usePurePageBackgroundColors = prefs[KEY_USE_PURE_PAGE_BACKGROUND_COLORS] ?: false,
-                showSpreadShiftButtons = prefs[KEY_SHOW_SPREAD_SHIFT_BUTTONS] ?: true
+                showSpreadShiftButtons = prefs[KEY_SHOW_SPREAD_SHIFT_BUTTONS] ?: true,
+                epubFontSizeSp = (prefs[KEY_EPUB_FONT_SIZE_SP] ?: 18f).coerceIn(12f, 36f)
             )
         )
     }
@@ -147,6 +150,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setShowSpreadShiftButtons(value: Boolean) {
         context.settingsDataStore.edit { it[KEY_SHOW_SPREAD_SHIFT_BUTTONS] = value }
+    }
+
+    suspend fun setEpubFontSizeSp(value: Float) {
+        context.settingsDataStore.edit { it[KEY_EPUB_FONT_SIZE_SP] = value.coerceIn(12f, 36f) }
     }
 }
 

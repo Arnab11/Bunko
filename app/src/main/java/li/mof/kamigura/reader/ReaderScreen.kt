@@ -8,6 +8,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -101,6 +102,14 @@ import li.mof.kamigura.reader.internal.spreadPagesFor
 import li.mof.kamigura.reader.internal.toPageDimensionMap
 import li.mof.kamigura.reader.internal.withDoubleTapZoom
 import li.mof.kamigura.reader.internal.withTransform
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.withContext
+import li.mof.kamigura.reader.internal.EpubBlock
+import li.mof.kamigura.reader.internal.EpubSubpage
+import li.mof.kamigura.reader.internal.ReaderEpubPageView
+import li.mof.kamigura.reader.internal.ReaderEpubPaginator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -233,6 +242,35 @@ fun ReaderScreen(
     var pendingRemoteProgress by remember { mutableStateOf<PendingReaderRemoteProgress?>(null) }
     val lastRemoteProgressPages = remember { ConcurrentHashMap<Int, Int>() }
     val progressRevisionClocks = remember { mutableMapOf<Int, AtomicLong>() }
+
+    var isEpub by remember { mutableStateOf(false) }
+    var epubSpineBlocks by remember { mutableStateOf<List<List<EpubBlock>>>(emptyList()) }
+    var epubSubpages by remember { mutableStateOf<List<EpubSubpage>>(emptyList()) }
+    val epubFontSizeSp = settings.reader.epubFontSizeSp
+
+    suspend fun loadEpubSpines(
+        chapterId: Int,
+        spineCount: Int,
+        loadedApi: KavitaApi,
+        loadedSession: KavitaSession,
+        client: KavitaClient
+    ): List<List<EpubBlock>> {
+        val count = spineCount.coerceAtLeast(1)
+        return (0 until count).map { spineIndex ->
+            scope.async(Dispatchers.IO) {
+                val html = runCatching {
+                    loadedApi.bookPage(chapterId, spineIndex).string()
+                }.getOrDefault("")
+                ReaderEpubPaginator.parseHtmlToBlocks(
+                    html = html,
+                    chapterId = chapterId,
+                    baseUrl = loadedSession.baseUrl,
+                    apiKey = loadedSession.apiKey,
+                    bookResourceUrlBuilder = client::bookResourceUrl
+                )
+            }
+        }.awaitAll()
+    }
 
     DisposableEffect(readerImageLoader) {
         val activeLoader = readerImageLoader
@@ -445,6 +483,30 @@ fun ReaderScreen(
                 }
                 val landingPage = if (openAtLastPage) loadedPageCount - 1 else 0
 
+                var isEpubTarget = false
+                val chDto = runCatching { loadedApi.seriesChapter(target.chapterId) }.getOrNull()
+                if (chDto?.format == 3) {
+                    isEpubTarget = true
+                } else if (chDto?.format == null) {
+                    val seriesDto = runCatching { loadedApi.series(seriesId) }.getOrNull()
+                    isEpubTarget = seriesDto?.format == 3
+                }
+                isEpub = isEpubTarget
+                if (isEpubTarget) {
+                    val spineCount = loadedPageCount.coerceAtLeast(1)
+                    val clientHelper = KavitaClient(ctx, sessionStore)
+                    epubSpineBlocks = loadEpubSpines(
+                        chapterId = target.chapterId,
+                        spineCount = spineCount,
+                        loadedApi = loadedApi,
+                        loadedSession = loadedSession,
+                        client = clientHelper
+                    )
+                } else {
+                    epubSpineBlocks = emptyList()
+                    epubSubpages = emptyList()
+                }
+
                 pendingRemoteProgress = null
                 readerReady = false
                 activeTransition = null
@@ -568,6 +630,18 @@ fun ReaderScreen(
             }
             readingDirection = resolvedDirection
             cachedPreferences?.let { invertMode = it.invertMode }
+            var isEpubChapter = false
+            val chDto = runCatching { loadedApi.seriesChapter(currentChapterId) }.getOrNull()
+            if (chDto?.format == 3) {
+                isEpubChapter = true
+            } else if (chDto?.format == null) {
+                val seriesDto = runCatching { loadedApi.series(seriesId) }.getOrNull()
+                if (seriesDto?.format == 3) {
+                    isEpubChapter = true
+                }
+            }
+            isEpub = isEpubChapter
+
             if (local == null) {
                 val info = loadedApi.chapterInfo(currentChapterId, includeDimensions = true)
                 val pageCount = info.pages ?: 0
@@ -576,6 +650,17 @@ fun ReaderScreen(
                 val savedPage = initialPage ?: loadedApi.getProgress(currentChapterId).pageNum
                 page = if (pages > 0) savedPage.coerceIn(0, pages - 1) else 0
                 lastRemoteProgressPages[currentChapterId] = page
+
+                if (isEpubChapter) {
+                    val spineCount = pageCount.coerceAtLeast(1)
+                    epubSpineBlocks = loadEpubSpines(
+                        chapterId = currentChapterId,
+                        spineCount = spineCount,
+                        loadedApi = loadedApi,
+                        loadedSession = loadedSession,
+                        client = client
+                    )
+                }
             } else if (!local.record.progressPending) {
                 val savedPage = runCatching { loadedApi.getProgress(currentChapterId).pageNum }
                     .onFailure {
@@ -697,6 +782,134 @@ fun ReaderScreen(
         val viewportWidthPx = with(density) { maxWidth.toPx() }
         val viewportHeightPx = with(density) { maxHeight.toPx() }
         val viewportHeight = maxHeight
+
+        LaunchedEffect(epubSpineBlocks, viewportWidthPx, viewportHeightPx, epubFontSizeSp, portrait) {
+            if (isEpub && epubSpineBlocks.isNotEmpty() && viewportWidthPx > 0f && viewportHeightPx > 0f) {
+                val horizontalPaddingPx = with(density) { 48.dp.roundToPx() }
+                val verticalPaddingPx = with(density) { 40.dp.roundToPx() }
+                val contentWidthPx = if (portrait) {
+                    (viewportWidthPx.toInt() - horizontalPaddingPx).coerceAtLeast(100)
+                } else {
+                    ((viewportWidthPx / 2f).toInt() - horizontalPaddingPx).coerceAtLeast(100)
+                }
+                val contentHeightPx = (viewportHeightPx.toInt() - verticalPaddingPx).coerceAtLeast(100)
+                val fontSizePx = with(density) { epubFontSizeSp.sp.toPx() }
+
+                val oldProgressRatio = if (pages > 1) page.toFloat() / (pages - 1).toFloat() else 0f
+                val allSubpages = withContext(Dispatchers.Default) {
+                    epubSpineBlocks.indices.map { spineIndex ->
+                        async {
+                            ReaderEpubPaginator.paginateBlocks(
+                                spineIndex = spineIndex,
+                                blocks = epubSpineBlocks[spineIndex],
+                                availableWidthPx = contentWidthPx,
+                                availableHeightPx = contentHeightPx,
+                                fontSizePx = fontSizePx,
+                                density = density
+                            )
+                        }
+                    }.awaitAll().flatten()
+                }
+                val total = allSubpages.size.coerceAtLeast(1)
+                epubSubpages = allSubpages
+                pages = total
+                var targetPage = (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+                if (!portrait && targetPage % 2 != 0 && targetPage > 0) {
+                    targetPage -= 1
+                }
+                page = targetPage
+                lastRemoteProgressPages[currentChapterId] = targetPage
+                readerReady = true
+            }
+        }
+
+        @Composable
+        fun RenderReaderPage(
+            cursor: Int,
+            pageCount: Int,
+            portrait: Boolean,
+            pageDimensions: Map<Int, FileDimensionDto>,
+            rightToLeft: Boolean,
+            pageModel: (Int) -> Any?,
+            imageLoader: ImageLoader,
+            invertMode: InvertMode,
+            whiteThreshold: Float,
+            invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
+            pageBackground: Color,
+            singlePageAlignmentOverride: Alignment? = null,
+            modifier: Modifier = Modifier
+        ) {
+            if (isEpub && epubSubpages.isNotEmpty()) {
+                if (portrait || singlePageAlignmentOverride != null) {
+                    val safeIndex = cursor.coerceIn(0, epubSubpages.lastIndex)
+                    ReaderEpubPageView(
+                        subpage = epubSubpages[safeIndex],
+                        fontSizeSp = epubFontSizeSp,
+                        pageBackground = pageBackground,
+                        invertMode = invertMode,
+                        imageLoader = imageLoader,
+                        modifier = modifier
+                    )
+                } else {
+                    val spread = spreadPagesFor(cursor, rightToLeft)
+                    Row(modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            if (spread.leftPage in epubSubpages.indices) {
+                                ReaderEpubPageView(
+                                    subpage = epubSubpages[spread.leftPage],
+                                    fontSizeSp = epubFontSizeSp,
+                                    pageBackground = pageBackground,
+                                    invertMode = invertMode,
+                                    imageLoader = imageLoader,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(pageBackground)
+                                )
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            if (spread.rightPage in epubSubpages.indices) {
+                                ReaderEpubPageView(
+                                    subpage = epubSubpages[spread.rightPage],
+                                    fontSizeSp = epubFontSizeSp,
+                                    pageBackground = pageBackground,
+                                    invertMode = invertMode,
+                                    imageLoader = imageLoader,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(pageBackground)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                ReaderPageView(
+                    cursor = cursor,
+                    pageCount = pageCount,
+                    portrait = portrait,
+                    pageDimensions = pageDimensions,
+                    rightToLeft = rightToLeft,
+                    pageModel = pageModel,
+                    imageLoader = imageLoader,
+                    invertMode = invertMode,
+                    whiteThreshold = whiteThreshold,
+                    invertDecisionCache = invertDecisionCache,
+                    pageBackground = pageBackground,
+                    singlePageAlignmentOverride = singlePageAlignmentOverride,
+                    modifier = modifier
+                )
+            }
+        }
+
         val verticalListState = rememberLazyListState()
         var verticalBoundariesEnabled by remember(
             currentChapterId,
@@ -721,7 +934,8 @@ fun ReaderScreen(
             page = page,
             pageCount = pages,
             portrait = portrait,
-            pageDimensions = pageDimensions
+            pageDimensions = pageDimensions,
+            isEpub = isEpub
         )
         val portraitCurlState = remember(currentChapterId) { PageCurlState(initialCurrent = page) }
         val spreadCurlState = remember(currentChapterId) {
@@ -1060,7 +1274,7 @@ fun ReaderScreen(
         // there is no spine under those, so such turns use the Slide path instead.
         fun curlTurnTargetEligible(target: Int): Boolean {
             if (!useSpreadCurl) return true
-            val targetLayout = readerPageLayout(target, pages, portrait, pageDimensions)
+            val targetLayout = readerPageLayout(target, pages, portrait, pageDimensions, isEpub = isEpub)
             return !targetLayout.singlePage || pageDimensions.pageIsWide(target)
         }
 
@@ -1510,7 +1724,9 @@ fun ReaderScreen(
                         }
                     },
                     onBackToSeries = onBack,
-                    onMenuToggle = { showReaderMenu = !showReaderMenu }
+                    onMenuToggle = { showReaderMenu = !showReaderMenu },
+                    epubSubpages = epubSubpages,
+                    epubFontSizeSp = epubFontSizeSp
                 )
             } else {
             // Keep PageCurl mounted whenever the curl mode is active (not just during a
@@ -1539,7 +1755,7 @@ fun ReaderScreen(
                                 scaleX = curlMirror
                             }
                     ) {
-                        ReaderPageView(
+                        RenderReaderPage(
                             cursor = cursor,
                             pageCount = pages,
                             portrait = portrait,
@@ -1591,7 +1807,7 @@ fun ReaderScreen(
                                         scaleX = curlMirror
                                     }
                             ) {
-                                ReaderPageView(
+                                RenderReaderPage(
                                     cursor = backPage,
                                     pageCount = pages,
                                     portrait = false,
@@ -1626,7 +1842,7 @@ fun ReaderScreen(
                                             scaleX = curlMirror
                                         }
                                 ) {
-                                    ReaderPageView(
+                                    RenderReaderPage(
                                         cursor = backPage,
                                         pageCount = pages,
                                         portrait = true,
@@ -1659,7 +1875,7 @@ fun ReaderScreen(
                                 scaleX = curlMirror
                             }
                     ) {
-                        ReaderPageView(
+                        RenderReaderPage(
                             cursor = renderPage,
                             pageCount = pages,
                             portrait = portrait,
@@ -1676,7 +1892,7 @@ fun ReaderScreen(
                     }
                 }
             } else if (!transitionVisible) {
-                ReaderPageView(
+                RenderReaderPage(
                     cursor = page,
                     pageCount = pages,
                     portrait = portrait,
@@ -1762,7 +1978,7 @@ fun ReaderScreen(
                                                 alpha = pageAlpha
                                             }
                                     ) {
-                                        ReaderPageView(
+                                        RenderReaderPage(
                                             cursor = stripPage,
                                             pageCount = pages,
                                             portrait = true,
@@ -1782,7 +1998,7 @@ fun ReaderScreen(
                         }
                     }
                 } else {
-                ReaderPageView(
+                RenderReaderPage(
                     cursor = transition.targetPage,
                     pageCount = pages,
                     portrait = portrait,
@@ -1803,7 +2019,7 @@ fun ReaderScreen(
                             scaleY = totalZoomScale
                         }
                 )
-                ReaderPageView(
+                RenderReaderPage(
                     cursor = transition.outgoingPage,
                     pageCount = pages,
                     portrait = portrait,
@@ -2045,6 +2261,11 @@ fun ReaderScreen(
                     if (vertical) {
                         scope.launch { verticalListState.scrollToItem(targetPage + 1) }
                     }
+                },
+                isEpub = isEpub,
+                epubFontSizeSp = epubFontSizeSp,
+                onSetEpubFontSizeSp = { newSize ->
+                    scope.launch { settingsStore.setEpubFontSizeSp(newSize) }
                 }
             )
         }

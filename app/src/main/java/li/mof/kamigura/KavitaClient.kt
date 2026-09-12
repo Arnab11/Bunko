@@ -198,6 +198,30 @@ class KavitaClient(
         return "$root/api/Reader/image?chapterId=$chapterId${apiKeyQuery(apiKey)}&page=$page"
     }
 
+    fun bookResourceUrl(baseUrl: String, apiKey: String, chapterId: Int, resourcePath: String): String {
+        val root = normalizeBaseUrl(baseUrl)
+        if (resourcePath.startsWith("http://", ignoreCase = true) || resourcePath.startsWith("https://", ignoreCase = true)) {
+            return if (apiKey.isNotBlank() && !resourcePath.contains("apiKey=")) {
+                val sep = if (resourcePath.contains("?")) "&" else "?"
+                "$resourcePath${sep}apiKey=${Uri.encode(apiKey)}"
+            } else {
+                resourcePath
+            }
+        }
+        val cleanPath = resourcePath.removePrefix("/")
+        return if (cleanPath.startsWith("book-resources") || cleanPath.startsWith("api/Reader/book-resources")) {
+            val url = if (cleanPath.startsWith("api/")) "$root/$cleanPath" else "$root/api/Reader/$cleanPath"
+            if (apiKey.isNotBlank() && !url.contains("apiKey=")) {
+                val sep = if (url.contains("?")) "&" else "?"
+                "$url${sep}apiKey=${Uri.encode(apiKey)}"
+            } else {
+                url
+            }
+        } else {
+            "$root/api/Reader/book-resources?chapterId=$chapterId&fileName=${Uri.encode(cleanPath)}${apiKeyQuery(apiKey)}"
+        }
+    }
+
     fun seriesCoverUrl(baseUrl: String, apiKey: String, seriesId: Int): String {
         val root = normalizeBaseUrl(baseUrl)
         return "$root/api/Image/series-cover?seriesId=$seriesId${apiKeyQuery(apiKey)}"
