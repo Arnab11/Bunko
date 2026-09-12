@@ -1,4 +1,4 @@
-// Kamigura fork of oleksandrbalan/pagecurl v1.5.1 (Apache-2.0).
+// Bunko fork of oleksandrbalan/pagecurl v1.5.1 (Apache-2.0).
 // Modifications: optional backContent lambda renders a real page on the back face of
 // the flap (via drawCurlFront/drawCurlBack) instead of a mirror of the front page.
 package eu.wewox.pagecurl.page
@@ -27,8 +27,8 @@ import eu.wewox.pagecurl.config.rememberPageCurlConfig
  * @param modifier The modifier for this composable.
  * @param state The state of the PageCurl. Use this to programmatically change the current page or observe changes.
  * @param config The configuration for PageCurl.
- * @param interactionsEnabled Kamigura fork: when false, PageCurl draws only and attaches no native tap/drag handlers.
- * @param backContent Kamigura fork: when provided, the flap shows this composable instead
+ * @param interactionsEnabled Bunko fork: when false, PageCurl draws only and attaches no native tap/drag handlers.
+ * @param backContent Bunko fork: when provided, the flap shows this composable instead
  * of a mirrored copy of the front page. Receives (current, forward): the current page index
  * and the turn direction. The composable must lay out the arriving page at the position it
  * occupies once the turn has landed (upright, reader-facing); the fold transforms are

@@ -31,7 +31,7 @@ internal fun Modifier.dragGesture(
         val forwardConfig = DragConfig(
             edge = state.forward,
             start = state.rightEdge,
-            // Kamigura fork: settle at the configured turn end (the spine for leaf turns).
+            // Bunko fork: settle at the configured turn end (the spine for leaf turns).
             end = state.forwardEndEdge,
             isEnabled = { isEnabledForward.value },
             isDragSucceed = { start, end -> end.x < start.x },

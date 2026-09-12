@@ -34,7 +34,7 @@ keystore.properties
 /work
 
 # Development screenshots
-kamigura_*.png
+bunko_*.png
 /screenshots/
 
 # Internal design diagrams (spec anchors referenced from local docs/*.md)

@@ -1,10 +1,10 @@
 # Vendored fork of oleksandrbalan/pagecurl
 
 Origin: https://github.com/oleksandrbalan/pagecurl (tag `v1.5.1`)
-License: Apache License 2.0 (same as Kamigura; see the repository root `LICENSE`)
+License: Apache License 2.0 (same as Bunko; see the repository root `LICENSE`)
 Copyright: Oleksandr Balan and pagecurl contributors
 
-Vendored on 2026-07-03 because upstream has been dormant since 2024-02 and Kamigura
+Vendored on 2026-07-03 because upstream has been dormant since 2024-02 and Bunko
 needs behavior upstream does not expose. Modified files carry a fork notice header.
 
 ## Modifications

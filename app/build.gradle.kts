@@ -18,7 +18,7 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "li.mof.kamigura"
+    namespace = "com.bunko.reader"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -26,7 +26,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "li.mof.kamigura"
+        applicationId = "com.bunko.reader"
         minSdk = 26
         targetSdk = 36
         versionCode = 17

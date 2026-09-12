@@ -1,4 +1,4 @@
-// Kamigura fork of oleksandrbalan/pagecurl v1.5.1 (Apache-2.0).
+// Bunko fork of oleksandrbalan/pagecurl v1.5.1 (Apache-2.0).
 // Modifications:
 // - turnEndFractionX lets the fold stop before the far edge (0.5f = the spine), which
 //   turns a full-page curl into a spread leaf turn.
@@ -133,7 +133,7 @@ public fun rememberPageCurlState(
  *
  * @param initialMax The initial max number of pages.
  * @param initialCurrent The initial current page.
- * @param turnEndFractionX Kamigura fork: the horizontal fraction of the width where the
+ * @param turnEndFractionX Bunko fork: the horizontal fraction of the width where the
  * fold line stops when a turn completes. 0f keeps the original full-page behavior;
  * 0.5f makes the fold stop at the centre (spine), i.e. a spread leaf turn where the
  * flap lands exactly on the other half of the viewport.
@@ -207,7 +207,7 @@ public class PageCurlState(
      * @param value The page to snap to.
      */
     public suspend fun snapTo(value: Int) {
-        // Kamigura fork: before setup() runs, max is 0 and coerceIn(0, -1) throws on an
+        // Bunko fork: before setup() runs, max is 0 and coerceIn(0, -1) throws on an
         // empty range (an upstream latent bug). The host may snap while the composable is
         // not yet mounted (e.g. a slide transition still covers it), so bail out instead;
         // setup() clamps current when it eventually runs.
@@ -288,7 +288,7 @@ public class PageCurlState(
      *
      * @param block The animation block to animate a change. When null the default keyframe
      * animation is used; a turn already in flight is committed and continued instead.
-     * @param tapPosition Kamigura fork: the tap that started the turn, if any. In leaf mode
+     * @param tapPosition Bunko fork: the tap that started the turn, if any. In leaf mode
      * the curl starts from the tapped corner with a restrained, near-vertical crease.
      */
     public suspend fun next(
@@ -296,7 +296,7 @@ public class PageCurlState(
         tapPosition: Offset? = null,
     ) {
         val state = internalState ?: return
-        // Kamigura fork: a forward turn already mid-flight is committed as-is and the new
+        // Bunko fork: a forward turn already mid-flight is committed as-is and the new
         // turn continues from the current fold position, so rapid taps read as an
         // accelerated flip instead of the page snapping flat and starting over.
         val continuing = state.animateJob?.isActive == true && state.forward.value != state.rightEdge
@@ -325,7 +325,7 @@ public class PageCurlState(
      *
      * @param block The animation block to animate a change. When null the default keyframe
      * animation is used; a turn already in flight is committed and continued instead.
-     * @param tapPosition Kamigura fork: the tap that started the turn, if any. In leaf mode
+     * @param tapPosition Bunko fork: the tap that started the turn, if any. In leaf mode
      * the curl starts from the tapped corner with a restrained, near-vertical crease.
      */
     public suspend fun prev(
@@ -367,11 +367,11 @@ public class PageCurlState(
 
         var animateJob: Job? = null
 
-        // Kamigura fork: set by a successor turn before it cancels the running one, so the
+        // Bunko fork: set by a successor turn before it cancels the running one, so the
         // predecessor's commit keeps the fold in place for the successor to continue from.
         var skipResetOnCommit: Boolean = false
 
-        // Kamigura fork: true when the fold stops before the far edge (spread leaf turn).
+        // Bunko fork: true when the fold stops before the far edge (spread leaf turn).
         val leafTurn: Boolean get() = forwardEndEdge != leftEdge
 
         val progress: Float by derivedStateOf {
@@ -454,16 +454,16 @@ public data class Edge(val top: Offset, val bottom: Offset) {
     }
 }
 
-// Kamigura fork: duration used when a new turn continues from a fold already in flight.
+// Bunko fork: duration used when a new turn continues from a fold already in flight.
 private const val ContinuationAnimDuration: Int = 180
 private const val InteractiveSettleAnimDuration: Int = 180
 
-// Kamigura fork: tap animation is shorter and calmer than the vanilla 450ms corner sweep
+// Bunko fork: tap animation is shorter and calmer than the vanilla 450ms corner sweep
 // (Stage 1.7 H2: reading rhythm beats spectacle). Applies to both single-page and leaf mode.
 private const val TapAnimDuration: Int = 400
 private const val TapMidPointDuration: Int = 140
 
-// Kamigura fork: mid pose for the tap turn. Near-vertical crease with a slight lean
+// Bunko fork: mid pose for the tap turn. Near-vertical crease with a slight lean
 // so the corner on the tapped half of the screen lifts first (Stage 1.7 H6); no tap
 // position leads with the bottom corner, matching a thumb resting low on a tablet.
 internal fun quietMiddle(size: Size, tapPosition: Offset?, mirrored: Boolean): Edge {

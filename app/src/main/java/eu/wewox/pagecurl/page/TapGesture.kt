@@ -12,7 +12,7 @@ import eu.wewox.pagecurl.utils.multiply
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-// Kamigura fork: tap callbacks receive the tap position so the state can start the curl
+// Bunko fork: tap callbacks receive the tap position so the state can start the curl
 // from the tapped corner.
 @ExperimentalPageCurlApi
 internal fun Modifier.tapGesture(

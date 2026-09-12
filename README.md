@@ -1,4 +1,4 @@
-# Kamigura
+# Bunko
 > An Android manga reader for [Kavita](https://www.kavitareader.com/),
 > designed for self-scanned libraries and tablet-first reading.
 
@@ -10,9 +10,9 @@
 
 ---
 
-## What is Kamigura
+## What is Bunko
 
-**Kamigura** (紙倉, *paper warehouse*) is a third-party Android app for reading manga and light novels from a [Kavita](https://www.kavitareader.com/) server.
+**Bunko** (文庫, *library / paperback*) is a third-party Android app for reading manga and light novels from a [Kavita](https://www.kavitareader.com/) server.
 
 It is especially focused on people who digitize their own physical books and want a comfortable native reading experience on tablets and phones.
 
@@ -50,7 +50,7 @@ It is especially focused on people who digitize their own physical books and wan
 
 ## Highlights
 
-Several Kavita clients already exist. Kamigura focuses on **tablet/phone parity** and **reading ergonomics for self-scanned books**.
+Several Kavita clients already exist. Bunko focuses on **tablet/phone parity** and **reading ergonomics for self-scanned books**.
 
 - **Spread-pair correction**
   When covers, title pages, or wide illustrations shift a spread by one page, edge long press or the reader menu provides **Shift +1 / -1** controls to recover the intended pairing.
@@ -78,7 +78,7 @@ Several Kavita clients already exist. Kamigura focuses on **tablet/phone parity*
 
 ## Install
 
-Download the APK from [Releases](https://github.com/KamiguraApp/Kamigura/releases) and sideload it onto an Android 8.0+ device.
+Download the APK from [Releases](https://github.com/BunkoApp/Bunko/releases) and sideload it onto an Android 8.0+ device.
 
 ## Usage
 
@@ -89,7 +89,7 @@ Download the APK from [Releases](https://github.com/KamiguraApp/Kamigura/release
 
 ## License
 
-[Apache License 2.0](LICENSE) © 2026 KamiguraApp
+[Apache License 2.0](LICENSE) © 2026 BunkoApp
 
 ## Roadmap
 
@@ -99,11 +99,11 @@ Download the APK from [Releases](https://github.com/KamiguraApp/Kamigura/release
 
 ## For Developers
 
-Kamigura is written in Kotlin 2.x with Jetpack Compose and Material 3 / Material 3 Expressive components. Networking is handled with Retrofit and kotlinx.serialization, while cover and reader-page images are loaded with Coil.
+Bunko is written in Kotlin 2.x with Jetpack Compose and Material 3 / Material 3 Expressive components. Networking is handled with Retrofit and kotlinx.serialization, while cover and reader-page images are loaded with Coil.
 
-Kavita integration is intentionally centralized around `app/src/main/java/li/mof/kamigura/KavitaApi.kt`. UI layers should consume Kamigura models and repositories rather than constructing Kavita calls directly.
+Kavita integration is intentionally centralized around `app/src/main/java/com/bunko/reader/KavitaApi.kt`. UI layers should consume Bunko models and repositories rather than constructing Kavita calls directly.
 
-Design notes and implementation scratchpads live under `docs/`. They are internal working notes and may be git-ignored, stale, or written for local development rather than public API documentation. For public discussion, bug reports, and feature requests, please use [GitHub issues](https://github.com/KamiguraApp/Kamigura/issues).
+Design notes and implementation scratchpads live under `docs/`. They are internal working notes and may be git-ignored, stale, or written for local development rather than public API documentation. For public discussion, bug reports, and feature requests, please use [GitHub issues](https://github.com/BunkoApp/Bunko/issues).
 
 ## Third-party
 
@@ -111,5 +111,5 @@ The Curl page-turn effect is built on a vendored fork of
 [oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl) (Apache-2.0,
 © Oleksandr Balan and pagecurl contributors). The vendored sources live under
 `app/src/main/java/eu/wewox/pagecurl/`; that directory's `README.md` records the origin,
-license, and the Kamigura modifications. Kamigura itself is Apache-2.0, so the repository's
+license, and the Bunko modifications. Bunko itself is Apache-2.0, so the repository's
 root `LICENSE` covers the fork as well.

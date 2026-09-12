@@ -30,10 +30,10 @@ internal data class DragConfig(
     val isEnabled: () -> Boolean,
     val isDragSucceed: (Offset, Offset) -> Boolean,
     val onChange: () -> Unit,
-    // Kamigura fork: a leaf backward turn is a forward turn in mirrored space, so the
+    // Bunko fork: a leaf backward turn is a forward turn in mirrored space, so the
     // finger is mirrored before the edge creator runs and the produced edge mirrored back.
     val mirrorInputX: Boolean = false,
-    // Kamigura fork: a leaf is bound at the spine, so its crease can never cross it.
+    // Bunko fork: a leaf is bound at the spine, so its crease can never cross it.
     val creaseRangeX: ClosedFloatingPointRange<Float>? = null,
 )
 

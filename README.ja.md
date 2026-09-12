@@ -1,4 +1,4 @@
-# Kamigura 紙倉
+# Bunko 文庫
 > Kavita 向けの Android 漫画リーダー。
 > 自炊本・タブレット読書・見開き体験を重視しています。
 
@@ -10,9 +10,9 @@
 
 ---
 
-## Kamigura とは
+## Bunko とは
 
-**Kamigura** (紙倉, *paper warehouse*) は、[Kavita](https://www.kavitareader.com/) サーバー上の漫画・ライトノベルを Android 端末で読むためのサードパーティアプリです。
+**Bunko** (文庫) は、[Kavita](https://www.kavitareader.com/) サーバー上の漫画・ライトノベルを Android 端末で読むためのサードパーティアプリです。
 
 特に、自分で裁断・スキャンして電子化した本 (自炊本) を、タブレットで快適に読む用途を重視しています。
 
@@ -50,7 +50,7 @@
 
 ## 特徴
 
-Kavita クライアントは既に複数ありますが、Kamigura は **タブレット/スマホ両対応** と **自炊本向けの読書体験** を重視しています。
+Kavita クライアントは既に複数ありますが、Bunko は **タブレット/スマホ両対応** と **自炊本向けの読書体験** を重視しています。
 
 - **見開きずれ補正**
   表紙、扉、横長画像などで見開きの左右が 1 ページずれた場合に、画面端の長押しまたは Reader メニューの **Shift +1 / -1** で 1 ページ単位の補正ができます。
@@ -78,7 +78,7 @@ Kavita クライアントは既に複数ありますが、Kamigura は **タブ�
 
 ## インストール
 
-[Releases](https://github.com/KamiguraApp/Kamigura/releases) から APK をダウンロードし、Android 8.0 以上の端末にサイドロードしてください (「提供元不明のアプリ」のインストール許可が必要)。
+[Releases](https://github.com/BunkoApp/Bunko/releases) から APK をダウンロードし、Android 8.0 以上の端末にサイドロードしてください (「提供元不明のアプリ」のインストール許可が必要)。
 
 ## 使い方
 
@@ -89,7 +89,7 @@ Kavita クライアントは既に複数ありますが、Kamigura は **タブ�
 
 ## ライセンス
 
-[Apache License 2.0](LICENSE) © 2026 KamiguraApp
+[Apache License 2.0](LICENSE) © 2026 BunkoApp
 
 ## Roadmap
 
@@ -99,16 +99,16 @@ Kavita クライアントは既に複数ありますが、Kamigura は **タブ�
 
 ## 開発者向け
 
-Kamigura は Kotlin 2.x、Jetpack Compose、Material 3 / Material 3 Expressive、Retrofit、kotlinx.serialization、Coil で構成されています。
+Bunko は Kotlin 2.x、Jetpack Compose、Material 3 / Material 3 Expressive、Retrofit、kotlinx.serialization、Coil で構成されています。
 
-Kavita との接点は `app/src/main/java/li/mof/kamigura/KavitaApi.kt` を中心に集約しています。UI 層では Kavita API を直接組み立てず、Kamigura 内部のモデルや repository を通して扱う方針です。
+Kavita との接点は `app/src/main/java/com/bunko/reader/KavitaApi.kt` を中心に集約しています。UI 層では Kavita API を直接組み立てず、Bunko 内部のモデルや repository を通して扱う方針です。
 
-設計メモや実装メモは `docs/` 配下にありますが、多くは内部作業用であり、常に公開ドキュメントとして最新とは限りません。バグ報告や機能要望は [GitHub issues](https://github.com/KamiguraApp/Kamigura/issues) へお願いします。
+設計メモや実装メモは `docs/` 配下にありますが、多くは内部作業用であり、常に公開ドキュメントとして最新とは限りません。バグ報告や機能要望は [GitHub issues](https://github.com/BunkoApp/Bunko/issues) へお願いします。
 
 ## サードパーティ
 
 Curl (ページめくり) 効果は [oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl)
 (Apache-2.0, © Oleksandr Balan and pagecurl contributors) の vendored fork を基盤にしています。
 取り込んだソースは `app/src/main/java/eu/wewox/pagecurl/` にあり、同ディレクトリの `README.md` に
-出所・ライセンス・Kamigura 側の改変を記録しています。Kamigura 自体も Apache-2.0 なので、
+出所・ライセンス・Bunko 側の改変を記録しています。Bunko 自体も Apache-2.0 なので、
 リポジトリ root の `LICENSE` が fork にも適用されます。

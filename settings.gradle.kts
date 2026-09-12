@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Kamigura"
+rootProject.name = "Bunko"
 include(":app")

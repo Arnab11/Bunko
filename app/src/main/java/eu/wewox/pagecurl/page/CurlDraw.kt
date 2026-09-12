@@ -1,4 +1,4 @@
-// Kamigura fork of oleksandrbalan/pagecurl v1.5.1 (Apache-2.0).
+// Bunko fork of oleksandrbalan/pagecurl v1.5.1 (Apache-2.0).
 // Modifications: added drawCurlFront/drawCurlBack so a custom composable (the real
 // incoming page, not a mirrored copy of the front) can be rendered on the back face.
 package eu.wewox.pagecurl.page
@@ -82,7 +82,7 @@ internal fun Modifier.drawCurl(
 }
 
 /**
- * Kamigura fork: draws only the front side of the curled page (clipped content + the
+ * Bunko fork: draws only the front side of the curled page (clipped content + the
  * cast shadow of the flap). Pair with [drawCurlBack] on a sibling node that holds the
  * back-face content. Keeping the shadow here places it under the back flap but over
  * the page beneath, matching the original z-order.
@@ -125,7 +125,7 @@ internal fun Modifier.drawCurlFront(
 }
 
 /**
- * Kamigura fork: draws only the back face of the curl flap using this node's own
+ * Bunko fork: draws only the back face of the curl flap using this node's own
  * content instead of a mirror of the front page.
  *
  * Contract: the content of this node must be laid out at the position it will occupy
@@ -223,7 +223,7 @@ private fun CacheDrawScope.prepareClippedContent(
 }
 
 /**
- * Kamigura fork: extracted from [prepareCurl] so [drawCurlBack] can reuse it.
+ * Bunko fork: extracted from [prepareCurl] so [drawCurlBack] can reuse it.
  * Build a quadrilateral of the part of the page which should be mirrored as the back-page
  * In all cases polygon should have 4 points, even when back-page is only a small "corner" (with 3 points) due to
  * the shadow rendering, otherwise it will create a visual artifact when switching between 3 and 4 points polygon
@@ -266,7 +266,7 @@ private fun CacheDrawScope.backPagePolygon(
     )
 
 /**
- * Kamigura fork: shadow of the flap without the back-page content, used by [drawCurlFront].
+ * Bunko fork: shadow of the flap without the back-page content, used by [drawCurlFront].
  */
 @ExperimentalPageCurlApi
 private fun CacheDrawScope.prepareCurlShadowOnly(
