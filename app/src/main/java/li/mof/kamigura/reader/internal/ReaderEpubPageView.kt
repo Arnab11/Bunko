@@ -10,6 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
@@ -23,6 +29,7 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -52,7 +59,8 @@ internal fun ReaderEpubPageView(
     invertMode: InvertMode = InvertMode.Off,
     epubFontFamily: String = "Serif",
     modifier: Modifier = Modifier,
-    imageLoader: ImageLoader? = null
+    imageLoader: ImageLoader? = null,
+    contentPadding: PaddingValues? = null
 ) {
     val isDark = pageBackground.luminance() < 0.5f
     val textColor = if (isDark) Color(0xFFEDEDED) else Color(0xFF141414)
@@ -66,11 +74,20 @@ internal fun ReaderEpubPageView(
         else -> FontFamily.Serif
     }
 
+    val insets = WindowInsets.safeDrawing.asPaddingValues()
+    val layoutDirection = LocalLayoutDirection.current
+    val effectivePadding = contentPadding ?: PaddingValues(
+        start = insets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp),
+        top = (insets.calculateTopPadding() + 16.dp).coerceAtLeast(28.dp),
+        end = insets.calculateEndPadding(layoutDirection).coerceAtLeast(20.dp),
+        bottom = (insets.calculateBottomPadding() + 24.dp).coerceAtLeast(36.dp)
+    )
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(pageBackground)
-            .padding(horizontal = 24.dp, vertical = 20.dp)
+            .padding(effectivePadding)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),

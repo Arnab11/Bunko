@@ -8,11 +8,17 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,6 +46,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -783,10 +790,46 @@ fun ReaderScreen(
         val viewportHeightPx = with(density) { maxHeight.toPx() }
         val viewportHeight = maxHeight
 
-        LaunchedEffect(epubSpineBlocks, viewportWidthPx, viewportHeightPx, epubFontSizeSp, portrait) {
+        val safeDrawingInsets = WindowInsets.safeDrawing.asPaddingValues()
+        val layoutDirection = LocalLayoutDirection.current
+        val safeTopPadding = (safeDrawingInsets.calculateTopPadding() + 16.dp).coerceAtLeast(28.dp)
+        val safeBottomPadding = (safeDrawingInsets.calculateBottomPadding() + 24.dp).coerceAtLeast(36.dp)
+        val safeStartPadding = safeDrawingInsets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp)
+        val safeEndPadding = safeDrawingInsets.calculateEndPadding(layoutDirection).coerceAtLeast(20.dp)
+
+        val portraitPadding = PaddingValues(
+            start = safeStartPadding,
+            top = safeTopPadding,
+            end = safeEndPadding,
+            bottom = safeBottomPadding
+        )
+        val landscapeLeftPadding = PaddingValues(
+            start = safeStartPadding,
+            top = safeTopPadding,
+            end = 16.dp,
+            bottom = safeBottomPadding
+        )
+        val landscapeRightPadding = PaddingValues(
+            start = 16.dp,
+            top = safeTopPadding,
+            end = safeEndPadding,
+            bottom = safeBottomPadding
+        )
+
+        LaunchedEffect(
+            epubSpineBlocks,
+            viewportWidthPx,
+            viewportHeightPx,
+            epubFontSizeSp,
+            portrait,
+            safeTopPadding,
+            safeBottomPadding,
+            safeStartPadding,
+            safeEndPadding
+        ) {
             if (isEpub && epubSpineBlocks.isNotEmpty() && viewportWidthPx > 0f && viewportHeightPx > 0f) {
-                val horizontalPaddingPx = with(density) { 48.dp.roundToPx() }
-                val verticalPaddingPx = with(density) { 40.dp.roundToPx() }
+                val horizontalPaddingPx = with(density) { (safeStartPadding + safeEndPadding).roundToPx() }
+                val verticalPaddingPx = with(density) { (safeTopPadding + safeBottomPadding).roundToPx() }
                 val contentWidthPx = if (portrait) {
                     (viewportWidthPx.toInt() - horizontalPaddingPx).coerceAtLeast(100)
                 } else {
@@ -849,6 +892,7 @@ fun ReaderScreen(
                         invertMode = invertMode,
                         epubFontFamily = settings.reader.epubFontFamily,
                         imageLoader = imageLoader,
+                        contentPadding = portraitPadding,
                         modifier = modifier
                     )
                 } else {
@@ -863,6 +907,7 @@ fun ReaderScreen(
                                     invertMode = invertMode,
                                     epubFontFamily = settings.reader.epubFontFamily,
                                     imageLoader = imageLoader,
+                                    contentPadding = landscapeLeftPadding,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
@@ -882,6 +927,7 @@ fun ReaderScreen(
                                     invertMode = invertMode,
                                     epubFontFamily = settings.reader.epubFontFamily,
                                     imageLoader = imageLoader,
+                                    contentPadding = landscapeRightPadding,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
