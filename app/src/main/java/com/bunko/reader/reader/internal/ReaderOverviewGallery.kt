@@ -1,5 +1,6 @@
 package com.bunko.reader.reader.internal
 
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,8 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
@@ -119,6 +122,11 @@ internal fun ReaderOverviewGallery(
     progress: Float = 1f,
     onSelect: (Int) -> Unit,
     onCenterTap: () -> Unit,
+    // Pinch-to-dismiss callbacks: 2-finger gestures are intercepted at
+    // PointerEventPass.Initial before HorizontalPager's horizontal scroll,
+    // allowing the reader to dismiss the overview via pinch-out.
+    onTransform: ((zoomChange: Float, panChange: Offset, focalPoint: Offset) -> Unit)? = null,
+    onTransformEnd: ((velocityScale: Float) -> Unit)? = null,
     modifier: Modifier = Modifier,
     pageContent: @Composable (cursor: Int, modifier: Modifier) -> Unit
 ) {
@@ -159,7 +167,55 @@ internal fun ReaderOverviewGallery(
             }
     }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            // ── Pinch interceptor ────────────────────────────────────────────────────
+            // Runs at PointerEventPass.Initial so we see 2-finger events BEFORE
+            // HorizontalPager's horizontal-scroll handler (which runs at Main).
+            // When 2+ fingers are down we compute the zoom/pan transform, invoke
+            // the callbacks, and consume the changes so the pager never sees them.
+            .pointerInput(onTransform, onTransformEnd) {
+                if (onTransform == null) return@pointerInput
+                awaitEachGesture {
+                    var lastCentroid: Offset? = null
+                    var lastSpan = 0f
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) {
+                            onTransformEnd?.invoke(if (lastSpan > 0f) lastSpan else 1f)
+                            break
+                        }
+                        if (pressed.size < 2) {
+                            // Single finger — let pager handle it; reset pinch state.
+                            lastCentroid = null
+                            lastSpan = 0f
+                            continue
+                        }
+                        // 2+ fingers: compute centroid and span.
+                        var cx = 0f; var cy = 0f
+                        pressed.forEach { cx += it.position.x; cy += it.position.y }
+                        val centroid = Offset(cx / pressed.size, cy / pressed.size)
+                        val span = pressed
+                            .map { (it.position - centroid).getDistance() }
+                            .average().toFloat()
+                        val prev = lastCentroid
+                        if (prev != null && lastSpan > 0f && span > 0f) {
+                            onTransform.invoke(
+                                span / lastSpan,
+                                centroid - prev,
+                                centroid
+                            )
+                            // Consume so HorizontalPager doesn't treat it as a scroll.
+                            pressed.forEach { it.consume() }
+                        }
+                        lastCentroid = centroid
+                        lastSpan = span
+                    }
+                }
+            }
+    ) {
         val screenWidth = maxWidth
         val screenHeight = maxHeight
         val isPortrait = screenHeight > screenWidth

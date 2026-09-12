@@ -50,7 +50,8 @@ internal fun ReaderTapLayer(
     onCloseDragEnd: (Boolean) -> Unit = {},
     onCloseDragCancel: () -> Unit = {},
     onDoubleTap: (Offset) -> Unit = {},
-    onTransform: (Float, Offset, Offset) -> Unit = { _, _, _ -> }
+    onTransform: (Float, Offset, Offset) -> Unit = { _, _, _ -> },
+    onTransformEnd: (velocityScale: Float) -> Unit = {}
 ) {
     val latestOnNextSpread by rememberUpdatedState(onNextSpread)
     val latestOnPreviousSpread by rememberUpdatedState(onPreviousSpread)
@@ -62,7 +63,10 @@ internal fun ReaderTapLayer(
     Box(
         Modifier
             .fillMaxSize()
-            .readerPinchZoom(onTransform = onTransform)
+            .readerPinchZoom(
+                onTransform = onTransform,
+                onTransformEnd = onTransformEnd
+            )
             .readerGestures(
                 rightToLeft = rightToLeft,
                 turnVisualDistancePx = turnVisualDistancePx,
@@ -110,9 +114,11 @@ internal fun ReaderTapLayer(
 
 @Composable
 private fun Modifier.readerPinchZoom(
-    onTransform: (Float, Offset, Offset) -> Unit
+    onTransform: (Float, Offset, Offset) -> Unit,
+    onTransformEnd: (velocityScale: Float) -> Unit = {}
 ): Modifier {
     val latestOnTransform by rememberUpdatedState(onTransform)
+    val latestOnTransformEnd by rememberUpdatedState(onTransformEnd)
     return pointerInput(Unit) {
         awaitEachGesture {
             var lastCentroid: Offset? = null
@@ -121,7 +127,13 @@ private fun Modifier.readerPinchZoom(
             while (true) {
                 val event = awaitPointerEvent()
                 val pressedChanges = event.changes.filter { it.pressed }
-                if (pressedChanges.isEmpty()) break
+                if (pressedChanges.isEmpty()) {
+                    // All fingers lifted — fire end with the last scale velocity.
+                    // We approximate the scale velocity as the last span ratio;
+                    // callers that don't need it can ignore the parameter.
+                    latestOnTransformEnd(if (lastSpan > 0f) lastSpan else 1f)
+                    break
+                }
                 if (pressedChanges.size < 2) {
                     lastCentroid = null
                     lastSpan = 0f

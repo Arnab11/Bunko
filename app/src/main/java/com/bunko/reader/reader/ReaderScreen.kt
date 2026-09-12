@@ -317,6 +317,12 @@ fun ReaderScreen(
     var dragBoundaryDirection by remember { mutableStateOf<ReaderTurnDirection?>(null) }
     var zoomAnimationJob by remember { mutableStateOf<Job?>(null) }
     var closeDragOffsetY by remember { mutableFloatStateOf(0f) }
+    // Tracks a live pinch-to-enter/exit-overview drag.  When the user pinches
+    // below 100% zoom the value goes 0→1, driving overviewProgressAnim directly.
+    // On release we snap-animate it to 0 (cancel) or 1 (commit).
+    var overviewDragProgress by remember { mutableFloatStateOf(0f) }
+    var isDraggingOverview by remember { mutableStateOf(false) }
+    var overviewAnimJob by remember { mutableStateOf<Job?>(null) }
     var closeAnimationJob by remember { mutableStateOf<Job?>(null) }
     var verticalRestoreNonce by remember { mutableIntStateOf(0) }
     val invertDecisionCache = remember { mutableStateMapOf<ReaderInvertCacheKey, Boolean>() }
@@ -1043,14 +1049,22 @@ fun ReaderScreen(
     }
 
     val isOverviewMenuOpen = showReaderMenu && !vertical && chapterBoundary == null
-    val overviewProgress by animateFloatAsState(
-        targetValue = if (isOverviewMenuOpen) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = 260,
-            easing = FastOutSlowInEasing
-        ),
-        label = "overviewProgress"
-    )
+    // Use an Animatable so the overview transition can be driven both by a live
+    // pinch gesture (snapTo during drag) and by a settling animation (animateTo
+    // after release or a menu-button tap).
+    val overviewProgressAnim = remember { Animatable(0f) }
+    val overviewProgress = overviewProgressAnim.value
+    // When NOT in a live drag, let isOverviewMenuOpen settle the animation.
+    LaunchedEffect(isOverviewMenuOpen, isDraggingOverview) {
+        if (!isDraggingOverview) {
+            overviewAnimJob?.cancel()
+            overviewAnimJob = null
+            overviewProgressAnim.animateTo(
+                targetValue = if (isOverviewMenuOpen) 1f else 0f,
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+            )
+        }
+    }
 
     // Separate alpha track for the menu overlay so the header/footer fade out
     // smoothly on a normal tap-to-dismiss (when overview is not active).  When
@@ -1065,14 +1079,19 @@ fun ReaderScreen(
     // Drive effectiveMenuAlpha based on context:
     //  • Overview open (isOverviewMenuOpen true)   → 1f  (fully visible)
     //  • Overview dismissing (progress > 0 but menu off) → 0f (hide BEFORE zoom starts)
+    //  • Overview open (isOverviewMenuOpen true)   → 1f  (fully visible)
+    //  • Live pinch drag (isDraggingOverview true)  → overviewProgress (controls fade in
+    //    smoothly as the page shrinks to overview card size)
+    //  • Settling animation (progress > 0, not dragging) → 0f (keep hidden; avoids
+    //    ghost-fade after the zoom lands, since FastOutSlowIn decelerates at the end)
     //  • Normal menu dismiss (no overview active)  → menuAlpha (160ms linear fade)
-    //
-    // Hiding instantly on overview exit means the entire 260ms zoom plays with
-    // zero overlay — no ghost-backgrounds visible at any point.
     val effectiveMenuAlpha = when {
-        isOverviewMenuOpen        -> 1f
-        overviewProgress > 0f    -> 0f
-        else                     -> menuAlpha
+        // Live pinch drag checked FIRST so dismiss-drag (isDragging=true, isOverviewOpen=true)
+        // fades controls with overviewProgress rather than locking them at 1f.
+        isDraggingOverview   -> overviewProgress   // live drag: follow gesture (enter OR dismiss)
+        isOverviewMenuOpen   -> 1f                 // overview settled open
+        overviewProgress > 0f -> 0f               // settling: keep hidden
+        else                 -> menuAlpha          // normal menu
     }
 
     val screenBgColor by animateColorAsState(
@@ -2455,7 +2474,39 @@ fun ReaderScreen(
                         page = cursor
                         lastRemoteProgressPages[currentChapterId] = cursor
                     },
-                    onCenterTap = { showReaderMenu = false }
+                    onCenterTap = { showReaderMenu = false },
+                    // Route pinch gestures from within the overview gallery to the same
+                    // onTransform/onTransformEnd handlers used by ReaderTapLayer.  The
+                    // gallery's Initial-pass interceptor captures 2-finger events before
+                    // HorizontalPager can misinterpret them as horizontal scroll.
+                    onTransform = { zoomChange, _, _ ->
+                        if (isOverviewMenuOpen && zoomChange > 1f + ReaderZoomEpsilon) {
+                            val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
+                            val delta = (zoomChange - 1f) * 4f
+                            val next = (startProgress - delta).coerceIn(0f, 1f)
+                            isDraggingOverview = true
+                            overviewDragProgress = next
+                            scope.launch { overviewProgressAnim.snapTo(next) }
+                        }
+                    },
+                    onTransformEnd = { _ ->
+                        if (isDraggingOverview) {
+                            isDraggingOverview = false
+                            val shouldCommit = overviewDragProgress >= 0.35f
+                            if (!shouldCommit) {
+                                showReaderMenu = false
+                                overviewDragProgress = 0f
+                            } else {
+                                overviewDragProgress = 1f
+                                scope.launch {
+                                    overviewProgressAnim.animateTo(
+                                        1f,
+                                        tween(200, easing = FastOutSlowInEasing)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 ) { cursor, cardModifier ->
                     RenderReaderPage(
                         cursor = cursor,
@@ -2539,7 +2590,7 @@ fun ReaderScreen(
                 },
                 onTransform = { zoomChange, panChange, focalPoint ->
                     zoomAnimationJob?.cancel()
-                    zoomPan = zoomPan.withTransform(
+                    val candidate = zoomPan.withTransform(
                         zoomChange = zoomChange,
                         panChange = panChange,
                         focalPoint = focalPoint,
@@ -2547,6 +2598,95 @@ fun ReaderScreen(
                         viewportWidthPx = viewportWidthPx,
                         viewportHeightPx = viewportHeightPx
                     )
+                    when {
+                        // ── Overview already open: pinch-out (spread) → dismiss it ───
+                        isOverviewMenuOpen && zoomChange > 1f + ReaderZoomEpsilon -> {
+                            // On the FIRST frame of the dismiss gesture, overviewDragProgress
+                            // is 0f (it stays 0 when overview was opened via button, not gesture).
+                            // Seed it to 1f so the drag has the full 1→0 range to work with.
+                            val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
+                            val delta = (zoomChange - 1f) * 4f
+                            val next = (startProgress - delta).coerceIn(0f, 1f)
+                            isDraggingOverview = true
+                            overviewDragProgress = next
+                            scope.launch { overviewProgressAnim.snapTo(next) }
+                        }
+                        // ── At 1× zoom: pinch-in → enter overview ──────────────────────
+                        // Stay in drag mode if isDraggingOverview is already true, even
+                        // when zoomChange oscillates near 1f on slow pinches — only exit
+                        // on a clear pinch-OUT (zoomChange > 1+ε, handled above/in else).
+                        !isOverviewMenuOpen &&
+                        candidate.userScale <= 1f + ReaderZoomEpsilon &&
+                        (isDraggingOverview || zoomChange < 1f - ReaderZoomEpsilon) -> {
+                            val delta = (1f - zoomChange).coerceAtLeast(0f) * 4f
+                            val next = (overviewDragProgress + delta).coerceIn(0f, 1f)
+                            isDraggingOverview = true
+                            overviewDragProgress = next
+                            scope.launch { overviewProgressAnim.snapTo(next) }
+                        }
+                        // ── Normal zoom / clear reversal ────────────────────────────────
+                        else -> {
+                            if (isDraggingOverview) {
+                                // Only cancel the overview drag when the user clearly
+                                // spreads fingers (zooming IN).  Near-1 zoomChange values
+                                // from a slow pinch must NOT cancel; just hold position.
+                                if (zoomChange > 1f + ReaderZoomEpsilon) {
+                                    isDraggingOverview = false
+                                    overviewDragProgress = 0f
+                                    scope.launch {
+                                        overviewProgressAnim.animateTo(
+                                            0f,
+                                            tween(200, easing = FastOutSlowInEasing)
+                                        )
+                                    }
+                                }
+                                // else: near-1 zoomChange while dragging → hold current progress
+                            } else {
+                                zoomPan = candidate
+                            }
+                        }
+                    }
+                },
+                onTransformEnd = { _ ->
+                    if (isDraggingOverview) {
+                        isDraggingOverview = false
+                        val shouldCommit = overviewDragProgress >= 0.35f
+                        if (isOverviewMenuOpen) {
+                            // Was overview open, dragging to dismiss
+                            if (!shouldCommit) {
+                                // Progress went below threshold → dismiss overview
+                                showReaderMenu = false
+                                overviewDragProgress = 0f
+                                // isOverviewMenuOpen → false → LaunchedEffect animates to 0
+                            } else {
+                                // Didn't drag enough → snap back to fully open
+                                overviewDragProgress = 1f
+                                scope.launch {
+                                    overviewProgressAnim.animateTo(
+                                        1f,
+                                        tween(200, easing = FastOutSlowInEasing)
+                                    )
+                                }
+                            }
+                        } else {
+                            // Was reading, dragging to open overview
+                            if (shouldCommit) {
+                                // Open the overview: set showReaderMenu → triggers isOverviewMenuOpen
+                                showReaderMenu = true
+                                overviewDragProgress = 0f
+                                // isOverviewMenuOpen → true → LaunchedEffect animates to 1
+                            } else {
+                                // Not enough → snap back to reading
+                                overviewDragProgress = 0f
+                                scope.launch {
+                                    overviewProgressAnim.animateTo(
+                                        0f,
+                                        tween(200, easing = FastOutSlowInEasing)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 )
             }
