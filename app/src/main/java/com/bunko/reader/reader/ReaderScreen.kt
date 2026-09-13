@@ -2162,11 +2162,35 @@ fun ReaderScreen(
             // off image loads on its first frame. Slide transitions (shift, boundary
             // fallbacks) draw on top of it rather than unmounting it — the remount
             // recomposition is what made the images thrash.
-            if (usePortraitPlayCurl) {
+            if (usePortraitPlayCurl || useSpreadPlayCurl) {
+                if (!playCurlHost.ready) {
+                    RenderReaderPage(
+                        cursor = page,
+                        pageCount = pages,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions,
+                        rightToLeft = rtl,
+                        pageModel = ::pageModel,
+                        imageLoader = activeImageLoader,
+                        invertMode = invertMode,
+                        ePaperMode = ePaperMode,
+                        whiteThreshold = settings.reader.invertWhiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        pageBackground = readerPageBackground,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = zoomPan.offsetX
+                                translationY = zoomPan.offsetY
+                                scaleX = totalZoomScale
+                                scaleY = totalZoomScale
+                            }
+                    )
+                }
                 PlayCurlPage(
                     page = page,
                     pageCount = pages,
-                    portrait = true,
+                    portrait = usePortraitPlayCurl,
                     rightToLeft = rtl,
                     viewportWidthPx = viewportWidthPx,
                     viewportHeightPx = viewportHeightPx,
@@ -2183,30 +2207,12 @@ fun ReaderScreen(
                     nightModeEnabled = nightModeEnabled,
                     nightLightIntensity = nightLightIntensity,
                     host = playCurlHost,
-                    onPageTurned = ::onPlayCurlSettled
-                )
-            } else if (useSpreadPlayCurl) {
-                PlayCurlPage(
-                    page = page,
-                    pageCount = pages,
-                    portrait = false,
-                    rightToLeft = rtl,
-                    viewportWidthPx = viewportWidthPx,
-                    viewportHeightPx = viewportHeightPx,
-                    paperColor = curlBackPageColor,
-                    pageModel = ::pageModel,
-                    imageLoader = activeImageLoader,
-                    pageDimensions = pageDimensions,
-                    invertMode = invertMode,
-                    whiteThreshold = settings.reader.invertWhiteThreshold,
-                    invertDecisionCache = invertDecisionCache,
-                    ePaperMode = ePaperMode,
-                    imageScaleType = settings.reader.imageScaleType,
-                    cropBorders = settings.reader.cropBorders,
-                    nightModeEnabled = nightModeEnabled,
-                    nightLightIntensity = nightLightIntensity,
-                    host = playCurlHost,
-                    onPageTurned = ::onPlayCurlSettled
+                    onPageTurned = ::onPlayCurlSettled,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = if (playCurlHost.ready) 1f else 0f
+                        }
                 )
             } else if (!transitionVisible) {
                 RenderReaderPage(

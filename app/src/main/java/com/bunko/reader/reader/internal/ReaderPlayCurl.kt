@@ -125,7 +125,7 @@ private val PlayCurlEPaperColorInvertedMatrix = floatArrayOf(
  */
 internal class PlayCurlHostState {
     var view: PageSurfaceView? = null
-    var ready: Boolean = false
+    var ready: Boolean by mutableStateOf(false)
     var rightToLeft: Boolean = false
 
     private var downTime: Long = 0L

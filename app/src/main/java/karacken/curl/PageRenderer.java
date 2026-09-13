@@ -124,10 +124,9 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
     private boolean disposed;
     // Bunko: paper background clear color so letterbox margins and any sub-pixel
     // seams between spread halves match the reader paper instead of black.
-    // Defaults to black to preserve upstream demo/test behavior.
-    private float clearRed;
-    private float clearGreen;
-    private float clearBlue;
+    private float clearRed = 0x11 / 255f;
+    private float clearGreen = 0x11 / 255f;
+    private float clearBlue = 0x11 / 255f;
 
     PageRenderer(Events events) {
         this.events = events;
