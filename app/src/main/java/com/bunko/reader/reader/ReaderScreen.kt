@@ -11,6 +11,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,6 +26,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -247,7 +250,7 @@ internal fun readerPortraitBackPageContentAlpha(showContent: Boolean): Float {
     return if (showContent) ReaderPortraitBackPageContentAlpha else 0f
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalPageCurlApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPageCurlApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReaderScreen(
     sessionStore: KavitaSessionStore,
@@ -1113,6 +1116,36 @@ fun ReaderScreen(
         val safeBottomPadding = (stableInsets.calculateBottomPadding() + 24.dp).coerceAtLeast(36.dp)
         val safeStartPadding = stableInsets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp)
         val safeEndPadding = stableInsets.calculateEndPadding(layoutDirection).coerceAtLeast(20.dp)
+
+        // Compute the gallery card scale and center-offset using the SAME formula as
+        // ReaderOverviewGallery, so the reader viewport can mirror the card's transform
+        // exactly and eliminate both the "black bar" and the "ghost page" issues.
+        val context = LocalContext.current
+        val resStatusBarHeight = remember(context) {
+            val resId = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+            if (resId > 0) context.resources.getDimensionPixelSize(resId) else 0
+        }
+        val stableStatusBarHeight = maxOf(
+            WindowInsets.statusBarsIgnoringVisibility
+                .union(WindowInsets.displayCutout)
+                .asPaddingValues()
+                .calculateTopPadding(),
+            with(density) { resStatusBarHeight.toDp() }
+        )
+        val liveStatusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val galleryTopInset = maxOf(stableStatusBarHeight, liveStatusBarHeight)
+        val navBarBottomDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val galleryTopInsetPx  = with(density) { (galleryTopInset + 56.dp).toPx() }
+        val galleryBotInsetPx  = with(density) { (88.dp + navBarBottomDp).toPx() }
+        val galleryPagerHeightPx = viewportHeightPx - galleryTopInsetPx - galleryBotInsetPx
+        val maxCardWidthFraction = if (portrait) 0.78f else 0.74f
+        val galleryScale = minOf(
+            maxCardWidthFraction,
+            (galleryPagerHeightPx * 0.88f / viewportHeightPx).coerceIn(0.1f, 1f)
+        ).coerceIn(0.1f, 1f)
+        // Vertical offset of the gallery pager centre relative to the screen centre (in px).
+        // Positive = pager centre is BELOW screen centre.
+        val galleryCenterShiftYPx = (galleryTopInsetPx - galleryBotInsetPx) / 2f
 
         val portraitPadding = PaddingValues(
             start = safeStartPadding,
@@ -2124,16 +2157,20 @@ fun ReaderScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                // Quartic (f⁴) power curve: reader stays near-invisible (~6%)
-                                // while the card is clearly mid-size, then rushes to full at the
-                                // very end. This achieves two goals simultaneously:
-                                //  • Reader content fills the black inset strips (top status-bar
-                                //    area / bottom nav-bar area) that the card never covers,
-                                //    eliminating the "black bar" flash.
-                                //  • Reader stays imperceptible when overview is clearly open,
-                                //    eliminating the original "page already there" ghost effect.
-                                val f = (1f - overviewProgress).coerceIn(0f, 1f)
-                                alpha = f * f * f * f
+                                // Mirror the gallery center card's scale+translation exactly.
+                                // At overview-open (progress=1): reader shrinks to galleryScale
+                                // and shifts to the pager centre — perfectly hidden behind the card.
+                                // At full-reader (progress=0): scale=1, shift=0.
+                                // The bar strips above/below the card are filled by the reader page
+                                // (same content as card) instead of the black background, eliminating
+                                // the "black bar" flash without any alpha cross-fade ghost.
+                                val readerScale = galleryScale + (1f - galleryScale) * (1f - overviewProgress)
+                                scaleX = readerScale
+                                scaleY = readerScale
+                                // galleryCenterShiftYPx is the pager-centre offset from screen centre.
+                                // At overview: shift reader to pager centre (same as card).
+                                // At reader: no shift.
+                                translationY = overviewProgress * galleryCenterShiftYPx
                             },
                         contentAlignment = Alignment.Center
                     ) {
