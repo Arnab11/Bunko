@@ -156,12 +156,12 @@ internal fun ReaderOverviewGallery(
         }
     }
 
-    // A settled or changing gallery page commits back to the reader.
+    // A settled gallery page commits back to the reader.
     LaunchedEffect(pagerState, cursors) {
-        snapshotFlow { pagerState.currentPage }
-            .collect { pageIndex ->
-                if (pageIndex in cursors.indices) {
-                    val cursor = cursors[pageIndex]
+        snapshotFlow { pagerState.currentPage to pagerState.isScrollInProgress }
+            .collect { (settledPage, scrolling) ->
+                if (!scrolling && settledPage in cursors.indices) {
+                    val cursor = cursors[settledPage]
                     if (cursor != currentCursor) onSelect(cursor)
                 }
             }
@@ -282,7 +282,7 @@ internal fun ReaderOverviewGallery(
                 contentPadding = PaddingValues(horizontal = sidePadding),
                 pageSpacing = 20.dp,
                 reverseLayout = reverseLayout,
-                beyondViewportPageCount = 0,
+                beyondViewportPageCount = 1,
                 key = { index -> cursors.getOrNull(index) ?: index },
                 verticalAlignment = Alignment.CenterVertically
             ) { index ->
@@ -290,6 +290,7 @@ internal fun ReaderOverviewGallery(
                 val isCenter = index == pagerState.currentPage
                 val currentElevation = (8.dp * progress).coerceAtLeast(0.dp)
                 val currentCornerRadius = (4.dp * progress).coerceAtLeast(0.dp)
+                val cardShape = remember(currentCornerRadius) { RoundedCornerShape(currentCornerRadius) }
 
                 Box(
                     modifier = Modifier
@@ -312,14 +313,14 @@ internal fun ReaderOverviewGallery(
                         }
                         .width(cardWidth)
                         .height(cardHeight)
-                        .shadow(elevation = currentElevation, shape = RoundedCornerShape(currentCornerRadius))
-                        .clip(RoundedCornerShape(currentCornerRadius))
-                        .pointerInput(pagerState.currentPage, index, cursors, currentCursor) {
+                        .shadow(elevation = currentElevation, shape = cardShape)
+                        .clip(cardShape)
+                        .pointerInput(index) {
                             detectTapGestures(
                                 onTap = {
                                     if (index == pagerState.currentPage) {
-                                        val cursor = cursors.getOrNull(index)
-                                        if (cursor != null && cursor != currentCursor) onSelect(cursor)
+                                        val c = cursors.getOrNull(index)
+                                        if (c != null && c != currentCursor) onSelect(c)
                                         onCenterTap()
                                     } else {
                                         scope.launch { pagerState.animateScrollToPage(index) }

@@ -1063,10 +1063,19 @@ fun ReaderScreen(
         if (!isDraggingOverview) {
             overviewAnimJob?.cancel()
             overviewAnimJob = null
+            if (!isOverviewMenuOpen) {
+                zoomPan = ReaderZoomPanState()
+            }
             overviewProgressAnim.animateTo(
                 targetValue = if (isOverviewMenuOpen) 1f else 0f,
                 animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
             )
+        }
+    }
+
+    LaunchedEffect(isOverviewActive) {
+        if (!isOverviewActive) {
+            zoomPan = ReaderZoomPanState()
         }
     }
 
@@ -2514,7 +2523,10 @@ fun ReaderScreen(
                         page = cursor
                         lastRemoteProgressPages[currentChapterId] = cursor
                     },
-                    onCenterTap = { showReaderMenu = false },
+                    onCenterTap = {
+                        zoomPan = initialZoomPanState
+                        showReaderMenu = false
+                    },
                     // Route pinch gestures from within the overview gallery to the same
                     // onTransform/onTransformEnd handlers used by ReaderTapLayer.  The
                     // gallery's Initial-pass interceptor captures 2-finger events before
@@ -2527,6 +2539,7 @@ fun ReaderScreen(
                                 val next = (startProgress - delta).coerceIn(0f, 1f)
                                 isDraggingOverview = true
                                 overviewDragProgress = next
+                                zoomPan = initialZoomPanState
                                 scope.launch { overviewProgressAnim.snapTo(next) }
                             }
                         }
@@ -2535,6 +2548,7 @@ fun ReaderScreen(
                         if (isDraggingOverview) {
                             isDraggingOverview = false
                             val shouldDismiss = overviewDragProgress <= 0.65f
+                            zoomPan = initialZoomPanState
                             if (shouldDismiss) {
                                 showReaderMenu = false
                                 overviewDragProgress = 0f
@@ -2651,6 +2665,7 @@ fun ReaderScreen(
                             val next = (startProgress - delta).coerceIn(0f, 1f)
                             isDraggingOverview = true
                             overviewDragProgress = next
+                            zoomPan = initialZoomPanState
                             scope.launch { overviewProgressAnim.snapTo(next) }
                         }
                         // ── At 1× zoom: pinch-in → enter overview ──────────────────────
@@ -2664,6 +2679,7 @@ fun ReaderScreen(
                             val next = (overviewDragProgress + delta).coerceIn(0f, 1f)
                             isDraggingOverview = true
                             overviewDragProgress = next
+                            zoomPan = initialZoomPanState
                             scope.launch { overviewProgressAnim.snapTo(next) }
                         }
                         // ── Normal zoom / clear reversal ────────────────────────────────
@@ -2682,6 +2698,7 @@ fun ReaderScreen(
                                         )
                                     }
                                 }
+                                zoomPan = initialZoomPanState
                                 // else: near-1 zoomChange while dragging → hold current progress
                             } else {
                                 zoomPan = candidate
@@ -2693,6 +2710,7 @@ fun ReaderScreen(
                     if (isDraggingOverview) {
                         isDraggingOverview = false
                         val shouldCommit = overviewDragProgress >= 0.35f
+                        zoomPan = initialZoomPanState
                         if (isOverviewMenuOpen) {
                             // Was overview open, dragging to dismiss
                             val shouldDismiss = overviewDragProgress <= 0.65f
