@@ -85,11 +85,13 @@ Design notes and implementation scratchpads live under `docs/`. They are interna
 
 ## Third-party
 
-- The Curl page-turn effect is built on a vendored fork of
-  [oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl) (Apache-2.0,
-  © Oleksandr Balan and pagecurl contributors). The vendored sources live under
-  `app/src/main/java/eu/wewox/pagecurl/`; that directory's `README.md` records the origin,
-  license, and the Bunko modifications. Bunko itself is Apache-2.0, so the repository's
-  root `LICENSE` covers the fork as well.
+- The "Play Curl" page-turn effect is built on a vendored copy of
+  [Darkaxt/PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl) (a maintained fork of
+  [karankalsi/PlayLikeCurl](https://github.com/karankalsi/PlayLikeCurl), MIT License),
+  whose `karackencurllib` sources live under `app/src/main/java/karacken/curl/`.
+  The legacy `karackencurllib-1.0.aar` from the upstream release is kept under
+  `app/libs/` for reference. The previous 3D curl implementation (a vendored fork of
+  [oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl), Apache-2.0)
+  remains under `app/src/main/java/eu/wewox/pagecurl/` but is no longer used.
 - Reader tap navigation zones, tap inversion modes, scale types, scan border cropping, and Webtoon continuous scrolling / auto Webtoon mode detection are inspired by and adapted from [Mihon](https://github.com/mihonapp/mihon) (Apache-2.0, © Mihon Open Source Project and contributors).
 

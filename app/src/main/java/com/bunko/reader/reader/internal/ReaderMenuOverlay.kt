@@ -813,12 +813,12 @@ internal fun ReaderMenuOverlay(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
                                     ) {
-                                        val animOptions = listOf("Off", "Slide", "3D")
+                                        val animOptions = listOf("Off", "Slide", "Play Curl")
                                         animOptions.forEachIndexed { index, option ->
                                             val isSelected = when (option) {
                                                 "Off" -> !pageTransitionAnimation
                                                 "Slide" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Slide
-                                                "3D" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Curl
+                                                "Play Curl" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.PlayCurl
                                                 else -> false
                                             }
                                             ToggleButton(
@@ -830,9 +830,9 @@ internal fun ReaderMenuOverlay(
                                                             onSetPageTransitionAnimation(true)
                                                             onSetPageTurnMode(PageTurnMode.Slide)
                                                         }
-                                                        "3D" -> {
+                                                        "Play Curl" -> {
                                                             onSetPageTransitionAnimation(true)
-                                                            onSetPageTurnMode(PageTurnMode.Curl)
+                                                            onSetPageTurnMode(PageTurnMode.PlayCurl)
                                                         }
                                                     }
                                                 },

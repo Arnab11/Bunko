@@ -809,7 +809,7 @@ private suspend fun analyzeShouldInvert(
     return analyzeShouldInvert(result.drawable, whiteThreshold)
 }
 
-private fun analyzeShouldInvert(drawable: Drawable, whiteThreshold: Float): Boolean {
+internal fun analyzeShouldInvert(drawable: Drawable, whiteThreshold: Float): Boolean {
     val bitmap = drawable
         .toBitmap(SmartInvertSampleSize, SmartInvertSampleSize)
         .copy(Bitmap.Config.ARGB_8888, false)

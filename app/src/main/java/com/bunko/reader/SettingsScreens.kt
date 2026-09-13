@@ -749,24 +749,14 @@ fun ReaderSettingsScreen(
                         )
                         CategoryRowGap()
                         RadioSettingRow(
-                            title = "3D",
-                            subtitle = "Realistic 3D curled page turn for portrait and landscape spreads",
-                            selected = transitionsActive && currentTurnMode == PageTurnMode.Curl,
+                            title = "Play Curl",
+                            subtitle = "Play Books-style soft page fold for portrait and landscape spreads",
+                            selected = transitionsActive && currentTurnMode == PageTurnMode.PlayCurl,
                             onClick = {
                                 scope.launch {
                                     settingsStore.setPageTransitionAnimation(true)
-                                    settingsStore.setPageTurnMode(PageTurnMode.Curl)
+                                    settingsStore.setPageTurnMode(PageTurnMode.PlayCurl)
                                 }
-                            }
-                        )
-                        CategoryRowGap()
-                        SwitchSettingRow(
-                            title = "Page-Back Show-Through",
-                            subtitle = "Shows a faint mirror of content on the back of curled sheets",
-                            checked = settings.reader.showPortraitPageBackContent,
-                            enabled = transitionsActive && currentTurnMode == PageTurnMode.Curl,
-                            onCheckedChange = { enabled ->
-                                scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
                             }
                         )
                         CategoryRowGap()
