@@ -80,6 +80,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -110,6 +111,7 @@ private enum class MenuOptionTab {
 @Composable
 internal fun ReaderMenuOverlay(
     visible: Boolean = true,
+    menuFraction: Float = 1f,
     seriesName: String,
     chapterName: String,
     page: Int,
@@ -213,7 +215,12 @@ internal fun ReaderMenuOverlay(
                 targetOffsetY = { -it },
                 animationSpec = tween(150)
             ) + fadeOut(animationSpec = tween(150)),
-            modifier = Modifier.align(Alignment.TopCenter)
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .graphicsLayer {
+                    translationY = -(1f - menuFraction) * size.height
+                    alpha = menuFraction
+                }
         ) {
             Row(
                 modifier = Modifier
@@ -293,7 +300,12 @@ internal fun ReaderMenuOverlay(
                 targetOffsetY = { -it / 4 },
                 animationSpec = tween(120)
             ),
-            modifier = Modifier.align(Alignment.TopEnd)
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .graphicsLayer {
+                    translationY = -(1f - menuFraction) * size.height
+                    alpha = menuFraction
+                }
         ) {
             Surface(
                 modifier = Modifier
@@ -839,7 +851,12 @@ internal fun ReaderMenuOverlay(
                 targetOffsetY = { it },
                 animationSpec = tween(150)
             ) + fadeOut(animationSpec = tween(150)),
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .graphicsLayer {
+                    translationY = (1f - menuFraction) * size.height
+                    alpha = menuFraction
+                }
         ) {
             Row(
                 modifier = Modifier

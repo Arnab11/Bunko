@@ -1077,28 +1077,24 @@ fun ReaderScreen(
         animationSpec = tween(durationMillis = 160, easing = LinearEasing),
         label = "menuAlpha"
     )
-    // Drive effectiveMenuAlpha based on context:
-    //  • Overview open (isOverviewMenuOpen true)   → 1f  (fully visible)
-    //  • Overview dismissing (progress > 0 but menu off) → 0f (hide BEFORE zoom starts)
-    //  • Live pinch drag (isDraggingOverview true)  → overviewProgress (controls fade in
-    //    smoothly as the page shrinks to overview card size)
-    //  • Settling animation (progress > 0, not dragging) → 0f (keep hidden; avoids
-    //    ghost-fade after the zoom lands, since FastOutSlowIn decelerates at the end)
-    //  • Normal menu dismiss (no overview active)  → menuAlpha (160ms linear fade)
-    val effectiveMenuAlpha = when {
-        // Live pinch drag checked FIRST so dismiss-drag (isDragging=true, isOverviewOpen=true)
-        // fades controls with overviewProgress rather than locking them at 1f.
-        isDraggingOverview   -> overviewProgress   // live drag: follow gesture (enter OR dismiss)
-        isOverviewMenuOpen   -> 1f                 // overview settled open
-        overviewProgress > 0.001f -> 0f            // settling: keep hidden
-        else                 -> menuAlpha          // normal menu
+    // In horizontal mode, overview controls slide and fade out over the first 25% of the zoom-in
+    // gesture (overviewProgress 1.0 → 0.75) so they retreat off-screen immediately as the user
+    // zooms into the page, rather than lingering until the page has completely zoomed in.
+    val overviewMenuFraction = if (isOverviewMenuOpen || isDraggingOverview) {
+        ((overviewProgress - 0.75f) / 0.25f).coerceIn(0f, 1f)
+    } else {
+        0f
     }
+    val effectiveMenuFraction = if (vertical) 1f else overviewMenuFraction
+    val effectiveMenuAlpha = if (vertical) menuAlpha else overviewMenuFraction
 
-    val screenBgColor by animateColorAsState(
-        targetValue = if (isOverviewActive) menuBg else defaultReaderBg,
-        animationSpec = tween(durationMillis = 200),
-        label = "screenBgColor"
-    )
+    // Always use the reader's own background colour for the root container so the
+    // status-bar and nav-bar inset strips (which the gallery card never covers) are
+    // always the same shade as the reader — no animated colour transition means no
+    // visible dark bar either during zoom-out or zoom-in.
+    // Note: menuBg (0xFF141518) and defaultReaderBg (Color.Black) are visually
+    // indistinguishable so the gallery appearance is unchanged.
+    val screenBgColor = defaultReaderBg
 
     BoxWithConstraints(Modifier.fillMaxSize().background(screenBgColor)) {
         val pageLayoutMode = settings.reader.pageLayoutMode
@@ -2128,7 +2124,16 @@ fun ReaderScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                alpha = if (!isOverviewActive) 1f else 0f
+                                // Quartic (f⁴) power curve: reader stays near-invisible (~6%)
+                                // while the card is clearly mid-size, then rushes to full at the
+                                // very end. This achieves two goals simultaneously:
+                                //  • Reader content fills the black inset strips (top status-bar
+                                //    area / bottom nav-bar area) that the card never covers,
+                                //    eliminating the "black bar" flash.
+                                //  • Reader stays imperceptible when overview is clearly open,
+                                //    eliminating the original "page already there" ghost effect.
+                                val f = (1f - overviewProgress).coerceIn(0f, 1f)
+                                alpha = f * f * f * f
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -2746,6 +2751,7 @@ fun ReaderScreen(
             ) {
             ReaderMenuOverlay(
                 visible = menuContentVisible,
+                menuFraction = effectiveMenuFraction,
                 seriesName = seriesName,
                 chapterName = currentChapter.displayName,
                 page = page,
