@@ -365,21 +365,11 @@ internal fun ReaderMenuOverlay(
         // GOOGLE PLAY BOOKS STYLE DISPLAY OPTIONS POPUP
         AnimatedVisibility(
             visible = visible && showDisplayOptions,
-            enter = fadeIn(animationSpec = tween(180)) + slideInVertically(
-                initialOffsetY = { -it / 4 },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            ),
-            exit = fadeOut(animationSpec = tween(120)) + slideOutVertically(
-                targetOffsetY = { -it / 4 },
-                animationSpec = tween(120)
-            ),
+            enter = fadeIn(animationSpec = tween(180)),
+            exit = fadeOut(animationSpec = tween(120)),
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .graphicsLayer {
-                    translationY = -(1f - menuFraction) * size.height
                     alpha = menuFraction
                 }
         ) {
