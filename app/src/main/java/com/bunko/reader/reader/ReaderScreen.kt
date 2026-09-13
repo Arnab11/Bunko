@@ -52,6 +52,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
@@ -95,6 +96,7 @@ import com.bunko.reader.download.OfflineIssueRepository
 import com.bunko.reader.reader.internal.ReaderInvertCacheKey
 import com.bunko.reader.reader.internal.ReaderPrefetchTarget
 import com.bunko.reader.reader.internal.ReaderFullscreenEffect
+import com.bunko.reader.reader.internal.ReaderBottomStatusBar
 import com.bunko.reader.reader.internal.ReaderChapterBoundary
 import com.bunko.reader.reader.internal.ReaderChapterBoundaryScreen
 import com.bunko.reader.reader.internal.ReaderChapterEntry
@@ -299,12 +301,18 @@ fun ReaderScreen(
     var readerReady by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showReaderMenu by remember { mutableStateOf(false) }
-    ReaderFullscreenEffect(showStatusBar = showReaderMenu)
     var readingDirection by remember { mutableStateOf(settings.reader.readingDirection) }
     // Per-book overrides survive a short close/reopen cycle in process memory. The server
     // direction and global Reader setting remain authoritative after the cache expires.
     var invertMode by remember { mutableStateOf(settings.reader.invertMode) }
     var ePaperMode by remember { mutableStateOf(settings.reader.ePaperMode) }
+    var readerBrightness by remember { mutableFloatStateOf(settings.reader.readerBrightness) }
+    var nightModeEnabled by remember { mutableStateOf(settings.reader.nightModeEnabled) }
+    var nightLightIntensity by remember { mutableFloatStateOf(settings.reader.nightLightIntensity) }
+    ReaderFullscreenEffect(
+        showStatusBar = showReaderMenu,
+        brightness = readerBrightness
+    )
     var sessionPreferenceKey by remember { mutableStateOf<String?>(null) }
     var zoomPan by remember { mutableStateOf(ReaderZoomPanState()) }
     var completingRead by remember { mutableStateOf(false) }
@@ -678,6 +686,9 @@ fun ReaderScreen(
         val persistedReaderSettings = settingsStore.flow.first().reader
         invertMode = persistedReaderSettings.invertMode
         ePaperMode = persistedReaderSettings.ePaperMode
+        readerBrightness = persistedReaderSettings.readerBrightness
+        nightModeEnabled = persistedReaderSettings.nightModeEnabled
+        nightLightIntensity = persistedReaderSettings.nightLightIntensity
 
         if (localBookId != null && localRepository != null) {
             val prefKey = "local:$localBookId"
@@ -1259,90 +1270,103 @@ fun ReaderScreen(
         ) {
             val effectiveEpubFontSizeSp = epubFontSizeSpOverride ?: epubFontSizeSp
             val effectiveBlockSpacing = epubBlockSpacingOverride ?: 10.dp
-            if (isEpub && epubSubpages.isNotEmpty()) {
-                if (portrait || singlePageAlignmentOverride != null) {
-                    val safeIndex = cursor.coerceIn(0, epubSubpages.lastIndex)
-                    ReaderEpubPageView(
-                        subpage = epubSubpages[safeIndex],
-                        fontSizeSp = effectiveEpubFontSizeSp,
-                        pageBackground = pageBackground,
-                        invertMode = invertMode,
-                        ePaperMode = ePaperMode,
-                        epubFontFamily = settings.reader.epubFontFamily,
-                        epubTextAlign = settings.reader.epubTextAlign,
-                        imageLoader = imageLoader,
-                        contentPadding = epubContentPaddingOverride ?: portraitPadding,
-                        blockSpacingDp = effectiveBlockSpacing,
-                        modifier = modifier
-                    )
-                } else {
-                    val spread = spreadPagesFor(cursor, rightToLeft)
-                    Row(modifier.fillMaxSize()) {
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                            if (spread.leftPage in epubSubpages.indices) {
-                                ReaderEpubPageView(
-                                    subpage = epubSubpages[spread.leftPage],
-                                    fontSizeSp = effectiveEpubFontSizeSp,
-                                    pageBackground = pageBackground,
-                                    invertMode = invertMode,
-                                    ePaperMode = ePaperMode,
-                                    epubFontFamily = settings.reader.epubFontFamily,
-                                    epubTextAlign = settings.reader.epubTextAlign,
-                                    imageLoader = imageLoader,
-                                    contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
-                                    blockSpacingDp = effectiveBlockSpacing,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(pageBackground)
-                                )
+            Box(modifier = modifier) {
+                if (isEpub && epubSubpages.isNotEmpty()) {
+                    if (portrait || singlePageAlignmentOverride != null) {
+                        val safeIndex = cursor.coerceIn(0, epubSubpages.lastIndex)
+                        ReaderEpubPageView(
+                            subpage = epubSubpages[safeIndex],
+                            fontSizeSp = effectiveEpubFontSizeSp,
+                            pageBackground = pageBackground,
+                            invertMode = invertMode,
+                            ePaperMode = ePaperMode,
+                            epubFontFamily = settings.reader.epubFontFamily,
+                            epubTextAlign = settings.reader.epubTextAlign,
+                            imageLoader = imageLoader,
+                            contentPadding = epubContentPaddingOverride ?: portraitPadding,
+                            blockSpacingDp = effectiveBlockSpacing,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        val spread = spreadPagesFor(cursor, rightToLeft)
+                        Row(modifier.fillMaxSize().background(pageBackground)) {
+                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                if (spread.leftPage in epubSubpages.indices) {
+                                    ReaderEpubPageView(
+                                        subpage = epubSubpages[spread.leftPage],
+                                        fontSizeSp = effectiveEpubFontSizeSp,
+                                        pageBackground = pageBackground,
+                                        invertMode = invertMode,
+                                        ePaperMode = ePaperMode,
+                                        epubFontFamily = settings.reader.epubFontFamily,
+                                        epubTextAlign = settings.reader.epubTextAlign,
+                                        imageLoader = imageLoader,
+                                        contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
+                                        blockSpacingDp = effectiveBlockSpacing,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(pageBackground)
+                                    )
+                                }
                             }
-                        }
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                            if (spread.rightPage in epubSubpages.indices) {
-                                ReaderEpubPageView(
-                                    subpage = epubSubpages[spread.rightPage],
-                                    fontSizeSp = effectiveEpubFontSizeSp,
-                                    pageBackground = pageBackground,
-                                    invertMode = invertMode,
-                                    ePaperMode = ePaperMode,
-                                    epubFontFamily = settings.reader.epubFontFamily,
-                                    epubTextAlign = settings.reader.epubTextAlign,
-                                    imageLoader = imageLoader,
-                                    contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
-                                    blockSpacingDp = effectiveBlockSpacing,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(pageBackground)
-                                )
+                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                if (spread.rightPage in epubSubpages.indices) {
+                                    ReaderEpubPageView(
+                                        subpage = epubSubpages[spread.rightPage],
+                                        fontSizeSp = effectiveEpubFontSizeSp,
+                                        pageBackground = pageBackground,
+                                        invertMode = invertMode,
+                                        ePaperMode = ePaperMode,
+                                        epubFontFamily = settings.reader.epubFontFamily,
+                                        epubTextAlign = settings.reader.epubTextAlign,
+                                        imageLoader = imageLoader,
+                                        contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
+                                        blockSpacingDp = effectiveBlockSpacing,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(pageBackground)
+                                    )
+                                }
                             }
                         }
                     }
+                } else {
+                    ReaderPageView(
+                        cursor = cursor,
+                        pageCount = pageCount,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions,
+                        rightToLeft = rightToLeft,
+                        pageModel = pageModel,
+                        imageLoader = imageLoader,
+                        invertMode = invertMode,
+                        whiteThreshold = whiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        pageBackground = pageBackground,
+                        ePaperMode = ePaperMode,
+                        imageScaleType = settings.reader.imageScaleType,
+                        cropBorders = settings.reader.cropBorders,
+                        singlePageAlignmentOverride = singlePageAlignmentOverride,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
-            } else {
-                ReaderPageView(
-                    cursor = cursor,
-                    pageCount = pageCount,
-                    portrait = portrait,
-                    pageDimensions = pageDimensions,
-                    rightToLeft = rightToLeft,
-                    pageModel = pageModel,
-                    imageLoader = imageLoader,
-                    invertMode = invertMode,
-                    whiteThreshold = whiteThreshold,
-                    invertDecisionCache = invertDecisionCache,
-                    pageBackground = pageBackground,
-                    ePaperMode = ePaperMode,
-                    singlePageAlignmentOverride = singlePageAlignmentOverride,
-                    modifier = modifier
-                )
+
+                if (nightModeEnabled && nightLightIntensity > 0f) {
+                    val amberAlpha = (nightLightIntensity * 0.38f).coerceIn(0f, 0.45f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFFFF9E3D).copy(alpha = amberAlpha))
+                    )
+                }
             }
         }
 
@@ -2122,6 +2146,8 @@ fun ReaderScreen(
                     whiteThreshold = settings.reader.invertWhiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = readerPageBackground,
+                    nightModeEnabled = nightModeEnabled,
+                    nightLightIntensity = nightLightIntensity,
                     viewportHeight = viewportHeight,
                     fallbackPageAspectRatio = (viewportWidthPx / viewportHeightPx.coerceAtLeast(1f))
                         .coerceAtLeast(0.01f),
@@ -2525,6 +2551,15 @@ fun ReaderScreen(
             }
             }
 
+            if (readerBrightness in 0f..0.20f) {
+                val dimAlpha = ((0.20f - readerBrightness) / 0.20f) * 0.65f
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = dimAlpha))
+                )
+            }
+
             // Keep the overview gallery mounted for the entire duration of the exit
             // animation (driven by overviewProgress → 0).
             if (isOverviewActive) {
@@ -2607,10 +2642,14 @@ fun ReaderScreen(
         }
         }
 
+
+
         if (!vertical && chapterBoundary == null && !showReaderMenu) {
             key(page, rtl, nextPageTurnStep, previousPageTurnStep, showingFinalPage) {
                 ReaderTapLayer(
                 rightToLeft = rtl,
+                navigationMode = settings.reader.navigationMode,
+                tappingInvertMode = settings.reader.tappingInvertMode,
                 onNextSpread = { position ->
                     requestTurnFromTap(ReaderTurnDirection.Next, nextPageTurnStep, showingFinalPage, position)
                 },
@@ -2777,6 +2816,8 @@ fun ReaderScreen(
         } else if (!vertical && !showReaderMenu) {
             ReaderTapLayer(
                 rightToLeft = rtl,
+                navigationMode = settings.reader.navigationMode,
+                tappingInvertMode = settings.reader.tappingInvertMode,
                 onNextSpread = { turnChapterBoundary(ReaderTurnDirection.Next) },
                 onPreviousSpread = { turnChapterBoundary(ReaderTurnDirection.Previous) },
                 onNextSingle = { turnChapterBoundary(ReaderTurnDirection.Next) },
@@ -2820,6 +2861,17 @@ fun ReaderScreen(
                 hasError = error != null,
                 onContinue = ::continueFromChapterBoundary,
                 onBackToSeries = handleBack
+            )
+        }
+
+        // Bottom reading status bar: page in chapter, percentage completed, battery percentage
+        if (!isOverviewActive) {
+            ReaderBottomStatusBar(
+                currentPage = page,
+                totalPages = pages,
+                pageBackground = readerPageBackground,
+                visible = !showReaderMenu && readerReady && error == null && chapterBoundary == null,
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
 
@@ -2895,6 +2947,21 @@ fun ReaderScreen(
                         }
                     }
                 },
+                readerBrightness = readerBrightness,
+                onSetReaderBrightness = { value ->
+                    readerBrightness = value
+                    scope.launch { settingsStore.setReaderBrightness(value) }
+                },
+                nightModeEnabled = nightModeEnabled,
+                onSetNightModeEnabled = { enabled ->
+                    nightModeEnabled = enabled
+                    scope.launch { settingsStore.setNightModeEnabled(enabled) }
+                },
+                nightLightIntensity = nightLightIntensity,
+                onSetNightLightIntensity = { intensity ->
+                    nightLightIntensity = intensity
+                    scope.launch { settingsStore.setNightLightIntensity(intensity) }
+                },
                 onNextSingle = {
                     requestSingleStep(ReaderTurnDirection.Next, page >= pages - 1)
                 },
@@ -2928,9 +2995,29 @@ fun ReaderScreen(
                 onSetUsePureColors = { newPure ->
                     scope.launch { settingsStore.setUsePurePageBackgroundColors(newPure) }
                 },
+                pageTransitionAnimation = settings.reader.pageTransitionAnimation,
+                onSetPageTransitionAnimation = { enabled ->
+                    scope.launch { settingsStore.setPageTransitionAnimation(enabled) }
+                },
                 pageTurnMode = settings.reader.pageTurnMode,
                 onSetPageTurnMode = { newMode ->
                     scope.launch { settingsStore.setPageTurnMode(newMode) }
+                },
+                imageScaleType = settings.reader.imageScaleType,
+                onSetImageScaleType = { newScale ->
+                    scope.launch { settingsStore.setImageScaleType(newScale) }
+                },
+                cropBorders = settings.reader.cropBorders,
+                onSetCropBorders = { newCrop ->
+                    scope.launch { settingsStore.setCropBorders(newCrop) }
+                },
+                navigationMode = settings.reader.navigationMode,
+                onSetNavigationMode = { newNav ->
+                    scope.launch { settingsStore.setNavigationMode(newNav) }
+                },
+                tappingInvertMode = settings.reader.tappingInvertMode,
+                onSetTappingInvertMode = { newInvert ->
+                    scope.launch { settingsStore.setTappingInvertMode(newInvert) }
                 },
                 // Fall back to the current chapter so the list is never empty
                 // (e.g. offline opens where the volumes call failed).

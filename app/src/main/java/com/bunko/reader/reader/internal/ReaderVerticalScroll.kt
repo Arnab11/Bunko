@@ -1,5 +1,6 @@
 package com.bunko.reader.reader.internal
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -100,7 +101,9 @@ internal fun ReaderVerticalScroll(
     epubSubpages: List<EpubSubpage> = emptyList(),
     epubFontSizeSp: Float = 18f,
     epubFontFamily: String = "Serif",
-    epubTextAlign: EpubTextAlign = EpubTextAlign.Left
+    epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
+    nightModeEnabled: Boolean = false,
+    nightLightIntensity: Float = 0f
 ) {
     LaunchedEffect(listState, pageCount) {
         snapshotFlow { listState.layoutInfo }
@@ -200,6 +203,15 @@ internal fun ReaderVerticalScroll(
                         pageBackground = pageBackground,
                         ePaperMode = ePaperMode,
                         modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                if (nightModeEnabled && nightLightIntensity > 0f) {
+                    val amberAlpha = (nightLightIntensity * 0.38f).coerceIn(0f, 0.45f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFFFF9E3D).copy(alpha = amberAlpha))
                     )
                 }
             }

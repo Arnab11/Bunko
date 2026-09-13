@@ -606,10 +606,10 @@ fun ReaderSettingsScreen(
 
                     SettingsSectionCard {
                         RadioSettingRow(
-                            title = "Right to Left (RTL)",
-                            subtitle = "Standard reading mode for manga and Japanese publications",
-                            selected = settings.reader.readingDirection == ReaderReadingDirection.RightToLeft,
-                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.RightToLeft) } }
+                            title = "Left to Right (LTR)",
+                            subtitle = "Standard reading mode for western comics and novels",
+                            selected = settings.reader.readingDirection == ReaderReadingDirection.LeftToRight,
+                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.LeftToRight) } }
                         )
                         CategoryRowGap()
                         RadioSettingRow(
@@ -620,10 +620,10 @@ fun ReaderSettingsScreen(
                         )
                         CategoryRowGap()
                         RadioSettingRow(
-                            title = "Left to Right (LTR)",
-                            subtitle = "Standard reading mode for western comics and novels",
-                            selected = settings.reader.readingDirection == ReaderReadingDirection.LeftToRight,
-                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.LeftToRight) } }
+                            title = "Right to Left (RTL)",
+                            subtitle = "Standard reading mode for manga and Japanese publications",
+                            selected = settings.reader.readingDirection == ReaderReadingDirection.RightToLeft,
+                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.RightToLeft) } }
                         )
                     }
                 }
@@ -662,49 +662,224 @@ fun ReaderSettingsScreen(
                     )
 
                     SettingsSectionCard {
-                        SwitchSettingRow(
-                            title = "Page Transition Animation",
-                            subtitle = "Smooth sliding transitions with depth. Turn off for instant page changes.",
-                            checked = settings.reader.pageTransitionAnimation,
-                            onCheckedChange = { enabled ->
-                                scope.launch { settingsStore.setPageTransitionAnimation(enabled) }
+                        val transitionsActive = settings.reader.pageTransitionAnimation
+                        val currentTurnMode = settings.reader.pageTurnMode
+
+                        RadioSettingRow(
+                            title = "Off",
+                            subtitle = "Instant page changes with no transition",
+                            selected = !transitionsActive,
+                            onClick = {
+                                scope.launch { settingsStore.setPageTransitionAnimation(false) }
                             }
                         )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Slide",
+                            subtitle = "Fast, stable horizontal slide animation",
+                            selected = transitionsActive && currentTurnMode == PageTurnMode.Slide,
+                            onClick = {
+                                scope.launch {
+                                    settingsStore.setPageTransitionAnimation(true)
+                                    settingsStore.setPageTurnMode(PageTurnMode.Slide)
+                                }
+                            }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "3D",
+                            subtitle = "Realistic 3D curled page turn for portrait and landscape spreads",
+                            selected = transitionsActive && currentTurnMode == PageTurnMode.Curl,
+                            onClick = {
+                                scope.launch {
+                                    settingsStore.setPageTransitionAnimation(true)
+                                    settingsStore.setPageTurnMode(PageTurnMode.Curl)
+                                }
+                            }
+                        )
+                        CategoryRowGap()
+                        SwitchSettingRow(
+                            title = "Page-Back Show-Through",
+                            subtitle = "Shows a faint mirror of content on the back of curled sheets",
+                            checked = settings.reader.showPortraitPageBackContent,
+                            enabled = transitionsActive && currentTurnMode == PageTurnMode.Curl,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
+                            }
+                        )
+                        CategoryRowGap()
+                        SwitchSettingRow(
+                            title = "Spread Shift Buttons",
+                            subtitle = "Shows +/- 1 shift buttons in reader menu to correct two-page spread alignments",
+                            checked = settings.reader.showSpreadShiftButtons,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setShowSpreadShiftButtons(enabled) }
+                            }
+                        )
+                    }
+                }
 
-                        if (settings.reader.readingDirection != ReaderReadingDirection.Vertical) {
+                // Section 3b: Tap Zones & Navigation
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Tap Zones",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        val currentNav = settings.reader.navigationMode
+                        RadioSettingRow(
+                            title = "Default",
+                            subtitle = "Left column back, center menu, right column forward",
+                            selected = currentNav == ReaderNavigationMode.Default,
+                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.Default) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "L-shaped",
+                            subtitle = "Top & left edges back, center menu, right & bottom edges forward",
+                            selected = currentNav == ReaderNavigationMode.LShaped,
+                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.LShaped) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Kindle-ish",
+                            subtitle = "Top third menu, narrow left strip back, remaining forward",
+                            selected = currentNav == ReaderNavigationMode.Kindlish,
+                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.Kindlish) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Edge",
+                            subtitle = "Left & right edges forward, center bottom back, center top menu",
+                            selected = currentNav == ReaderNavigationMode.Edge,
+                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.Edge) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Right & Left",
+                            subtitle = "Left half back, center menu, right half forward",
+                            selected = currentNav == ReaderNavigationMode.RightAndLeft,
+                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.RightAndLeft) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Disabled",
+                            subtitle = "Turn pages using swipe gestures only; tapping opens menu",
+                            selected = currentNav == ReaderNavigationMode.Disabled,
+                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.Disabled) } }
+                        )
+                    }
+                }
+
+                if (settings.reader.navigationMode != ReaderNavigationMode.Disabled) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Invert Tap Zone",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
+
+                        SettingsSectionCard {
+                            val currentInvert = settings.reader.tappingInvertMode
+                            RadioSettingRow(
+                                title = "None",
+                                subtitle = "Default tapping orientation",
+                                selected = currentInvert == ReaderTappingInvertMode.None,
+                                onClick = { scope.launch { settingsStore.setTappingInvertMode(ReaderTappingInvertMode.None) } }
+                            )
                             CategoryRowGap()
                             RadioSettingRow(
-                                title = "Slide Turn",
-                                subtitle = "Fast, stable horizontal slide animation",
-                                selected = settings.reader.pageTurnMode == PageTurnMode.Slide,
-                                onClick = { scope.launch { settingsStore.setPageTurnMode(PageTurnMode.Slide) } }
+                                title = "Horizontal",
+                                subtitle = "Invert left and right tap zones",
+                                selected = currentInvert == ReaderTappingInvertMode.Horizontal,
+                                onClick = { scope.launch { settingsStore.setTappingInvertMode(ReaderTappingInvertMode.Horizontal) } }
                             )
                             CategoryRowGap()
                             RadioSettingRow(
-                                title = "Curl Turn (Experimental)",
-                                subtitle = "Realistic 3D curled page turn for portrait and landscape spreads",
-                                selected = settings.reader.pageTurnMode == PageTurnMode.Curl,
-                                onClick = { scope.launch { settingsStore.setPageTurnMode(PageTurnMode.Curl) } }
+                                title = "Vertical",
+                                subtitle = "Invert top and bottom tap zones",
+                                selected = currentInvert == ReaderTappingInvertMode.Vertical,
+                                onClick = { scope.launch { settingsStore.setTappingInvertMode(ReaderTappingInvertMode.Vertical) } }
                             )
                             CategoryRowGap()
-                            SwitchSettingRow(
-                                title = "Page-Back Show-Through",
-                                subtitle = "Shows a faint mirror of content on the back of curled sheets",
-                                checked = settings.reader.showPortraitPageBackContent,
-                                onCheckedChange = { enabled ->
-                                    scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
-                                }
-                            )
-                            CategoryRowGap()
-                            SwitchSettingRow(
-                                title = "Spread Shift Buttons",
-                                subtitle = "Shows +/- 1 shift buttons in reader menu to correct two-page spread alignments",
-                                checked = settings.reader.showSpreadShiftButtons,
-                                onCheckedChange = { enabled ->
-                                    scope.launch { settingsStore.setShowSpreadShiftButtons(enabled) }
-                                }
+                            RadioSettingRow(
+                                title = "Both",
+                                subtitle = "Invert both horizontal and vertical tap zones",
+                                selected = currentInvert == ReaderTappingInvertMode.Both,
+                                onClick = { scope.launch { settingsStore.setTappingInvertMode(ReaderTappingInvertMode.Both) } }
                             )
                         }
+                    }
+                }
+
+                // Section 3c: Scale Type & Borders
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Image Scale & Borders",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        val currentScale = settings.reader.imageScaleType
+                        RadioSettingRow(
+                            title = "Fit screen",
+                            subtitle = "Scale image to fit screen preserving aspect ratio",
+                            selected = currentScale == ReaderImageScaleType.FitScreen,
+                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.FitScreen) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Stretch",
+                            subtitle = "Stretch image to fill entire screen",
+                            selected = currentScale == ReaderImageScaleType.Stretch,
+                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.Stretch) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Fit width",
+                            subtitle = "Scale image width to fit screen width",
+                            selected = currentScale == ReaderImageScaleType.FitWidth,
+                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.FitWidth) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Fit height",
+                            subtitle = "Scale image height to fit screen height",
+                            selected = currentScale == ReaderImageScaleType.FitHeight,
+                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.FitHeight) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Original size",
+                            subtitle = "Display image at 1:1 original pixel scale",
+                            selected = currentScale == ReaderImageScaleType.OriginalSize,
+                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.OriginalSize) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Smart fit",
+                            subtitle = "Automatically fits width or screen based on image aspect ratio",
+                            selected = currentScale == ReaderImageScaleType.SmartFit,
+                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.SmartFit) } }
+                        )
+                        CategoryRowGap()
+                        SwitchSettingRow(
+                            title = "Crop Borders",
+                            subtitle = "Automatically detects and trims whitespace or dark scan borders",
+                            checked = settings.reader.cropBorders,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setCropBorders(enabled) }
+                            }
+                        )
                     }
                 }
 

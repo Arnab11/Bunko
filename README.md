@@ -22,36 +22,6 @@ It is especially focused on people who digitize their own physical books and wan
 
 > Status: **v0.22 (early)**. Usable, but still evolving.
 
-<details>
-  <summary>Screenshots</summary>
-
-  <details>
-  <summary>Pixel series (emulator)</summary>
-
-  <img src="/docs/tabHome.png" width="600"> .... <img src="/docs/phoneHome.png" width="200">
-
-  <img src="/docs/tabSeries.png" width="600"> .... <img src="/docs/phoneSeries.png" width="200">
-
-  <img src="/docs/tabDetail.png" width="600"> .... <img src="/docs/phoneDetail.png" width="200">
-
-  *Black Jack ni Yoroshiku by Shuho Sato*
-  </details>
-
-  <details>
-  <summary>OnePlus Pad 3 / OnePlus 12</summary>
-
-  <img src="/docs/opdHome.jpg" width="600"> .... <img src="/docs/cphHome.jpg" width="200">
-
-  <img src="/docs/opdSeries.jpg" width="600"> .... <img src="/docs/cphSeries.jpg" width="200">
-
-  <img src="/docs/opdDetail.jpg" width="600"> .... <img src="/docs/cphDetail.jpg" width="200">
-
-  *Black Jack ni Yoroshiku by Shuho Sato*
-
-  > The top-left overlay is the device refresh-rate readout.
-  </details>
-</details>
-
 ## Highlights
 
 Several Kavita clients already exist. Bunko focuses on **tablet/phone parity** and **reading ergonomics for self-scanned books**.
@@ -78,6 +48,8 @@ Several Kavita clients already exist. Bunko focuses on **tablet/phone parity** a
 - Right-to-left and left-to-right binding
 - Pinch zoom, pan, double-tap zoom
 - Tap and swipe page turns
+- Customizable tap zones (Default, L-shaped, Kindle-ish, Edge, Right & Left) with inversion options
+- Image scale modes (Fit Screen, Stretch, Fit Width, Fit Height, Original, Smart Fit) and automatic border crop
 - Page-jump slider
 
 ## Install
@@ -111,9 +83,11 @@ Design notes and implementation scratchpads live under `docs/`. They are interna
 
 ## Third-party
 
-The Curl page-turn effect is built on a vendored fork of
-[oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl) (Apache-2.0,
-© Oleksandr Balan and pagecurl contributors). The vendored sources live under
-`app/src/main/java/eu/wewox/pagecurl/`; that directory's `README.md` records the origin,
-license, and the Bunko modifications. Bunko itself is Apache-2.0, so the repository's
-root `LICENSE` covers the fork as well.
+- The Curl page-turn effect is built on a vendored fork of
+  [oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl) (Apache-2.0,
+  © Oleksandr Balan and pagecurl contributors). The vendored sources live under
+  `app/src/main/java/eu/wewox/pagecurl/`; that directory's `README.md` records the origin,
+  license, and the Bunko modifications. Bunko itself is Apache-2.0, so the repository's
+  root `LICENSE` covers the fork as well.
+- Reader tap navigation zones, tap inversion modes, scale types, and scan border cropping are inspired by and adapted from [Mihon](https://github.com/mihonapp/mihon) (Apache-2.0, © Mihon Open Source Project and contributors).
+

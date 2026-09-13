@@ -309,6 +309,10 @@ class ExampleUnitTest {
             readerReadingDirection(storedName = null, legacyRightToLeft = false)
         )
         assertEquals(
+            ReaderReadingDirection.LeftToRight,
+            readerReadingDirection(storedName = null, legacyRightToLeft = null)
+        )
+        assertEquals(
             ReaderReadingDirection.Vertical,
             readerReadingDirection(
                 storedName = ReaderReadingDirection.Vertical.name,

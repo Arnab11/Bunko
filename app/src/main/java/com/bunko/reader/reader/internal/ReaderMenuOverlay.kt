@@ -48,14 +48,23 @@ import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.BrightnessHigh
+import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
+import androidx.compose.material.icons.filled.NightlightRound
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import kotlin.math.roundToInt
 import com.bunko.reader.EPaperMode
 import com.bunko.reader.EpubTextAlign
 import com.bunko.reader.PageLayoutMode
@@ -73,6 +82,7 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,7 +108,10 @@ import androidx.compose.ui.unit.sp
 import com.bunko.reader.InvertMode
 import com.bunko.reader.PageBackground
 import com.bunko.reader.PageTurnMode
+import com.bunko.reader.ReaderImageScaleType
+import com.bunko.reader.ReaderNavigationMode
 import com.bunko.reader.ReaderReadingDirection
+import com.bunko.reader.ReaderTappingInvertMode
 import com.bunko.reader.ui.ValueBubbleSlider
 import kotlin.math.roundToInt
 
@@ -128,6 +141,12 @@ internal fun ReaderMenuOverlay(
     onSetInvertMode: (InvertMode) -> Unit,
     ePaperMode: EPaperMode = EPaperMode.Off,
     onSetEPaperMode: (EPaperMode) -> Unit = {},
+    readerBrightness: Float = -1f,
+    onSetReaderBrightness: (Float) -> Unit = {},
+    nightModeEnabled: Boolean = false,
+    onSetNightModeEnabled: (Boolean) -> Unit = {},
+    nightLightIntensity: Float = 0.45f,
+    onSetNightLightIntensity: (Float) -> Unit = {},
     onNextSingle: () -> Unit,
     onPreviousSingle: () -> Unit,
     onJumpToPage: (Int) -> Unit,
@@ -135,8 +154,18 @@ internal fun ReaderMenuOverlay(
     onSetPageBackground: (PageBackground) -> Unit = {},
     usePureColors: Boolean = false,
     onSetUsePureColors: (Boolean) -> Unit = {},
-    pageTurnMode: PageTurnMode = PageTurnMode.Curl,
+    pageTransitionAnimation: Boolean = true,
+    onSetPageTransitionAnimation: (Boolean) -> Unit = {},
+    pageTurnMode: PageTurnMode = PageTurnMode.Slide,
     onSetPageTurnMode: (PageTurnMode) -> Unit = {},
+    imageScaleType: ReaderImageScaleType = ReaderImageScaleType.FitScreen,
+    onSetImageScaleType: (ReaderImageScaleType) -> Unit = {},
+    cropBorders: Boolean = false,
+    onSetCropBorders: (Boolean) -> Unit = {},
+    navigationMode: ReaderNavigationMode = ReaderNavigationMode.Default,
+    onSetNavigationMode: (ReaderNavigationMode) -> Unit = {},
+    tappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
+    onSetTappingInvertMode: (ReaderTappingInvertMode) -> Unit = {},
     isEpub: Boolean = false,
     epubFontSizeSp: Float = 18f,
     onSetEpubFontSizeSp: ((Float) -> Unit)? = null,
@@ -364,7 +393,7 @@ internal fun ReaderMenuOverlay(
                             onClick = { selectedTab = MenuOptionTab.Text },
                             text = {
                                 Text(
-                                    text = "Text",
+                                    text = if (isEpub) "Text" else "Layout",
                                     fontWeight = if (selectedTab == MenuOptionTab.Text) FontWeight.Bold else FontWeight.Medium,
                                     color = if (selectedTab == MenuOptionTab.Text) accent else unselectedText
                                 )
@@ -622,10 +651,10 @@ internal fun ReaderMenuOverlay(
                                     }
                                 }
 
-                                // Turn Animation (PageTurnMode)
+                                // Turn Animation (Off, Slide, 3D)
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
-                                        text = "Turn Animation",
+                                        text = "Turn animation",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = unselectedText
                                     )
@@ -633,25 +662,41 @@ internal fun ReaderMenuOverlay(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
                                     ) {
-                                        val modes = PageTurnMode.entries
-                                        modes.forEachIndexed { index, mode ->
+                                        val animOptions = listOf("Off", "Slide", "3D")
+                                        animOptions.forEachIndexed { index, option ->
+                                            val isSelected = when (option) {
+                                                "Off" -> !pageTransitionAnimation
+                                                "Slide" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Slide
+                                                "3D" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Curl
+                                                else -> false
+                                            }
                                             ToggleButton(
-                                                checked = pageTurnMode == mode,
-                                                onCheckedChange = { onSetPageTurnMode(mode) },
+                                                checked = isSelected,
+                                                onCheckedChange = {
+                                                    when (option) {
+                                                        "Off" -> onSetPageTransitionAnimation(false)
+                                                        "Slide" -> {
+                                                            onSetPageTransitionAnimation(true)
+                                                            onSetPageTurnMode(PageTurnMode.Slide)
+                                                        }
+                                                        "3D" -> {
+                                                            onSetPageTransitionAnimation(true)
+                                                            onSetPageTurnMode(PageTurnMode.Curl)
+                                                        }
+                                                    }
+                                                },
                                                 modifier = Modifier
                                                     .weight(1f)
                                                     .semantics { role = Role.RadioButton },
                                                 shapes = when (index) {
                                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                                                    modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                    animOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                                 }
                                             ) {
                                                 Text(
-                                                    when (mode) {
-                                                        PageTurnMode.Curl -> "3D Curl"
-                                                        PageTurnMode.Slide -> "Slide"
-                                                    }
+                                                    text = option,
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                                                 )
                                             }
                                         }
@@ -692,6 +737,186 @@ internal fun ReaderMenuOverlay(
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Text("+1", fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (!isEpub) {
+                                    // Scale Type
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "Scale type",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = unselectedText
+                                        )
+                                        val scaleRows = listOf(
+                                            listOf(
+                                                ReaderImageScaleType.FitScreen to "Fit screen",
+                                                ReaderImageScaleType.Stretch to "Stretch",
+                                                ReaderImageScaleType.FitWidth to "Fit width"
+                                            ),
+                                            listOf(
+                                                ReaderImageScaleType.FitHeight to "Fit height",
+                                                ReaderImageScaleType.OriginalSize to "Original",
+                                                ReaderImageScaleType.SmartFit to "Smart fit"
+                                            )
+                                        )
+                                        scaleRows.forEach { rowItems ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                            ) {
+                                                rowItems.forEachIndexed { index, (type, label) ->
+                                                    val isSelected = imageScaleType == type
+                                                    ToggleButton(
+                                                        checked = isSelected,
+                                                        onCheckedChange = { onSetImageScaleType(type) },
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .semantics { role = Role.RadioButton },
+                                                        shapes = when (index) {
+                                                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                            rowItems.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                        }
+                                                    ) {
+                                                        Text(
+                                                            text = label,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Crop Borders
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Crop borders",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = unselectedText
+                                        )
+                                        ToggleButton(
+                                            checked = cropBorders,
+                                            onCheckedChange = { onSetCropBorders(it) },
+                                            modifier = Modifier
+                                                .height(28.dp)
+                                                .semantics { role = Role.Checkbox }
+                                        ) {
+                                            Text(
+                                                text = if (cropBorders) "On" else "Off",
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Tap Zones
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Tap zones",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = unselectedText
+                                    )
+                                    val tapRows = listOf(
+                                        listOf(
+                                            ReaderNavigationMode.Default to "Default",
+                                            ReaderNavigationMode.LShaped to "L-shaped",
+                                            ReaderNavigationMode.Kindlish to "Kindle-ish"
+                                        ),
+                                        listOf(
+                                            ReaderNavigationMode.Edge to "Edge",
+                                            ReaderNavigationMode.RightAndLeft to "Right & Left",
+                                            ReaderNavigationMode.Disabled to "Disabled"
+                                        )
+                                    )
+                                    tapRows.forEach { rowItems ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                        ) {
+                                            rowItems.forEachIndexed { index, (mode, label) ->
+                                                val isSelected = navigationMode == mode
+                                                ToggleButton(
+                                                    checked = isSelected,
+                                                    onCheckedChange = { onSetNavigationMode(mode) },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .semantics { role = Role.RadioButton },
+                                                    shapes = when (index) {
+                                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                        rowItems.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = label,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Invert Tap Zone
+                                if (navigationMode != ReaderNavigationMode.Disabled) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "Invert tap zone",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = unselectedText
+                                        )
+                                        val invertRows = listOf(
+                                            listOf(
+                                                ReaderTappingInvertMode.None to "None",
+                                                ReaderTappingInvertMode.Horizontal to "Horizontal"
+                                            ),
+                                            listOf(
+                                                ReaderTappingInvertMode.Vertical to "Vertical",
+                                                ReaderTappingInvertMode.Both to "Both"
+                                            )
+                                        )
+                                        invertRows.forEach { rowItems ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                            ) {
+                                                rowItems.forEachIndexed { index, (invert, label) ->
+                                                    val isSelected = tappingInvertMode == invert
+                                                    ToggleButton(
+                                                        checked = isSelected,
+                                                        onCheckedChange = { onSetTappingInvertMode(invert) },
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .semantics { role = Role.RadioButton },
+                                                        shapes = when (index) {
+                                                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                            rowItems.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                        }
+                                                    ) {
+                                                        Text(
+                                                            text = label,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -866,6 +1091,162 @@ internal fun ReaderMenuOverlay(
                                             }
                                         }
                                     }
+
+                                    // Brightness Control Section
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    val isAuto = readerBrightness < 0f
+                                    val currentSystemBrightness = remember(isAuto) {
+                                        systemBrightnessToSlider(getSystemBrightness(context))
+                                    }
+                                    val currentBrightnessValue = if (isAuto) currentSystemBrightness else readerBrightness
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Brightness",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = unselectedText
+                                        )
+                                        ToggleButton(
+                                            checked = isAuto,
+                                            onCheckedChange = { auto ->
+                                                onSetReaderBrightness(if (auto) -1f else currentSystemBrightness)
+                                            },
+                                            modifier = Modifier
+                                                .height(28.dp)
+                                                .semantics { role = Role.Checkbox }
+                                        ) {
+                                            Text(
+                                                text = if (isAuto) "Auto" else "Custom",
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.BrightnessLow,
+                                            contentDescription = "Low Brightness",
+                                            tint = unselectedText,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Slider(
+                                            value = currentBrightnessValue.coerceIn(0f, 1f),
+                                            onValueChange = { onSetReaderBrightness(it.coerceIn(0f, 1f)) },
+                                            valueRange = 0f..1f,
+                                            modifier = Modifier.weight(1f),
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = accent,
+                                                activeTrackColor = accent,
+                                                inactiveTrackColor = dialogBorder
+                                            )
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.BrightnessHigh,
+                                            contentDescription = "High Brightness",
+                                            tint = unselectedText,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = "${(currentBrightnessValue * 100).roundToInt()}%",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = unselectedText,
+                                            modifier = Modifier.widthIn(min = 36.dp),
+                                            textAlign = TextAlign.End
+                                        )
+                                    }
+
+                                    // Night Mode / Night Light Section
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.NightlightRound,
+                                                contentDescription = "Night Light",
+                                                tint = unselectedText,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Text(
+                                                text = "Night Light",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = if (nightModeEnabled) onSurface else unselectedText
+                                            )
+                                        }
+                                        ToggleButton(
+                                            checked = nightModeEnabled,
+                                            onCheckedChange = onSetNightModeEnabled,
+                                            modifier = Modifier
+                                                .height(28.dp)
+                                                .semantics { role = Role.Checkbox }
+                                        ) {
+                                            Text(
+                                                text = if (nightModeEnabled) "On" else "Off",
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    }
+                                    AnimatedVisibility(visible = nightModeEnabled) {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "Warmth",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = unselectedText
+                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.WbSunny,
+                                                    contentDescription = "Mild Warmth",
+                                                    tint = unselectedText,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Slider(
+                                                    value = nightLightIntensity,
+                                                    onValueChange = onSetNightLightIntensity,
+                                                    valueRange = 0f..1f,
+                                                    modifier = Modifier.weight(1f),
+                                                    colors = SliderDefaults.colors(
+                                                        thumbColor = accent,
+                                                        activeTrackColor = accent,
+                                                        inactiveTrackColor = dialogBorder
+                                                    )
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Default.NightlightRound,
+                                                    contentDescription = "Deep Warmth",
+                                                    tint = unselectedText,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Text(
+                                                    text = "${(nightLightIntensity * 100).roundToInt()}%",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = unselectedText,
+                                                    modifier = Modifier.widthIn(min = 36.dp),
+                                                    textAlign = TextAlign.End
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -895,53 +1276,97 @@ internal fun ReaderMenuOverlay(
                     alpha = menuFraction
                 }
         ) {
-            Row(
+            val batteryState = rememberBatteryState()
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(barBg)
                     .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-            // Chapters / Table of Contents Button (Left of Slider)
-            IconButton(
-                onClick = { showChapterList = true },
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.List,
-                    contentDescription = "Chapters",
-                    tint = onBar
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Chapters / Table of Contents Button (Left of Slider)
+                    IconButton(
+                        onClick = { showChapterList = true },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.List,
+                            contentDescription = "Chapters",
+                            tint = onBar
+                        )
+                    }
+
+                    ValueBubbleSlider(
+                        value = sliderValue,
+                        onValueChange = { value ->
+                            val newPage = sliderValueToPage(value)
+                            jumpPage = newPage
+                            onJumpToPage(newPage)
+                        },
+                        onValueChangeFinished = {
+                            onJumpToPage(jumpPage)
+                        },
+                        valueRange = 0f..sliderMax,
+                        valueLabel = { value -> "${sliderValueToPage(value) + 1}" },
+                        enabled = safePageCount > 1,
+                        reverseTrackColors = rightToLeft,
+                        showStopIndicator = false,
+                        roundThumb = true,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Text(
+                        text = "${jumpPage + 1} / $safePageCount",
+                        color = onBarVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                val menuProgressPercent = if (safePageCount > 0) {
+                    (((jumpPage + 1).toFloat() / safePageCount) * 100).roundToInt()
+                } else 0
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Page ${jumpPage + 1} of $safePageCount",
+                        color = onBarVariant,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Text(
+                        text = "$menuProgressPercent% completed",
+                        color = onBarVariant,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        BatteryIcon(
+                            batteryState = batteryState,
+                            tint = onBarVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "${batteryState.level}%",
+                            color = onBarVariant,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
             }
-
-            ValueBubbleSlider(
-                value = sliderValue,
-                onValueChange = { value ->
-                    val newPage = sliderValueToPage(value)
-                    jumpPage = newPage
-                    onJumpToPage(newPage)
-                },
-                onValueChangeFinished = {
-                    onJumpToPage(jumpPage)
-                },
-                valueRange = 0f..sliderMax,
-                valueLabel = { value -> "${sliderValueToPage(value) + 1}" },
-                enabled = safePageCount > 1,
-                reverseTrackColors = rightToLeft,
-                showStopIndicator = false,
-                roundThumb = true,
-                modifier = Modifier.weight(1f)
-            )
-
-            Text(
-                text = "${jumpPage + 1} / $safePageCount",
-                color = onBarVariant,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
-        }
         }
 
         // CHAPTERS MODAL BOTTOM SHEET
@@ -1009,3 +1434,31 @@ internal fun ReaderMenuOverlay(
     }
 }
 
+private fun systemBrightnessToSlider(systemBrightness: Float): Float {
+    val h = systemBrightness.coerceIn(0.01f, 1f)
+    val fraction = ((h - 0.01f) / 0.99f).coerceIn(0f, 1f)
+    val t = kotlin.math.sqrt(fraction)
+    return (0.20f + t * 0.80f).coerceIn(0f, 1f)
+}
+
+private fun getSystemBrightness(context: android.content.Context): Float {
+    return try {
+        val floatVal = android.provider.Settings.System.getFloat(
+            context.contentResolver,
+            "screen_brightness_float",
+            -1f
+        )
+        if (floatVal in 0.01f..1f) {
+            floatVal
+        } else {
+            val intVal = android.provider.Settings.System.getInt(
+                context.contentResolver,
+                android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                128
+            )
+            (intVal / 255f).coerceIn(0.01f, 1f)
+        }
+    } catch (e: Throwable) {
+        0.5f
+    }
+}

@@ -54,17 +54,42 @@ enum class EpubTextAlign {
     Justify
 }
 
+enum class ReaderNavigationMode {
+    Default,
+    LShaped,
+    Kindlish,
+    Edge,
+    RightAndLeft,
+    Disabled
+}
+
+enum class ReaderTappingInvertMode {
+    None,
+    Horizontal,
+    Vertical,
+    Both
+}
+
+enum class ReaderImageScaleType {
+    FitScreen,
+    Stretch,
+    FitWidth,
+    FitHeight,
+    OriginalSize,
+    SmartFit
+}
+
 internal const val DefaultReaderPrefetchTurns = 4
 internal const val MaxReaderPrefetchTurns = 8
 
 data class ReaderSettings(
-    val readingDirection: ReaderReadingDirection = ReaderReadingDirection.RightToLeft,
+    val readingDirection: ReaderReadingDirection = ReaderReadingDirection.LeftToRight,
     val pageLayoutMode: PageLayoutMode = PageLayoutMode.Auto,
     val invertMode: InvertMode = InvertMode.Off,
     val invertWhiteThreshold: Float = 0.5f,
     val prefetchTurns: Int = DefaultReaderPrefetchTurns,
     val pageTransitionAnimation: Boolean = true,
-    val pageTurnMode: PageTurnMode = PageTurnMode.Curl,
+    val pageTurnMode: PageTurnMode = PageTurnMode.Slide,
     val pageBackground: PageBackground = PageBackground.Paper,
     val showPortraitPageBackContent: Boolean = true,
     val usePurePageBackgroundColors: Boolean = false,
@@ -72,7 +97,14 @@ data class ReaderSettings(
     val epubFontSizeSp: Float = 18f,
     val epubFontFamily: String = "Serif",
     val epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
-    val ePaperMode: EPaperMode = EPaperMode.Off
+    val ePaperMode: EPaperMode = EPaperMode.Off,
+    val readerBrightness: Float = -1f,
+    val nightModeEnabled: Boolean = false,
+    val nightLightIntensity: Float = 0.45f,
+    val navigationMode: ReaderNavigationMode = ReaderNavigationMode.Default,
+    val tappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
+    val imageScaleType: ReaderImageScaleType = ReaderImageScaleType.FitScreen,
+    val cropBorders: Boolean = false
 ) {
     val rightToLeft: Boolean
         get() = readingDirection == ReaderReadingDirection.RightToLeft
@@ -108,6 +140,13 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_EPUB_FONT_SIZE_SP = floatPreferencesKey("reader_epub_font_size_sp")
     private val KEY_EPUB_FONT_FAMILY = stringPreferencesKey("reader_epub_font_family")
     private val KEY_EPUB_TEXT_ALIGN = stringPreferencesKey("reader_epub_text_align")
+    private val KEY_READER_BRIGHTNESS = floatPreferencesKey("reader_brightness")
+    private val KEY_NIGHT_MODE_ENABLED = booleanPreferencesKey("reader_night_mode_enabled")
+    private val KEY_NIGHT_LIGHT_INTENSITY = floatPreferencesKey("reader_night_light_intensity")
+    private val KEY_READER_NAVIGATION_MODE = stringPreferencesKey("reader_navigation_mode")
+    private val KEY_READER_TAPPING_INVERTED = stringPreferencesKey("reader_tapping_inverted")
+    private val KEY_READER_IMAGE_SCALE_TYPE = stringPreferencesKey("reader_image_scale_type")
+    private val KEY_READER_CROP_BORDERS = booleanPreferencesKey("reader_crop_borders")
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
@@ -137,7 +176,7 @@ class AppSettingsStore(private val context: Context) {
                 pageTransitionAnimation = prefs[KEY_PAGE_TRANSITION_ANIMATION] ?: true,
                 pageTurnMode = prefs[KEY_PAGE_TURN_MODE]
                     ?.let { runCatching { PageTurnMode.valueOf(it) }.getOrNull() }
-                    ?: PageTurnMode.Curl,
+                    ?: PageTurnMode.Slide,
                 pageBackground = prefs[KEY_PAGE_BACKGROUND]
                     ?.let { runCatching { PageBackground.valueOf(it) }.getOrNull() }
                     ?: PageBackground.Paper,
@@ -148,7 +187,20 @@ class AppSettingsStore(private val context: Context) {
                 epubFontFamily = prefs[KEY_EPUB_FONT_FAMILY] ?: "Serif",
                 epubTextAlign = prefs[KEY_EPUB_TEXT_ALIGN]
                     ?.let { runCatching { EpubTextAlign.valueOf(it) }.getOrNull() }
-                    ?: EpubTextAlign.Left
+                    ?: EpubTextAlign.Left,
+                readerBrightness = prefs[KEY_READER_BRIGHTNESS] ?: -1f,
+                nightModeEnabled = prefs[KEY_NIGHT_MODE_ENABLED] ?: false,
+                nightLightIntensity = (prefs[KEY_NIGHT_LIGHT_INTENSITY] ?: 0.45f).coerceIn(0f, 1f),
+                navigationMode = prefs[KEY_READER_NAVIGATION_MODE]
+                    ?.let { runCatching { ReaderNavigationMode.valueOf(it) }.getOrNull() }
+                    ?: ReaderNavigationMode.Default,
+                tappingInvertMode = prefs[KEY_READER_TAPPING_INVERTED]
+                    ?.let { runCatching { ReaderTappingInvertMode.valueOf(it) }.getOrNull() }
+                    ?: ReaderTappingInvertMode.None,
+                imageScaleType = prefs[KEY_READER_IMAGE_SCALE_TYPE]
+                    ?.let { runCatching { ReaderImageScaleType.valueOf(it) }.getOrNull() }
+                    ?: ReaderImageScaleType.FitScreen,
+                cropBorders = prefs[KEY_READER_CROP_BORDERS] ?: false
             )
         )
     }
@@ -173,6 +225,18 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setEPaperMode(value: EPaperMode) {
         context.settingsDataStore.edit { it[KEY_EPAPER_MODE] = value.name }
+    }
+
+    suspend fun setReaderBrightness(value: Float) {
+        context.settingsDataStore.edit { it[KEY_READER_BRIGHTNESS] = value }
+    }
+
+    suspend fun setNightModeEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_NIGHT_MODE_ENABLED] = value }
+    }
+
+    suspend fun setNightLightIntensity(value: Float) {
+        context.settingsDataStore.edit { it[KEY_NIGHT_LIGHT_INTENSITY] = value }
     }
 
     suspend fun setInvertWhiteThreshold(value: Float) {
@@ -219,6 +283,22 @@ class AppSettingsStore(private val context: Context) {
         context.settingsDataStore.edit { it[KEY_EPUB_TEXT_ALIGN] = value.name }
     }
 
+    suspend fun setNavigationMode(value: ReaderNavigationMode) {
+        context.settingsDataStore.edit { it[KEY_READER_NAVIGATION_MODE] = value.name }
+    }
+
+    suspend fun setTappingInvertMode(value: ReaderTappingInvertMode) {
+        context.settingsDataStore.edit { it[KEY_READER_TAPPING_INVERTED] = value.name }
+    }
+
+    suspend fun setImageScaleType(value: ReaderImageScaleType) {
+        context.settingsDataStore.edit { it[KEY_READER_IMAGE_SCALE_TYPE] = value.name }
+    }
+
+    suspend fun setCropBorders(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_READER_CROP_BORDERS] = value }
+    }
+
     suspend fun setAppTheme(value: com.bunko.reader.ui.theme.AppTheme) {
         context.settingsDataStore.edit { it[KEY_APP_THEME] = value.name }
     }
@@ -245,7 +325,7 @@ internal fun readerReadingDirection(
 ): ReaderReadingDirection {
     return storedName
         ?.let { runCatching { ReaderReadingDirection.valueOf(it) }.getOrNull() }
-        ?: if (legacyRightToLeft != false) {
+        ?: if (legacyRightToLeft == true) {
             ReaderReadingDirection.RightToLeft
         } else {
             ReaderReadingDirection.LeftToRight

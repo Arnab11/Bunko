@@ -296,27 +296,33 @@ fun RadioSettingRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String = "",
+    enabled: Boolean = true,
 ) {
+    val alpha = if (enabled) 1f else 0.38f
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .selectable(selected = selected, onClick = onClick)
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                onClick = onClick
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = null)
+        RadioButton(selected = selected, onClick = null, enabled = enabled)
         Column(modifier = Modifier.padding(start = 12.dp)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
             )
             if (subtitle.isNotBlank()) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }

@@ -24,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -37,6 +36,7 @@ import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -47,6 +47,8 @@ import coil.compose.SubcomposeAsyncImageContent
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.size.Size as CoilSize
+import coil.transform.Transformation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -55,11 +57,160 @@ import kotlinx.coroutines.sync.withPermit
 import com.bunko.reader.FileDimensionDto
 import com.bunko.reader.InvertMode
 import com.bunko.reader.EPaperMode
+import com.bunko.reader.ReaderImageScaleType
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.download.OfflinePage
 import com.bunko.reader.download.decodeOfflinePage
 import kotlin.math.max
 import kotlin.math.min
+
+internal object SmartFitContentScale : ContentScale {
+    override fun computeScaleFactor(srcSize: Size, dstSize: Size): ScaleFactor {
+        if (srcSize.width <= 0f || srcSize.height <= 0f || dstSize.width <= 0f || dstSize.height <= 0f) {
+            return ScaleFactor(1f, 1f)
+        }
+        val srcAspect = srcSize.width / srcSize.height
+        val dstAspect = dstSize.width / dstSize.height
+        return if (srcAspect > dstAspect) {
+            // Wider than viewport: fit screen maintaining aspect ratio
+            ContentScale.Fit.computeScaleFactor(srcSize, dstSize)
+        } else {
+            // Taller or standard aspect: fit width
+            ContentScale.FillWidth.computeScaleFactor(srcSize, dstSize)
+        }
+    }
+}
+
+internal fun readerContentScale(scaleType: ReaderImageScaleType): ContentScale {
+    return when (scaleType) {
+        ReaderImageScaleType.FitScreen -> ContentScale.Fit
+        ReaderImageScaleType.Stretch -> ContentScale.FillBounds
+        ReaderImageScaleType.FitWidth -> ContentScale.FillWidth
+        ReaderImageScaleType.FitHeight -> ContentScale.FillHeight
+        ReaderImageScaleType.OriginalSize -> ContentScale.None
+        ReaderImageScaleType.SmartFit -> SmartFitContentScale
+    }
+}
+
+/**
+ * Intelligent pure-Kotlin border cropping transformation for comics and manga.
+ * Identifies whitespace or dark scan borders by sampling border pixels and
+ * crops the bitmap safely without encroaching on page artwork.
+ */
+internal fun cropBorderFromBitmap(bitmap: Bitmap): Bitmap {
+    val width = bitmap.width
+    val height = bitmap.height
+    if (width < 32 || height < 32) return bitmap
+
+    fun isWhite(color: Int): Boolean {
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        return r >= 238 && g >= 238 && b >= 238
+    }
+
+    fun isBlack(color: Int): Boolean {
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        return r <= 20 && g <= 20 && b <= 20
+    }
+
+    val corners = intArrayOf(
+        bitmap.getPixel(0, 0),
+        bitmap.getPixel(width - 1, 0),
+        bitmap.getPixel(0, height - 1),
+        bitmap.getPixel(width - 1, height - 1)
+    )
+
+    val whiteCount = corners.count { isWhite(it) }
+    val blackCount = corners.count { isBlack(it) }
+
+    val isBorderColor: (Int) -> Boolean = when {
+        whiteCount >= 2 -> ::isWhite
+        blackCount >= 2 -> ::isBlack
+        else -> return bitmap
+    }
+
+    val maxCropX = (width * 0.25f).toInt()
+    val maxCropY = (height * 0.25f).toInt()
+    val sampleStepX = max(1, width / 64)
+    val sampleStepY = max(1, height / 64)
+
+    fun isRowBorder(y: Int): Boolean {
+        var nonBorderCount = 0
+        var totalSamples = 0
+        var x = 0
+        while (x < width) {
+            if (!isBorderColor(bitmap.getPixel(x, y))) {
+                nonBorderCount++
+                if (nonBorderCount > 2) return false
+            }
+            totalSamples++
+            x += sampleStepX
+        }
+        return (nonBorderCount.toFloat() / totalSamples.coerceAtLeast(1)) <= 0.05f
+    }
+
+    fun isColBorder(x: Int): Boolean {
+        var nonBorderCount = 0
+        var totalSamples = 0
+        var y = 0
+        while (y < height) {
+            if (!isBorderColor(bitmap.getPixel(x, y))) {
+                nonBorderCount++
+                if (nonBorderCount > 2) return false
+            }
+            totalSamples++
+            y += sampleStepY
+        }
+        return (nonBorderCount.toFloat() / totalSamples.coerceAtLeast(1)) <= 0.05f
+    }
+
+    var top = 0
+    while (top < maxCropY && isRowBorder(top)) {
+        top++
+    }
+
+    var bottom = height - 1
+    while (bottom > height - 1 - maxCropY && bottom > top && isRowBorder(bottom)) {
+        bottom--
+    }
+
+    var left = 0
+    while (left < maxCropX && isColBorder(left)) {
+        left++
+    }
+
+    var right = width - 1
+    while (right > width - 1 - maxCropX && right > left && isColBorder(right)) {
+        right--
+    }
+
+    val cropW = right - left + 1
+    val cropH = bottom - top + 1
+
+    if ((top >= 4 || (height - 1 - bottom) >= 4 || left >= 4 || (width - 1 - right) >= 4) &&
+        cropW >= width / 2 && cropH >= height / 2
+    ) {
+        return try {
+            Bitmap.createBitmap(bitmap, left, top, cropW, cropH)
+        } catch (t: Throwable) {
+            BunkoLog.w("Failed to crop bitmap borders", t)
+            bitmap
+        }
+    }
+
+    return bitmap
+}
+
+internal class CropBordersTransformation : Transformation {
+    override val cacheKey: String = "bunko_crop_borders_v1"
+
+    override suspend fun transform(input: Bitmap, size: CoilSize): Bitmap {
+        return cropBorderFromBitmap(input)
+    }
+}
 
 private const val SmartInvertSampleSize = 64
 private const val SmartInvertColorThreshold = 0.1f
@@ -312,6 +463,8 @@ internal fun ReaderPageView(
     pageBackground: Color = Color(0xFF111111),
     singlePageAlignmentOverride: Alignment? = null,
     ePaperMode: EPaperMode = EPaperMode.Off,
+    imageScaleType: ReaderImageScaleType = ReaderImageScaleType.FitScreen,
+    cropBorders: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val layout = readerPageLayout(
@@ -321,7 +474,7 @@ internal fun ReaderPageView(
         pageDimensions = pageDimensions
     )
     val spread = spreadPagesFor(cursor, rightToLeft)
-    Row(modifier) {
+    Row(modifier.background(pageBackground)) {
         if (layout.singlePage) {
             key(cursor) {
                 PageImage(
@@ -333,7 +486,9 @@ internal fun ReaderPageView(
                     whiteThreshold = whiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = pageBackground,
-                    ePaperMode = ePaperMode
+                    ePaperMode = ePaperMode,
+                    imageScaleType = imageScaleType,
+                    cropBorders = cropBorders
                 )
             }
         } else {
@@ -347,7 +502,9 @@ internal fun ReaderPageView(
                     whiteThreshold = whiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = pageBackground,
-                    ePaperMode = ePaperMode
+                    ePaperMode = ePaperMode,
+                    imageScaleType = imageScaleType,
+                    cropBorders = cropBorders
                 )
             }
             key(spread.rightPage) {
@@ -360,7 +517,9 @@ internal fun ReaderPageView(
                     whiteThreshold = whiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = pageBackground,
-                    ePaperMode = ePaperMode
+                    ePaperMode = ePaperMode,
+                    imageScaleType = imageScaleType,
+                    cropBorders = cropBorders
                 )
             }
         }
@@ -374,6 +533,8 @@ private fun RowScope.PageImage(
     label: String,
     alignment: Alignment,
     contentScale: ContentScale = ContentScale.Fit,
+    imageScaleType: ReaderImageScaleType = ReaderImageScaleType.FitScreen,
+    cropBorders: Boolean = false,
     invertMode: InvertMode = InvertMode.Off,
     whiteThreshold: Float = 0.5f,
     invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
@@ -387,8 +548,7 @@ private fun RowScope.PageImage(
         modifier = Modifier
             .weight(1f)
             .fillMaxHeight()
-            .background(pageBackground)
-            .clipToBounds(),
+            .background(pageBackground),
         contentAlignment = Alignment.Center
     ) {
         val targetWidth = with(density) { maxWidth.toPx().toInt() }
@@ -401,14 +561,17 @@ private fun RowScope.PageImage(
             },
             model,
             targetWidth,
-            targetHeight
+            targetHeight,
+            cropBorders
         ) {
             value = when (model) {
                 null -> PageModelState.Unavailable
                 is OfflinePage -> try {
-                    decodeOfflinePage(model, targetWidth, targetHeight)
-                        ?.let(PageModelState::Ready)
-                        ?: PageModelState.Unavailable
+                    val decoded = decodeOfflinePage(model, targetWidth, targetHeight)
+                    val processed = if (cropBorders && decoded is Bitmap) {
+                        cropBorderFromBitmap(decoded)
+                    } else decoded
+                    processed?.let(PageModelState::Ready) ?: PageModelState.Unavailable
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (t: Throwable) {
@@ -476,15 +639,30 @@ private fun RowScope.PageImage(
             PageModelState.Loading -> ReaderPageLoadingPlaceholder()
             PageModelState.Unavailable -> ReaderPageUnavailablePlaceholder()
             is PageModelState.Ready -> {
+                val imageRequest = remember(resolvedModel, cropBorders, ctx) {
+                    if (resolvedModel == null) null
+                    else if (resolvedModel is Bitmap || resolvedModel is Drawable) {
+                        resolvedModel
+                    } else {
+                        ImageRequest.Builder(ctx)
+                            .data(resolvedModel)
+                            .apply {
+                                if (cropBorders) {
+                                    transformations(CropBordersTransformation())
+                                }
+                            }
+                            .build()
+                    }
+                }
                 SubcomposeAsyncImage(
-                    model = resolvedModel,
+                    model = imageRequest,
                     imageLoader = imageLoader,
                     contentDescription = label,
                     modifier = Modifier
                         .fillMaxSize()
                         .ePaperGrain(ePaperMode),
                     alignment = alignment,
-                    contentScale = contentScale,
+                    contentScale = if (contentScale != ContentScale.Fit) contentScale else readerContentScale(imageScaleType),
                     colorFilter = readerColorFilter(ePaperMode, shouldInvert == true),
                     onSuccess = { state ->
                         loadedDrawable = state.result.drawable

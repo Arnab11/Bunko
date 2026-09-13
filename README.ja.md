@@ -22,36 +22,6 @@
 
 > ステータス: **v0.22 (early)**。実用段階ですが、まだ開発中です。
 
-<details>
-  <summary>スクリーンショット</summary>
-
-  <details>
-  <summary>Pixel series (emulator)</summary>
-
-  <img src="/docs/tabHome.png" width="600"> .... <img src="/docs/phoneHome.png" width="200">
-
-  <img src="/docs/tabSeries.png" width="600"> .... <img src="/docs/phoneSeries.png" width="200">
-
-  <img src="/docs/tabDetail.png" width="600"> .... <img src="/docs/phoneDetail.png" width="200">
-
-  *ブラックジャックによろしく / 佐藤秀峰*
-  </details>
-
-  <details>
-  <summary>OnePlus Pad 3 / OnePlus 12</summary>
-
-  <img src="/docs/opdHome.jpg" width="600"> .... <img src="/docs/cphHome.jpg" width="200">
-
-  <img src="/docs/opdSeries.jpg" width="600"> .... <img src="/docs/cphSeries.jpg" width="200">
-
-  <img src="/docs/opdDetail.jpg" width="600"> .... <img src="/docs/cphDetail.jpg" width="200">
-
-  *ブラックジャックによろしく / 佐藤秀峰*
-
-  > 右上の表示は端末側のリフレッシュレート表示です。
-  </details>
-</details>
-
 ## 特徴
 
 Kavita クライアントは既に複数ありますが、Bunko は **タブレット/スマホ両対応** と **自炊本向けの読書体験** を重視しています。
@@ -78,6 +48,8 @@ Kavita クライアントは既に複数ありますが、Bunko は **タブレ�
 - 右綴じ/左綴じ (デフォルトでは ComicInfo.xml に従う)
 - ピンチズーム、パン、ダブルタップズーム
 - タップ/スワイプでのページ送り
+- カスタマイズ可能なタップゾーン (Default, L-shaped, Kindle-ish, Edge, Right & Left) と反転設定
+- 画像スケーリング (Fit Screen, Stretch, Fit Width, Fit Height, Original, Smart Fit) と余白自動クロップ
 - スライダーによるページジャンプ
 
 ## インストール
@@ -111,8 +83,10 @@ Kavita との接点は `app/src/main/java/com/bunko/reader/KavitaApi.kt` を中�
 
 ## サードパーティ
 
-Curl (ページめくり) 効果は [oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl)
-(Apache-2.0, © Oleksandr Balan and pagecurl contributors) の vendored fork を基盤にしています。
-取り込んだソースは `app/src/main/java/eu/wewox/pagecurl/` にあり、同ディレクトリの `README.md` に
-出所・ライセンス・Bunko 側の改変を記録しています。Bunko 自体も Apache-2.0 なので、
-リポジトリ root の `LICENSE` が fork にも適用されます。
+- Curl (ページめくり) 効果は [oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl)
+  (Apache-2.0, © Oleksandr Balan and pagecurl contributors) の vendored fork を基盤にしています。
+  取り込んだソースは `app/src/main/java/eu/wewox/pagecurl/` にあり、同ディレクトリの `README.md` に
+  出所・ライセンス・Bunko 側の改変を記録しています。Bunko 自体も Apache-2.0 なので、
+  リポジトリ root の `LICENSE` が fork にも適用されます。
+- リーダーのタップゾーン (Default, L-shaped, Kindle-ish, Edge 等)、タップ反転、画像スケーリング、余白自動クロップは [Mihon](https://github.com/mihonapp/mihon) (Apache-2.0, © Mihon Open Source Project and contributors) を参考に設計・移植されています。
+

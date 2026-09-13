@@ -96,7 +96,7 @@ internal object ReaderSessionPreferenceCache {
                         ?: EPaperMode.Off
                     val direction = storedEntry.readingDirection
                         ?.let { runCatching { ReaderReadingDirection.valueOf(it) }.getOrNull() }
-                        ?: if (storedEntry.rightToLeft != false) {
+                        ?: if (storedEntry.rightToLeft == true) {
                             ReaderReadingDirection.RightToLeft
                         } else {
                             ReaderReadingDirection.LeftToRight

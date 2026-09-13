@@ -16,6 +16,8 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.hypot
+import com.bunko.reader.ReaderNavigationMode
+import com.bunko.reader.ReaderTappingInvertMode
 import com.bunko.reader.reader.ReaderTurnDirection
 import com.bunko.reader.reader.readerTurnDirectionForDrag
 import com.bunko.reader.reader.readerTurnForDrag
@@ -33,6 +35,8 @@ internal fun ReaderTapLayer(
     onPreviousSingle: () -> Unit,
     onCenterTap: () -> Unit,
     turnVisualDistancePx: Float,
+    navigationMode: ReaderNavigationMode = ReaderNavigationMode.Default,
+    tappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
     zoomPanEnabled: Boolean = false,
     panOffsetX: Float = 0f,
     panOffsetY: Float = 0f,
@@ -70,6 +74,8 @@ internal fun ReaderTapLayer(
             .readerGestures(
                 rightToLeft = rightToLeft,
                 turnVisualDistancePx = turnVisualDistancePx,
+                navigationMode = navigationMode,
+                tappingInvertMode = tappingInvertMode,
                 zoomPanEnabled = zoomPanEnabled,
                 panOffsetX = panOffsetX,
                 panOffsetY = panOffsetY,
@@ -86,26 +92,38 @@ internal fun ReaderTapLayer(
                 onCloseDrag = onCloseDrag,
                 onCloseDragEnd = onCloseDragEnd,
                 onCloseDragCancel = onCloseDragCancel,
-                onLeftTap = { position ->
+                onMoveLeftTap = { position ->
                     if (!zoomPanEnabled) {
                         if (rightToLeft) latestOnNextSpread(position) else latestOnPreviousSpread(position)
                     }
                 },
-                onCenterTap = latestOnCenterTap,
-                onRightTap = { position ->
+                onMoveRightTap = { position ->
                     if (!zoomPanEnabled) {
                         if (rightToLeft) latestOnPreviousSpread(position) else latestOnNextSpread(position)
                     }
                 },
-                onLeftLongPress = {
+                onPrevTap = { position ->
+                    if (!zoomPanEnabled) latestOnPreviousSpread(position)
+                },
+                onNextTap = { position ->
+                    if (!zoomPanEnabled) latestOnNextSpread(position)
+                },
+                onCenterTap = latestOnCenterTap,
+                onMoveLeftLongPress = {
                     if (!zoomPanEnabled) {
                         if (rightToLeft) latestOnNextSingle() else latestOnPreviousSingle()
                     }
                 },
-                onRightLongPress = {
+                onMoveRightLongPress = {
                     if (!zoomPanEnabled) {
                         if (rightToLeft) latestOnPreviousSingle() else latestOnNextSingle()
                     }
+                },
+                onPrevLongPress = {
+                    if (!zoomPanEnabled) latestOnPreviousSingle()
+                },
+                onNextLongPress = {
+                    if (!zoomPanEnabled) latestOnNextSingle()
                 },
                 onCenterDoubleTap = latestOnDoubleTap
             )
@@ -185,18 +203,26 @@ private fun Modifier.readerGestures(
     directionLockEnabled: Boolean = false,
     closeSwipeEnabled: Boolean = false,
     closeVisualDistancePx: Float = 1f,
+    navigationMode: ReaderNavigationMode = ReaderNavigationMode.Default,
+    tappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
     onCloseDrag: (Float) -> Unit = {},
     onCloseDragEnd: (Boolean) -> Unit = {},
     onCloseDragCancel: () -> Unit = {},
-    onLeftTap: (Offset) -> Unit = {},
+    onMoveLeftTap: (Offset) -> Unit = {},
     onCenterTap: () -> Unit = {},
-    onRightTap: (Offset) -> Unit = {},
-    onLeftLongPress: () -> Unit = {},
-    onRightLongPress: () -> Unit = {},
+    onMoveRightTap: (Offset) -> Unit = {},
+    onPrevTap: (Offset) -> Unit = {},
+    onNextTap: (Offset) -> Unit = {},
+    onMoveLeftLongPress: () -> Unit = {},
+    onMoveRightLongPress: () -> Unit = {},
+    onPrevLongPress: () -> Unit = {},
+    onNextLongPress: () -> Unit = {},
     onCenterDoubleTap: (Offset) -> Unit = {}
 ): Modifier {
     val latestRightToLeft by rememberUpdatedState(rightToLeft)
     val latestTurnVisualDistancePx by rememberUpdatedState(turnVisualDistancePx)
+    val latestNavigationMode by rememberUpdatedState(navigationMode)
+    val latestTappingInvertMode by rememberUpdatedState(tappingInvertMode)
     val latestZoomPanEnabled by rememberUpdatedState(zoomPanEnabled)
     val latestPanOffsetX by rememberUpdatedState(panOffsetX)
     val latestPanOffsetY by rememberUpdatedState(panOffsetY)
@@ -213,11 +239,15 @@ private fun Modifier.readerGestures(
     val latestOnCloseDrag by rememberUpdatedState(onCloseDrag)
     val latestOnCloseDragEnd by rememberUpdatedState(onCloseDragEnd)
     val latestOnCloseDragCancel by rememberUpdatedState(onCloseDragCancel)
-    val latestOnLeftTap by rememberUpdatedState(onLeftTap)
+    val latestOnMoveLeftTap by rememberUpdatedState(onMoveLeftTap)
     val latestOnCenterTap by rememberUpdatedState(onCenterTap)
-    val latestOnRightTap by rememberUpdatedState(onRightTap)
-    val latestOnLeftLongPress by rememberUpdatedState(onLeftLongPress)
-    val latestOnRightLongPress by rememberUpdatedState(onRightLongPress)
+    val latestOnMoveRightTap by rememberUpdatedState(onMoveRightTap)
+    val latestOnPrevTap by rememberUpdatedState(onPrevTap)
+    val latestOnNextTap by rememberUpdatedState(onNextTap)
+    val latestOnMoveLeftLongPress by rememberUpdatedState(onMoveLeftLongPress)
+    val latestOnMoveRightLongPress by rememberUpdatedState(onMoveRightLongPress)
+    val latestOnPrevLongPress by rememberUpdatedState(onPrevLongPress)
+    val latestOnNextLongPress by rememberUpdatedState(onNextLongPress)
     val latestOnCenterDoubleTap by rememberUpdatedState(onCenterDoubleTap)
     // Keep the pointerInput key stable; volatile gesture state is read through rememberUpdatedState to avoid restarting mid-swipe.
     return pointerInput(Unit) {
@@ -233,6 +263,7 @@ private fun Modifier.readerGestures(
         var gestureStartPosition = Offset.Zero
         var velocityTracker = VelocityTracker()
         var lockedTurnDirection: ReaderTurnDirection? = null
+        var pendingCenterTap: ReaderPendingCenterTap? = null
         val panEdgeTolerancePx = 1f
         val horizontalIntentSlopPx = 8f
         val directionLockSlopPx = 4f
@@ -241,7 +272,6 @@ private fun Modifier.readerGestures(
         val doubleTapSlopPx = 64f
         val longPressTimeoutMillis = 500L
         val doubleTapTimeoutMillis = 300L
-        var pendingCenterTap: ReaderPendingCenterTap? = null
 
         fun closeMaxDragPx(): Float = latestCloseVisualDistancePx.coerceAtLeast(1f)
 
@@ -257,6 +287,8 @@ private fun Modifier.readerGestures(
             activePanY = latestPanOffsetY
             dragStartedAtNegativePanEdge = activePanX <= -latestPanMaxX + panEdgeTolerancePx
             dragStartedAtPositivePanEdge = activePanX >= latestPanMaxX - panEdgeTolerancePx
+            gestureStartPosition = Offset.Zero
+            velocityTracker = VelocityTracker()
             lockedTurnDirection = null
         }
 
@@ -280,15 +312,6 @@ private fun Modifier.readerGestures(
             }
         }
 
-        fun tapZone(position: Offset): ReaderTapZone {
-            val thirdWidth = size.width / 3f
-            return when {
-                position.x < thirdWidth -> ReaderTapZone.Left
-                position.x >= thirdWidth * 2f -> ReaderTapZone.Right
-                else -> ReaderTapZone.Center
-            }
-        }
-
         fun flushPendingCenterTap() {
             if (pendingCenterTap != null) {
                 pendingCenterTap = null
@@ -301,16 +324,24 @@ private fun Modifier.readerGestures(
         }
 
         fun handleTap(position: Offset, uptimeMillis: Long) {
-            when (tapZone(position)) {
-                ReaderTapZone.Left -> {
+            when (resolveTapAction(position, size, latestNavigationMode, latestTappingInvertMode)) {
+                ReaderTapAction.MoveLeft -> {
                     flushPendingCenterTap()
-                    latestOnLeftTap(position)
+                    latestOnMoveLeftTap(position)
                 }
-                ReaderTapZone.Right -> {
+                ReaderTapAction.MoveRight -> {
                     flushPendingCenterTap()
-                    latestOnRightTap(position)
+                    latestOnMoveRightTap(position)
                 }
-                ReaderTapZone.Center -> {
+                ReaderTapAction.Prev -> {
+                    flushPendingCenterTap()
+                    latestOnPrevTap(position)
+                }
+                ReaderTapAction.Next -> {
+                    flushPendingCenterTap()
+                    latestOnNextTap(position)
+                }
+                ReaderTapAction.Menu -> {
                     val pending = pendingCenterTap
                     if (
                         pending != null &&
@@ -328,10 +359,12 @@ private fun Modifier.readerGestures(
 
         fun handleLongPress(position: Offset) {
             flushPendingCenterTap()
-            when (tapZone(position)) {
-                ReaderTapZone.Left -> latestOnLeftLongPress()
-                ReaderTapZone.Right -> latestOnRightLongPress()
-                ReaderTapZone.Center -> Unit
+            when (resolveTapAction(position, size, latestNavigationMode, latestTappingInvertMode)) {
+                ReaderTapAction.MoveLeft -> latestOnMoveLeftLongPress()
+                ReaderTapAction.MoveRight -> latestOnMoveRightLongPress()
+                ReaderTapAction.Prev -> latestOnPrevLongPress()
+                ReaderTapAction.Next -> latestOnNextLongPress()
+                ReaderTapAction.Menu -> Unit
             }
         }
 
@@ -566,4 +599,70 @@ private fun Modifier.readerGestures(
         }
     }
 }
+
+internal enum class ReaderTapAction {
+    Menu,
+    Prev,
+    Next,
+    MoveLeft,
+    MoveRight
+}
+
+internal fun resolveTapAction(
+    position: Offset,
+    size: androidx.compose.ui.unit.IntSize,
+    navigationMode: ReaderNavigationMode,
+    tappingInvertMode: ReaderTappingInvertMode
+): ReaderTapAction {
+    if (size.width <= 0 || size.height <= 0 || navigationMode == ReaderNavigationMode.Disabled) {
+        return ReaderTapAction.Menu
+    }
+
+    var nx = (position.x / size.width.toFloat()).coerceIn(0f, 1f)
+    var ny = (position.y / size.height.toFloat()).coerceIn(0f, 1f)
+
+    if (tappingInvertMode == ReaderTappingInvertMode.Horizontal || tappingInvertMode == ReaderTappingInvertMode.Both) {
+        nx = 1f - nx
+    }
+    if (tappingInvertMode == ReaderTappingInvertMode.Vertical || tappingInvertMode == ReaderTappingInvertMode.Both) {
+        ny = 1f - ny
+    }
+
+    return when (navigationMode) {
+        ReaderNavigationMode.Disabled -> ReaderTapAction.Menu
+        ReaderNavigationMode.Default,
+        ReaderNavigationMode.RightAndLeft -> {
+            when {
+                nx < 0.33f -> ReaderTapAction.MoveLeft
+                nx >= 0.66f -> ReaderTapAction.MoveRight
+                else -> ReaderTapAction.Menu
+            }
+        }
+        ReaderNavigationMode.LShaped -> {
+            when {
+                ny < 0.33f -> ReaderTapAction.Prev
+                ny >= 0.66f -> ReaderTapAction.Next
+                nx < 0.33f -> ReaderTapAction.Prev
+                nx >= 0.66f -> ReaderTapAction.Next
+                else -> ReaderTapAction.Menu
+            }
+        }
+        ReaderNavigationMode.Kindlish -> {
+            when {
+                ny < 0.33f -> ReaderTapAction.Menu
+                nx < 0.33f -> ReaderTapAction.Prev
+                else -> ReaderTapAction.Next
+            }
+        }
+        ReaderNavigationMode.Edge -> {
+            when {
+                nx < 0.33f -> ReaderTapAction.Next
+                nx >= 0.66f -> ReaderTapAction.Next
+                ny >= 0.66f -> ReaderTapAction.Prev
+                else -> ReaderTapAction.Menu
+            }
+        }
+    }
+}
+
 
