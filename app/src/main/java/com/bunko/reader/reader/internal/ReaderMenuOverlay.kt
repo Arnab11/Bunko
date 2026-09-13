@@ -92,6 +92,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
@@ -230,6 +234,20 @@ internal fun ReaderMenuOverlay(
     val isTablet = configuration.smallestScreenWidthDp >= 600
     val navBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val dialogBottomPadding = if (isTablet) 24.dp else (navBarBottomPadding + 96.dp)
+    val screenHeight = configuration.screenHeightDp.dp
+    val availableDialogSpace = (screenHeight - statusBarTopPadding - 64.dp - dialogBottomPadding).coerceAtLeast(180.dp)
+    // Auto-adapt height based on DPI, fontScale, and available vertical space:
+    // Make it taller so it comfortably fits options, while auto-adapting to density / font size
+    val fontScaleFactor = density.fontScale.coerceIn(1.0f, 1.4f)
+    val phoneMaxHeight = minOf(
+        maxOf(540.dp * fontScaleFactor, screenHeight * 0.70f),
+        availableDialogSpace - 12.dp
+    )
+    val maxDialogHeight = if (isTablet) {
+        minOf(700.dp, availableDialogSpace - 24.dp)
+    } else {
+        phoneMaxHeight.coerceAtLeast(200.dp)
+    }
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -359,6 +377,7 @@ internal fun ReaderMenuOverlay(
                         start = 12.dp
                     )
                     .widthIn(max = 350.dp)
+                    .heightIn(max = maxDialogHeight)
                     .clip(RoundedCornerShape(20.dp))
                     .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(20.dp))
                     .clickable(
@@ -371,7 +390,9 @@ internal fun ReaderMenuOverlay(
                 shadowElevation = 16.dp
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxDialogHeight)
                 ) {
                     // Selected states mirror Reader Settings: M3 ToggleButtons keep
                     // their defaults, custom highlights use the same selected pair.
@@ -428,6 +449,8 @@ internal fun ReaderMenuOverlay(
 
                     val layoutScrollState = rememberScrollState()
                     val lightingScrollState = rememberScrollState()
+                    val scrollbarThumbColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                    val scrollbarTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
 
                     // TAB CONTENT (Scrollable on phones with bounded height)
                     Box(
@@ -440,6 +463,11 @@ internal fun ReaderMenuOverlay(
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .dialogVerticalScrollbar(
+                                            scrollState = layoutScrollState,
+                                            thumbColor = scrollbarThumbColor,
+                                            trackColor = scrollbarTrackColor
+                                        )
                                         .verticalScroll(layoutScrollState)
                                         .padding(horizontal = 16.dp, vertical = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -1018,6 +1046,11 @@ internal fun ReaderMenuOverlay(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .dialogVerticalScrollbar(
+                                        scrollState = lightingScrollState,
+                                        thumbColor = scrollbarThumbColor,
+                                        trackColor = scrollbarTrackColor
+                                    )
                                     .verticalScroll(lightingScrollState)
                                     .padding(horizontal = 16.dp, vertical = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -1552,4 +1585,54 @@ private fun getSystemBrightness(context: android.content.Context): Float {
     } catch (e: Throwable) {
         0.5f
     }
+}
+
+/**
+ * Draws a subtle track and a visible rounded thumb for vertical scrolling.
+ * Pinned at the viewport's right edge so it stays visible while content scrolls.
+ */
+private fun Modifier.dialogVerticalScrollbar(
+    scrollState: androidx.compose.foundation.ScrollState,
+    width: androidx.compose.ui.unit.Dp = 4.dp,
+    thumbColor: Color,
+    trackColor: Color,
+    cornerRadius: androidx.compose.ui.unit.Dp = 2.dp,
+    paddingEnd: androidx.compose.ui.unit.Dp = 4.dp,
+    paddingVertical: androidx.compose.ui.unit.Dp = 8.dp
+): Modifier = this.drawWithContent {
+    drawContent()
+
+    val maxScroll = scrollState.maxValue
+    if (maxScroll <= 0) return@drawWithContent
+
+    val totalHeight = size.height
+    val padVertPx = paddingVertical.toPx()
+    val availableTrackHeight = totalHeight - (padVertPx * 2)
+    if (availableTrackHeight <= 0f) return@drawWithContent
+
+    val thumbWidthPx = width.toPx()
+    val thumbXPx = size.width - paddingEnd.toPx() - thumbWidthPx
+    val radiusPx = cornerRadius.toPx()
+
+    // Draw subtle track
+    drawRoundRect(
+        color = trackColor,
+        topLeft = Offset(thumbXPx, padVertPx),
+        size = Size(thumbWidthPx, availableTrackHeight),
+        cornerRadius = CornerRadius(radiusPx, radiusPx)
+    )
+
+    // Draw thumb
+    val contentHeight = maxScroll + totalHeight
+    val thumbHeight = (totalHeight / contentHeight * availableTrackHeight)
+        .coerceIn(32.dp.toPx(), availableTrackHeight)
+    val scrollFraction = (scrollState.value.toFloat() / maxScroll.toFloat()).coerceIn(0f, 1f)
+    val thumbY = padVertPx + scrollFraction * (availableTrackHeight - thumbHeight)
+
+    drawRoundRect(
+        color = thumbColor,
+        topLeft = Offset(thumbXPx, thumbY),
+        size = Size(thumbWidthPx, thumbHeight),
+        cornerRadius = CornerRadius(radiusPx, radiusPx)
+    )
 }
