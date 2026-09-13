@@ -1078,13 +1078,14 @@ fun ReaderScreen(
         Color(0xFF141518)
     }
 
-    val isOverviewMenuOpen = showReaderMenu && !vertical && chapterBoundary == null
+    val isOverviewDisabled = vertical || !settings.reader.overviewMode
+    val isOverviewMenuOpen = showReaderMenu && !isOverviewDisabled && chapterBoundary == null
     // Use an Animatable so the overview transition can be driven both by a live
     // pinch gesture (snapTo during drag) and by a settling animation (animateTo
     // after release or a menu-button tap).
     val overviewProgressAnim = remember { Animatable(0f) }
     val overviewProgress = overviewProgressAnim.value
-    val isOverviewActive = overviewProgress > 0.001f || isOverviewMenuOpen
+    val isOverviewActive = !isOverviewDisabled && (overviewProgress > 0.001f || isOverviewMenuOpen)
     // When NOT in a live drag, let isOverviewMenuOpen settle the animation.
     LaunchedEffect(isOverviewMenuOpen, isDraggingOverview) {
         if (!isDraggingOverview) {
@@ -1124,8 +1125,8 @@ fun ReaderScreen(
     } else {
         0f
     }
-    val effectiveMenuFraction = if (vertical) 1f else overviewMenuFraction
-    val effectiveMenuAlpha = if (vertical) menuAlpha else overviewMenuFraction
+    val effectiveMenuFraction = if (isOverviewDisabled) 1f else overviewMenuFraction
+    val effectiveMenuAlpha = if (isOverviewDisabled) menuAlpha else overviewMenuFraction
 
     // Always use the reader's own background colour for the root container so the
     // status-bar and nav-bar inset strips (which the gallery card never covers) are
@@ -2748,6 +2749,7 @@ fun ReaderScreen(
                         // Stay in drag mode if isDraggingOverview is already true, even
                         // when zoomChange oscillates near 1f on slow pinches — only exit
                         // on a clear pinch-OUT (zoomChange > 1+ε, handled above/in else).
+                        !isOverviewDisabled &&
                         !isOverviewMenuOpen &&
                         candidate.userScale <= 1f + ReaderZoomEpsilon &&
                         (isDraggingOverview || zoomChange < 1f - ReaderZoomEpsilon) -> {
@@ -2901,6 +2903,7 @@ fun ReaderScreen(
             ReaderMenuOverlay(
                 visible = menuContentVisible,
                 menuFraction = effectiveMenuFraction,
+                dismissOnBackgroundTap = isOverviewDisabled,
                 seriesName = seriesName,
                 chapterName = currentChapter.displayName,
                 page = page,
@@ -3040,6 +3043,10 @@ fun ReaderScreen(
                 webtoonSidePadding = settings.reader.webtoonSidePadding,
                 onSetWebtoonSidePadding = { newPadding ->
                     scope.launch { settingsStore.setWebtoonSidePadding(newPadding) }
+                },
+                overviewMode = settings.reader.overviewMode,
+                onSetOverviewMode = { enabled ->
+                    scope.launch { settingsStore.setOverviewMode(enabled) }
                 },
                 // Fall back to the current chapter so the list is never empty
                 // (e.g. offline opens where the volumes call failed).

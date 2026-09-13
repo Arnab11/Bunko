@@ -133,6 +133,7 @@ private enum class MenuOptionTab {
 internal fun ReaderMenuOverlay(
     visible: Boolean = true,
     menuFraction: Float = 1f,
+    dismissOnBackgroundTap: Boolean = false,
     seriesName: String,
     chapterName: String,
     page: Int,
@@ -177,6 +178,8 @@ internal fun ReaderMenuOverlay(
     onSetAutoWebtoonMode: (Boolean) -> Unit = {},
     webtoonSidePadding: Int = 0,
     onSetWebtoonSidePadding: (Int) -> Unit = {},
+    overviewMode: Boolean = true,
+    onSetOverviewMode: (Boolean) -> Unit = {},
     isEpub: Boolean = false,
     epubFontSizeSp: Float = 18f,
     onSetEpubFontSizeSp: ((Float) -> Unit)? = null,
@@ -261,6 +264,14 @@ internal fun ReaderMenuOverlay(
                         detectTapGestures(onTap = { showDisplayOptions = false })
                     }
             )
+        } else if (dismissOnBackgroundTap && visible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(onDismiss) {
+                        detectTapGestures(onTap = { onDismiss() })
+                    }
+            )
         }
         // TOP APP BAR (animates down from above with status bar)
         AnimatedVisibility(
@@ -287,6 +298,10 @@ internal fun ReaderMenuOverlay(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(barBg)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* consume taps inside top bar */ }
                     .padding(top = statusBarTopPadding)
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -727,6 +742,35 @@ internal fun ReaderMenuOverlay(
                                             text = if (autoWebtoonMode) "On" else "Off",
                                             style = MaterialTheme.typography.labelSmall
                                         )
+                                    }
+                                }
+
+                                // Overview Mode (for horizontal reading)
+                                if (readingDirection != ReaderReadingDirection.Vertical && readingDirection != ReaderReadingDirection.Webtoon) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Overview mode",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = unselectedText
+                                            )
+                                        }
+                                        ToggleButton(
+                                            checked = overviewMode,
+                                            onCheckedChange = { onSetOverviewMode(it) },
+                                            modifier = Modifier
+                                                .height(28.dp)
+                                                .semantics { role = Role.Checkbox }
+                                        ) {
+                                            Text(
+                                                text = if (overviewMode) "On" else "Off",
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
                                     }
                                 }
 
@@ -1405,6 +1449,10 @@ internal fun ReaderMenuOverlay(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(barBg)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* consume taps inside bottom bar */ }
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)

@@ -141,4 +141,13 @@ class ReaderWebtoonTest {
         val ltrSettings = com.bunko.reader.ReaderSettings(readingDirection = ReaderReadingDirection.LeftToRight)
         assertFalse(ltrSettings.isVerticalReading)
     }
+
+    @Test
+    fun readerSettingsOverviewModeDefault() {
+        val defaultSettings = com.bunko.reader.ReaderSettings()
+        assertTrue(defaultSettings.overviewMode)
+
+        val disabledSettings = com.bunko.reader.ReaderSettings(overviewMode = false)
+        assertFalse(disabledSettings.overviewMode)
+    }
 }

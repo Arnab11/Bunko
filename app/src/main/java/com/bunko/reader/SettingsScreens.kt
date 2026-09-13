@@ -778,6 +778,15 @@ fun ReaderSettingsScreen(
                                 scope.launch { settingsStore.setShowSpreadShiftButtons(enabled) }
                             }
                         )
+                        CategoryRowGap()
+                        SwitchSettingRow(
+                            title = "Overview Mode",
+                            subtitle = "Shows a thumbnail gallery of pages when opening the reader menu or pinching. When disabled, reader controls overlay directly on top of the page.",
+                            checked = settings.reader.overviewMode,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setOverviewMode(enabled) }
+                            }
+                        )
                     }
                 }
 

@@ -110,7 +110,8 @@ data class ReaderSettings(
     val imageScaleType: ReaderImageScaleType = ReaderImageScaleType.FitScreen,
     val cropBorders: Boolean = false,
     val autoWebtoonMode: Boolean = true,
-    val webtoonSidePadding: Int = 0
+    val webtoonSidePadding: Int = 0,
+    val overviewMode: Boolean = true
 ) {
     val rightToLeft: Boolean
         get() = readingDirection == ReaderReadingDirection.RightToLeft
@@ -157,6 +158,7 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_READER_CROP_BORDERS = booleanPreferencesKey("reader_crop_borders")
     private val KEY_READER_AUTO_WEBTOON = booleanPreferencesKey("reader_auto_webtoon")
     private val KEY_READER_WEBTOON_SIDE_PADDING = intPreferencesKey("reader_webtoon_side_padding")
+    private val KEY_READER_OVERVIEW_MODE = booleanPreferencesKey("reader_overview_mode")
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
@@ -212,7 +214,8 @@ class AppSettingsStore(private val context: Context) {
                     ?: ReaderImageScaleType.FitScreen,
                 cropBorders = prefs[KEY_READER_CROP_BORDERS] ?: false,
                 autoWebtoonMode = prefs[KEY_READER_AUTO_WEBTOON] ?: true,
-                webtoonSidePadding = (prefs[KEY_READER_WEBTOON_SIDE_PADDING] ?: 0).coerceIn(0, 25)
+                webtoonSidePadding = (prefs[KEY_READER_WEBTOON_SIDE_PADDING] ?: 0).coerceIn(0, 25),
+                overviewMode = prefs[KEY_READER_OVERVIEW_MODE] ?: true
             )
         )
     }
@@ -317,6 +320,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setWebtoonSidePadding(value: Int) {
         context.settingsDataStore.edit { it[KEY_READER_WEBTOON_SIDE_PADDING] = value.coerceIn(0, 25) }
+    }
+
+    suspend fun setOverviewMode(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_READER_OVERVIEW_MODE] = value }
     }
 
     suspend fun setAppTheme(value: com.bunko.reader.ui.theme.AppTheme) {
