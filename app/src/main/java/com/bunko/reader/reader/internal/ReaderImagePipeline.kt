@@ -25,9 +25,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -46,6 +54,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import com.bunko.reader.FileDimensionDto
 import com.bunko.reader.InvertMode
+import com.bunko.reader.EPaperMode
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.download.OfflinePage
 import com.bunko.reader.download.decodeOfflinePage
@@ -75,6 +84,218 @@ private val NegativeColorFilter = ColorFilter.colorMatrix(
     )
 )
 
+// Monochrome E-Paper: Rec.709 luminance with deep e-ink contrast curve
+private val EPaperBwColorFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            0.2381f, 0.8010f, 0.0809f, 0f, -10f,
+            0.2381f, 0.8010f, 0.0809f, 0f, -10f,
+            0.2296f, 0.7724f, 0.0780f, 0f, -12f,
+            0f,      0f,      0f,      1f, 0f
+        )
+    )
+)
+
+private val EPaperBwInvertedFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            -0.2381f, -0.8010f, -0.0809f, 0f, 265f,
+            -0.2381f, -0.8010f, -0.0809f, 0f, 265f,
+            -0.2296f, -0.7724f, -0.0780f, 0f, 267f,
+            0f,        0f,        0f,      1f, 0f
+        )
+    )
+)
+
+// Color E-Paper (Kaleido 3 style): ~50% saturation, subtle warm paper cast, enhanced linework contrast
+private val EPaperColorFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            0.626f, 0.394f, 0.040f, 0f, -5f,
+            0.117f, 0.903f, 0.040f, 0f, -6f,
+            0.113f, 0.380f, 0.528f, 0f, -12f,
+            0f,     0f,     0f,     1f, 0f
+        )
+    )
+)
+
+private val EPaperColorInvertedFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            -0.626f, -0.394f, -0.040f, 0f, 260f,
+            -0.117f, -0.903f, -0.040f, 0f, 261f,
+            -0.113f, -0.380f, -0.528f, 0f, 267f,
+            0f,       0f,      0f,     1f, 0f
+        )
+    )
+)
+
+internal fun readerColorFilter(
+    ePaperMode: EPaperMode,
+    invert: Boolean
+): ColorFilter? = when {
+    ePaperMode == EPaperMode.Off && !invert -> null
+    ePaperMode == EPaperMode.Off && invert -> NegativeColorFilter
+    ePaperMode == EPaperMode.BlackAndWhite && !invert -> EPaperBwColorFilter
+    ePaperMode == EPaperMode.BlackAndWhite && invert -> EPaperBwInvertedFilter
+    ePaperMode == EPaperMode.Color && !invert -> EPaperColorFilter
+    ePaperMode == EPaperMode.Color && invert -> EPaperColorInvertedFilter
+    else -> null
+}
+
+private fun generateBwGrainBitmap(size: Int = 256): Bitmap {
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val random = java.util.Random(1337L)
+
+    // Seamless tileable value noise grids
+    val macroDim = 16
+    val macroGrid = FloatArray(macroDim * macroDim) { random.nextFloat() }
+
+    val microDim = 64
+    val microGrid = FloatArray(microDim * microDim) { random.nextFloat() }
+
+    fun sampleGrid(grid: FloatArray, dim: Int, x: Int, y: Int): Float {
+        val fx = (x * dim.toFloat()) / size
+        val fy = (y * dim.toFloat()) / size
+        val x0 = fx.toInt() % dim
+        val y0 = fy.toInt() % dim
+        val x1 = (x0 + 1) % dim
+        val y1 = (y0 + 1) % dim
+        val sx = (fx - x0.toFloat()).let { it * it * (3f - 2f * it) }
+        val sy = (fy - y0.toFloat()).let { it * it * (3f - 2f * it) }
+        val top = grid[y0 * dim + x0] * (1f - sx) + grid[y0 * dim + x1] * sx
+        val bottom = grid[y1 * dim + x0] * (1f - sx) + grid[y1 * dim + x1] * sx
+        return top * (1f - sy) + bottom * sy
+    }
+
+    val pixels = IntArray(size * size)
+    for (y in 0 until size) {
+        for (x in 0 until size) {
+            val macro = sampleGrid(macroGrid, macroDim, x, y)
+            val micro = sampleGrid(microGrid, microDim, x, y)
+            val fine = random.nextFloat()
+
+            val noise = macro * 0.25f + micro * 0.35f + fine * 0.40f
+
+            val pixel = when {
+                // Microscopic e-ink pigment particles & paper tooth
+                noise < 0.40f -> {
+                    val strength = (0.40f - noise) / 0.40f
+                    val alpha = (strength * 22f).toInt().coerceIn(0, 16)
+                    (alpha shl 24) or 0x161616
+                }
+                // Subtle paper fiber highlights
+                noise > 0.60f -> {
+                    val strength = (noise - 0.60f) / 0.40f
+                    val alpha = (strength * 18f).toInt().coerceIn(0, 13)
+                    (alpha shl 24) or 0xFAF8F5
+                }
+                else -> 0
+            }
+            pixels[y * size + x] = pixel
+        }
+    }
+    bitmap.setPixels(pixels, 0, size, 0, 0, size, size)
+    return bitmap
+}
+
+private fun generateColorGrainBitmap(size: Int = 256): Bitmap {
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val random = java.util.Random(4242L)
+
+    val macroDim = 16
+    val macroGrid = FloatArray(macroDim * macroDim) { random.nextFloat() }
+
+    val microDim = 64
+    val microGrid = FloatArray(microDim * microDim) { random.nextFloat() }
+
+    fun sampleGrid(grid: FloatArray, dim: Int, x: Int, y: Int): Float {
+        val fx = (x * dim.toFloat()) / size
+        val fy = (y * dim.toFloat()) / size
+        val x0 = fx.toInt() % dim
+        val y0 = fy.toInt() % dim
+        val x1 = (x0 + 1) % dim
+        val y1 = (y0 + 1) % dim
+        val sx = (fx - x0.toFloat()).let { it * it * (3f - 2f * it) }
+        val sy = (fy - y0.toFloat()).let { it * it * (3f - 2f * it) }
+        val top = grid[y0 * dim + x0] * (1f - sx) + grid[y0 * dim + x1] * sx
+        val bottom = grid[y1 * dim + x0] * (1f - sx) + grid[y1 * dim + x1] * sx
+        return top * (1f - sy) + bottom * sy
+    }
+
+    val pixels = IntArray(size * size)
+    for (y in 0 until size) {
+        for (x in 0 until size) {
+            val macro = sampleGrid(macroGrid, macroDim, x, y)
+            val micro = sampleGrid(microGrid, microDim, x, y)
+            val fine = random.nextFloat()
+
+            val noise = macro * 0.25f + micro * 0.35f + fine * 0.40f
+
+            // Color Filter Array (CFA) micro-mosaic simulation (Kaleido 3 diagonal subpixel grid)
+            val cfaPhase = (x + y * 2) % 3
+            val cfaColor = when (cfaPhase) {
+                0 -> 0xB84232 // Faint terracotta/red
+                1 -> 0x3A7A44 // Faint sage/green
+                else -> 0x365E9D // Faint slate/blue
+            }
+            val cfaAlpha = if (fine > 0.45f) {
+                ((fine - 0.45f) * 18f).toInt().coerceIn(0, 11)
+            } else 0
+
+            val pixel = when {
+                cfaAlpha > 0 -> (cfaAlpha shl 24) or cfaColor
+                noise < 0.38f -> {
+                    val strength = (0.38f - noise) / 0.38f
+                    val alpha = (strength * 20f).toInt().coerceIn(0, 14)
+                    (alpha shl 24) or 0x1E1E1E
+                }
+                noise > 0.62f -> {
+                    val strength = (noise - 0.62f) / 0.38f
+                    val alpha = (strength * 16f).toInt().coerceIn(0, 11)
+                    (alpha shl 24) or 0xFBF9F4
+                }
+                else -> 0
+            }
+            pixels[y * size + x] = pixel
+        }
+    }
+    bitmap.setPixels(pixels, 0, size, 0, 0, size, size)
+    return bitmap
+}
+
+private val EPaperBwGrainBrush: Brush by lazy {
+    val bitmap = generateBwGrainBitmap()
+    val imageShader = ImageShader(
+        image = bitmap.asImageBitmap(),
+        tileModeX = TileMode.Repeated,
+        tileModeY = TileMode.Repeated
+    )
+    object : ShaderBrush() {
+        override fun createShader(size: Size): Shader = imageShader
+    }
+}
+
+private val EPaperColorGrainBrush: Brush by lazy {
+    val bitmap = generateColorGrainBitmap()
+    val imageShader = ImageShader(
+        image = bitmap.asImageBitmap(),
+        tileModeX = TileMode.Repeated,
+        tileModeY = TileMode.Repeated
+    )
+    object : ShaderBrush() {
+        override fun createShader(size: Size): Shader = imageShader
+    }
+}
+
+internal fun Modifier.ePaperGrain(ePaperMode: EPaperMode): Modifier =
+    if (ePaperMode == EPaperMode.Off) this
+    else this.drawWithContent {
+        drawContent()
+        val brush = if (ePaperMode == EPaperMode.Color) EPaperColorGrainBrush else EPaperBwGrainBrush
+        drawRect(brush = brush)
+    }
+
 /** Internal to reader, not for external use. */
 @Composable
 internal fun ReaderPageView(
@@ -90,6 +311,7 @@ internal fun ReaderPageView(
     invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
     pageBackground: Color = Color(0xFF111111),
     singlePageAlignmentOverride: Alignment? = null,
+    ePaperMode: EPaperMode = EPaperMode.Off,
     modifier: Modifier = Modifier
 ) {
     val layout = readerPageLayout(
@@ -110,7 +332,8 @@ internal fun ReaderPageView(
                     invertMode = invertMode,
                     whiteThreshold = whiteThreshold,
                     invertDecisionCache = invertDecisionCache,
-                    pageBackground = pageBackground
+                    pageBackground = pageBackground,
+                    ePaperMode = ePaperMode
                 )
             }
         } else {
@@ -123,7 +346,8 @@ internal fun ReaderPageView(
                     invertMode = invertMode,
                     whiteThreshold = whiteThreshold,
                     invertDecisionCache = invertDecisionCache,
-                    pageBackground = pageBackground
+                    pageBackground = pageBackground,
+                    ePaperMode = ePaperMode
                 )
             }
             key(spread.rightPage) {
@@ -135,7 +359,8 @@ internal fun ReaderPageView(
                     invertMode = invertMode,
                     whiteThreshold = whiteThreshold,
                     invertDecisionCache = invertDecisionCache,
-                    pageBackground = pageBackground
+                    pageBackground = pageBackground,
+                    ePaperMode = ePaperMode
                 )
             }
         }
@@ -152,7 +377,8 @@ private fun RowScope.PageImage(
     invertMode: InvertMode = InvertMode.Off,
     whiteThreshold: Float = 0.5f,
     invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
-    pageBackground: Color = Color(0xFF111111)
+    pageBackground: Color = Color(0xFF111111),
+    ePaperMode: EPaperMode = EPaperMode.Off
 ) {
     val ctx = LocalContext.current
     val density = LocalDensity.current
@@ -254,10 +480,12 @@ private fun RowScope.PageImage(
                     model = resolvedModel,
                     imageLoader = imageLoader,
                     contentDescription = label,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .ePaperGrain(ePaperMode),
                     alignment = alignment,
                     contentScale = contentScale,
-                    colorFilter = if (shouldInvert == true) NegativeColorFilter else null,
+                    colorFilter = readerColorFilter(ePaperMode, shouldInvert == true),
                     onSuccess = { state ->
                         loadedDrawable = state.result.drawable
                     },

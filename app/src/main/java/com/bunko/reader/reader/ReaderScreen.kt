@@ -75,6 +75,7 @@ import eu.wewox.pagecurl.page.PageCurlState
 import eu.wewox.pagecurl.page.PageCurlTurnDirection
 import com.bunko.reader.AppSettings
 import com.bunko.reader.AppSettingsStore
+import com.bunko.reader.EPaperMode
 import com.bunko.reader.FileDimensionDto
 import com.bunko.reader.InvertMode
 import com.bunko.reader.PageBackground
@@ -303,6 +304,7 @@ fun ReaderScreen(
     // Per-book overrides survive a short close/reopen cycle in process memory. The server
     // direction and global Reader setting remain authoritative after the cache expires.
     var invertMode by remember { mutableStateOf(settings.reader.invertMode) }
+    var ePaperMode by remember { mutableStateOf(settings.reader.ePaperMode) }
     var sessionPreferenceKey by remember { mutableStateOf<String?>(null) }
     var zoomPan by remember { mutableStateOf(ReaderZoomPanState()) }
     var completingRead by remember { mutableStateOf(false) }
@@ -675,6 +677,7 @@ fun ReaderScreen(
         // is correct even before `settings` has emitted.
         val persistedReaderSettings = settingsStore.flow.first().reader
         invertMode = persistedReaderSettings.invertMode
+        ePaperMode = persistedReaderSettings.ePaperMode
 
         if (localBookId != null && localRepository != null) {
             val prefKey = "local:$localBookId"
@@ -687,6 +690,7 @@ fun ReaderScreen(
             if (cachedPreferences != null) {
                 readingDirection = cachedPreferences.readingDirection
                 invertMode = cachedPreferences.invertMode
+                ePaperMode = cachedPreferences.ePaperMode
             } else {
                 readingDirection = persistedReaderSettings.readingDirection
             }
@@ -817,6 +821,7 @@ fun ReaderScreen(
             // global direction or invert mode while the reading-profile call times out.
             readingDirection = cachedPreferences.readingDirection
             invertMode = cachedPreferences.invertMode
+            ePaperMode = cachedPreferences.ePaperMode
             ReaderExitWriteScope.launch {
                 ReaderSessionPreferenceCache.persist(ctx.cacheDir)
             }
@@ -882,7 +887,10 @@ fun ReaderScreen(
                 cachedPreferences?.readingDirection ?: persistedReaderSettings.readingDirection
             }
             readingDirection = resolvedDirection
-            cachedPreferences?.let { invertMode = it.invertMode }
+            cachedPreferences?.let {
+                invertMode = it.invertMode
+                ePaperMode = it.ePaperMode
+            }
             var isEpubChapter = false
             val chDto = runCatching { loadedApi.seriesChapter(currentChapterId) }.getOrNull()
             if (chDto?.format == 3) {
@@ -1239,6 +1247,7 @@ fun ReaderScreen(
             pageModel: (Int) -> Any?,
             imageLoader: ImageLoader,
             invertMode: InvertMode,
+            ePaperMode: EPaperMode,
             whiteThreshold: Float,
             invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
             pageBackground: Color,
@@ -1258,6 +1267,7 @@ fun ReaderScreen(
                         fontSizeSp = effectiveEpubFontSizeSp,
                         pageBackground = pageBackground,
                         invertMode = invertMode,
+                        ePaperMode = ePaperMode,
                         epubFontFamily = settings.reader.epubFontFamily,
                         epubTextAlign = settings.reader.epubTextAlign,
                         imageLoader = imageLoader,
@@ -1275,6 +1285,7 @@ fun ReaderScreen(
                                     fontSizeSp = effectiveEpubFontSizeSp,
                                     pageBackground = pageBackground,
                                     invertMode = invertMode,
+                                    ePaperMode = ePaperMode,
                                     epubFontFamily = settings.reader.epubFontFamily,
                                     epubTextAlign = settings.reader.epubTextAlign,
                                     imageLoader = imageLoader,
@@ -1297,6 +1308,7 @@ fun ReaderScreen(
                                     fontSizeSp = effectiveEpubFontSizeSp,
                                     pageBackground = pageBackground,
                                     invertMode = invertMode,
+                                    ePaperMode = ePaperMode,
                                     epubFontFamily = settings.reader.epubFontFamily,
                                     epubTextAlign = settings.reader.epubTextAlign,
                                     imageLoader = imageLoader,
@@ -1327,6 +1339,7 @@ fun ReaderScreen(
                     whiteThreshold = whiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = pageBackground,
+                    ePaperMode = ePaperMode,
                     singlePageAlignmentOverride = singlePageAlignmentOverride,
                     modifier = modifier
                 )
@@ -2105,6 +2118,7 @@ fun ReaderScreen(
                     pageModel = ::pageModel,
                     imageLoader = activeImageLoader,
                     invertMode = invertMode,
+                    ePaperMode = ePaperMode,
                     whiteThreshold = settings.reader.invertWhiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = readerPageBackground,
@@ -2223,6 +2237,7 @@ fun ReaderScreen(
                             pageModel = ::pageModel,
                             imageLoader = activeImageLoader,
                             invertMode = invertMode,
+                            ePaperMode = ePaperMode,
                             whiteThreshold = settings.reader.invertWhiteThreshold,
                             invertDecisionCache = invertDecisionCache,
                             pageBackground = curlBackPageColor,
@@ -2275,6 +2290,7 @@ fun ReaderScreen(
                                     pageModel = ::pageModel,
                                     imageLoader = activeImageLoader,
                                     invertMode = invertMode,
+                                    ePaperMode = ePaperMode,
                                     whiteThreshold = settings.reader.invertWhiteThreshold,
                                     invertDecisionCache = invertDecisionCache,
                                     pageBackground = curlBackPageColor,
@@ -2310,6 +2326,7 @@ fun ReaderScreen(
                                         pageModel = ::pageModel,
                                         imageLoader = activeImageLoader,
                                         invertMode = invertMode,
+                                        ePaperMode = ePaperMode,
                                         whiteThreshold = settings.reader.invertWhiteThreshold,
                                         invertDecisionCache = invertDecisionCache,
                                         pageBackground = curlBackPageColor,
@@ -2343,6 +2360,7 @@ fun ReaderScreen(
                             pageModel = ::pageModel,
                             imageLoader = activeImageLoader,
                             invertMode = invertMode,
+                            ePaperMode = ePaperMode,
                             whiteThreshold = settings.reader.invertWhiteThreshold,
                             invertDecisionCache = invertDecisionCache,
                             pageBackground = curlBackPageColor,
@@ -2360,6 +2378,7 @@ fun ReaderScreen(
                     pageModel = ::pageModel,
                     imageLoader = activeImageLoader,
                     invertMode = invertMode,
+                    ePaperMode = ePaperMode,
                     whiteThreshold = settings.reader.invertWhiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = readerPageBackground,
@@ -2446,6 +2465,7 @@ fun ReaderScreen(
                                             pageModel = ::pageModel,
                                             imageLoader = activeImageLoader,
                                             invertMode = invertMode,
+                                            ePaperMode = ePaperMode,
                                             whiteThreshold = settings.reader.invertWhiteThreshold,
                                             invertDecisionCache = invertDecisionCache,
                                             pageBackground = readerPageBackground,
@@ -2466,6 +2486,7 @@ fun ReaderScreen(
                     pageModel = ::pageModel,
                     imageLoader = activeImageLoader,
                     invertMode = invertMode,
+                    ePaperMode = ePaperMode,
                     whiteThreshold = settings.reader.invertWhiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = readerPageBackground,
@@ -2487,6 +2508,7 @@ fun ReaderScreen(
                     pageModel = ::pageModel,
                     imageLoader = activeImageLoader,
                     invertMode = invertMode,
+                    ePaperMode = ePaperMode,
                     whiteThreshold = settings.reader.invertWhiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = readerPageBackground,
@@ -2573,6 +2595,7 @@ fun ReaderScreen(
                         pageModel = ::pageModel,
                         imageLoader = activeImageLoader,
                         invertMode = invertMode,
+                        ePaperMode = ePaperMode,
                         whiteThreshold = settings.reader.invertWhiteThreshold,
                         invertDecisionCache = invertDecisionCache,
                         pageBackground = readerPageBackground,
@@ -2830,7 +2853,7 @@ fun ReaderScreen(
                     sessionPreferenceKey?.let { key ->
                         ReaderSessionPreferenceCache.put(
                             key = key,
-                            preferences = ReaderSessionPreferences(direction, invertMode),
+                            preferences = ReaderSessionPreferences(direction, invertMode, ePaperMode),
                             nowMillis = System.currentTimeMillis()
                         )
                         ReaderExitWriteScope.launch {
@@ -2849,7 +2872,22 @@ fun ReaderScreen(
                     sessionPreferenceKey?.let { key ->
                         ReaderSessionPreferenceCache.put(
                             key = key,
-                            preferences = ReaderSessionPreferences(readingDirection, mode),
+                            preferences = ReaderSessionPreferences(readingDirection, mode, ePaperMode),
+                            nowMillis = System.currentTimeMillis()
+                        )
+                        ReaderExitWriteScope.launch {
+                            ReaderSessionPreferenceCache.persist(ctx.cacheDir)
+                        }
+                    }
+                },
+                ePaperMode = ePaperMode,
+                onSetEPaperMode = { mode ->
+                    ePaperMode = mode
+                    scope.launch { settingsStore.setEPaperMode(mode) }
+                    sessionPreferenceKey?.let { key ->
+                        ReaderSessionPreferenceCache.put(
+                            key = key,
+                            preferences = ReaderSessionPreferences(readingDirection, invertMode, mode),
                             nowMillis = System.currentTimeMillis()
                         )
                         ReaderExitWriteScope.launch {

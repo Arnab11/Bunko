@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.bunko.reader.InvertMode
+import com.bunko.reader.EPaperMode
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.ReaderReadingDirection
@@ -19,15 +20,17 @@ private const val ReaderSessionPreferenceCacheFileName = "reader_session_prefere
 
 internal data class ReaderSessionPreferences(
     val readingDirection: ReaderReadingDirection,
-    val invertMode: InvertMode
+    val invertMode: InvertMode,
+    val ePaperMode: EPaperMode = EPaperMode.Off
 ) {
-    constructor(rightToLeft: Boolean, invertMode: InvertMode) : this(
+    constructor(rightToLeft: Boolean, invertMode: InvertMode, ePaperMode: EPaperMode = EPaperMode.Off) : this(
         readingDirection = if (rightToLeft) {
             ReaderReadingDirection.RightToLeft
         } else {
             ReaderReadingDirection.LeftToRight
         },
-        invertMode = invertMode
+        invertMode = invertMode,
+        ePaperMode = ePaperMode
     )
 
     val rightToLeft: Boolean
@@ -54,6 +57,7 @@ internal object ReaderSessionPreferenceCache {
         val readingDirection: String? = null,
         val rightToLeft: Boolean? = null,
         val invertMode: String,
+        val ePaperMode: String? = null,
         val touchedAtMillis: Long
     )
 
@@ -87,6 +91,9 @@ internal object ReaderSessionPreferenceCache {
                 stored.forEach { storedEntry ->
                     val mode = runCatching { InvertMode.valueOf(storedEntry.invertMode) }.getOrNull()
                         ?: return@forEach
+                    val ePaper = storedEntry.ePaperMode
+                        ?.let { runCatching { EPaperMode.valueOf(it) }.getOrNull() }
+                        ?: EPaperMode.Off
                     val direction = storedEntry.readingDirection
                         ?.let { runCatching { ReaderReadingDirection.valueOf(it) }.getOrNull() }
                         ?: if (storedEntry.rightToLeft != false) {
@@ -95,7 +102,7 @@ internal object ReaderSessionPreferenceCache {
                             ReaderReadingDirection.LeftToRight
                         }
                     entries[storedEntry.key] = Entry(
-                        preferences = ReaderSessionPreferences(direction, mode),
+                        preferences = ReaderSessionPreferences(direction, mode, ePaper),
                         touchedAtMillis = storedEntry.touchedAtMillis
                     )
                 }
@@ -127,6 +134,7 @@ internal object ReaderSessionPreferenceCache {
                     key = key,
                     readingDirection = entry.preferences.readingDirection.name,
                     invertMode = entry.preferences.invertMode.name,
+                    ePaperMode = entry.preferences.ePaperMode.name,
                     touchedAtMillis = entry.touchedAtMillis
                 )
             }

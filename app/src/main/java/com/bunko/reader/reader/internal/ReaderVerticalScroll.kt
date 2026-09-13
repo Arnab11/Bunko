@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.Dp
 import coil.ImageLoader
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import com.bunko.reader.EPaperMode
 import com.bunko.reader.EpubTextAlign
 import com.bunko.reader.FileDimensionDto
 import com.bunko.reader.InvertMode
@@ -79,6 +80,7 @@ internal fun ReaderVerticalScroll(
     pageModel: (Int) -> Any?,
     imageLoader: ImageLoader,
     invertMode: InvertMode,
+    ePaperMode: EPaperMode = EPaperMode.Off,
     whiteThreshold: Float,
     invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
     pageBackground: Color,
@@ -179,6 +181,7 @@ internal fun ReaderVerticalScroll(
                         epubTextAlign = epubTextAlign,
                         pageBackground = pageBackground,
                         invertMode = invertMode,
+                        ePaperMode = ePaperMode,
                         imageLoader = imageLoader,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -195,6 +198,7 @@ internal fun ReaderVerticalScroll(
                         whiteThreshold = whiteThreshold,
                         invertDecisionCache = invertDecisionCache,
                         pageBackground = pageBackground,
+                        ePaperMode = ePaperMode,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

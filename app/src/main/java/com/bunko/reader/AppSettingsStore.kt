@@ -18,6 +18,12 @@ enum class InvertMode {
     Always
 }
 
+enum class EPaperMode {
+    Off,
+    BlackAndWhite,
+    Color
+}
+
 enum class PageTurnMode {
     Slide,
     Curl
@@ -65,7 +71,8 @@ data class ReaderSettings(
     val showSpreadShiftButtons: Boolean = false,
     val epubFontSizeSp: Float = 18f,
     val epubFontFamily: String = "Serif",
-    val epubTextAlign: EpubTextAlign = EpubTextAlign.Left
+    val epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
+    val ePaperMode: EPaperMode = EPaperMode.Off
 ) {
     val rightToLeft: Boolean
         get() = readingDirection == ReaderReadingDirection.RightToLeft
@@ -87,6 +94,7 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_PAGE_LAYOUT_MODE = stringPreferencesKey("reader_page_layout_mode")
     private val KEY_INVERT_MODE = stringPreferencesKey("reader_invert_mode")
     private val KEY_INVERT_WHITE_THRESHOLD = floatPreferencesKey("reader_invert_white_threshold")
+    private val KEY_EPAPER_MODE = stringPreferencesKey("reader_epaper_mode")
     private val KEY_PREFETCH_TURNS = intPreferencesKey("reader_prefetch_turns")
     private val KEY_LEGACY_UNMETERED_PREFETCH_TURNS = intPreferencesKey("reader_unmetered_prefetch_turns")
     private val KEY_PAGE_TRANSITION_ANIMATION = booleanPreferencesKey("reader_page_transition_animation")
@@ -119,6 +127,9 @@ class AppSettingsStore(private val context: Context) {
                     ?.let { runCatching { InvertMode.valueOf(it) }.getOrNull() }
                     ?: InvertMode.Off,
                 invertWhiteThreshold = prefs[KEY_INVERT_WHITE_THRESHOLD] ?: 0.5f,
+                ePaperMode = prefs[KEY_EPAPER_MODE]
+                    ?.let { runCatching { EPaperMode.valueOf(it) }.getOrNull() }
+                    ?: EPaperMode.Off,
                 prefetchTurns = (prefs[KEY_PREFETCH_TURNS]
                     ?: prefs[KEY_LEGACY_UNMETERED_PREFETCH_TURNS]
                     ?: DefaultReaderPrefetchTurns)
@@ -158,6 +169,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setInvertMode(value: InvertMode) {
         context.settingsDataStore.edit { it[KEY_INVERT_MODE] = value.name }
+    }
+
+    suspend fun setEPaperMode(value: EPaperMode) {
+        context.settingsDataStore.edit { it[KEY_EPAPER_MODE] = value.name }
     }
 
     suspend fun setInvertWhiteThreshold(value: Float) {

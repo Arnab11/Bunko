@@ -56,6 +56,7 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
+import com.bunko.reader.EPaperMode
 import com.bunko.reader.EpubTextAlign
 import com.bunko.reader.PageLayoutMode
 import androidx.compose.material3.Icon
@@ -125,6 +126,8 @@ internal fun ReaderMenuOverlay(
     onSetPageLayoutMode: (PageLayoutMode) -> Unit = {},
     invertMode: InvertMode,
     onSetInvertMode: (InvertMode) -> Unit,
+    ePaperMode: EPaperMode = EPaperMode.Off,
+    onSetEPaperMode: (EPaperMode) -> Unit = {},
     onNextSingle: () -> Unit,
     onPreviousSingle: () -> Unit,
     onJumpToPage: (Int) -> Unit,
@@ -824,6 +827,40 @@ internal fun ReaderMenuOverlay(
                                                         InvertMode.Off -> "Off"
                                                         InvertMode.Smart -> "Smart"
                                                         InvertMode.Always -> "Always"
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Text(
+                                        text = "E-Paper Mode",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = unselectedText
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                    ) {
+                                        val epModes = EPaperMode.entries
+                                        epModes.forEachIndexed { index, mode ->
+                                            ToggleButton(
+                                                checked = ePaperMode == mode,
+                                                onCheckedChange = { onSetEPaperMode(mode) },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .semantics { role = Role.RadioButton },
+                                                shapes = when (index) {
+                                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                    epModes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                }
+                                            ) {
+                                                Text(
+                                                    when (mode) {
+                                                        EPaperMode.Off -> "Off"
+                                                        EPaperMode.BlackAndWhite -> "B&W"
+                                                        EPaperMode.Color -> "Color"
                                                     }
                                                 )
                                             }

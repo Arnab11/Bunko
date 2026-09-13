@@ -42,19 +42,9 @@ import androidx.compose.ui.unit.sp
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.imageLoader
+import com.bunko.reader.EPaperMode
 import com.bunko.reader.EpubTextAlign
 import com.bunko.reader.InvertMode
-
-private val NegativeColorFilter = ColorFilter.colorMatrix(
-    ColorMatrix(
-        floatArrayOf(
-            -1f, 0f, 0f, 0f, 255f,
-            0f, -1f, 0f, 0f, 255f,
-            0f, 0f, -1f, 0f, 255f,
-            0f, 0f, 0f, 1f, 0f
-        )
-    )
-)
 
 @Composable
 internal fun ReaderEpubPageView(
@@ -62,6 +52,7 @@ internal fun ReaderEpubPageView(
     fontSizeSp: Float,
     pageBackground: Color,
     invertMode: InvertMode = InvertMode.Off,
+    ePaperMode: EPaperMode = EPaperMode.Off,
     epubFontFamily: String = "Serif",
     epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
     modifier: Modifier = Modifier,
@@ -73,7 +64,7 @@ internal fun ReaderEpubPageView(
     val textColor = if (isDark) Color(0xFFEDEDED) else Color(0xFF141414)
     val dividerColor = if (isDark) Color(0xFF333333) else Color(0xFFDCD7CC)
     val quoteBarColor = if (isDark) Color(0xFF666666) else Color(0xFF9E988D)
-    val imageColorFilter = if (invertMode == InvertMode.Always) NegativeColorFilter else null
+    val imageColorFilter = readerColorFilter(ePaperMode, invertMode == InvertMode.Always)
     val activeFontFamily = when (epubFontFamily.lowercase()) {
         "sans", "sansserif", "sans-serif" -> FontFamily.SansSerif
         "mono", "monospace" -> FontFamily.Monospace
@@ -100,6 +91,7 @@ internal fun ReaderEpubPageView(
         modifier = modifier
             .fillMaxSize()
             .background(pageBackground)
+            .ePaperGrain(ePaperMode)
             .padding(effectivePadding)
     ) {
         Column(
