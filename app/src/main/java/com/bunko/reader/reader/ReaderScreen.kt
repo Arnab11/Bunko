@@ -2171,6 +2171,11 @@ fun ReaderScreen(
                                 // At overview: shift reader to pager centre (same as card).
                                 // At reader: no shift.
                                 translationY = overviewProgress * galleryCenterShiftYPx
+                                // When overview is fully open (progress >= 0.98f), hide the stationary
+                                // reader viewport so it never shows through page gaps when scrolling
+                                // the horizontal carousel. During zoom transitions (< 0.98f), alpha is 1f
+                                // with exact transform mirroring, keeping the transition seamless with no black bars.
+                                alpha = if (overviewProgress >= 0.98f) 0f else 1f
                             },
                         contentAlignment = Alignment.Center
                     ) {
