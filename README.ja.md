@@ -48,6 +48,8 @@ Kavita クライアントは既に複数ありますが、Bunko は **タブレ�
 - 右綴じ/左綴じ (デフォルトでは ComicInfo.xml に従う)
 - ピンチズーム、パン、ダブルタップズーム
 - タップ/スワイプでのページ送り
+- 連続縦スクロールおよび Webtoon モード (75% 画面高タップスクロール、左右余白設定)
+- Auto Webtoon モード (画像のアスペクト比および作品メタデータによる自動判定)
 - カスタマイズ可能なタップゾーン (Default, L-shaped, Kindle-ish, Edge, Right & Left) と反転設定
 - 画像スケーリング (Fit Screen, Stretch, Fit Width, Fit Height, Original, Smart Fit) と余白自動クロップ
 - スライダーによるページジャンプ
@@ -88,5 +90,5 @@ Kavita との接点は `app/src/main/java/com/bunko/reader/KavitaApi.kt` を中�
   取り込んだソースは `app/src/main/java/eu/wewox/pagecurl/` にあり、同ディレクトリの `README.md` に
   出所・ライセンス・Bunko 側の改変を記録しています。Bunko 自体も Apache-2.0 なので、
   リポジトリ root の `LICENSE` が fork にも適用されます。
-- リーダーのタップゾーン (Default, L-shaped, Kindle-ish, Edge 等)、タップ反転、画像スケーリング、余白自動クロップは [Mihon](https://github.com/mihonapp/mihon) (Apache-2.0, © Mihon Open Source Project and contributors) を参考に設計・移植されています。
+- リーダーのタップゾーン (Default, L-shaped, Kindle-ish, Edge 等)、タップ反転、画像スケーリング、余白自動クロップ、Webtoon 連続スクロールおよび自動 Webtoon 判定は [Mihon](https://github.com/mihonapp/mihon) (Apache-2.0, © Mihon Open Source Project and contributors) を参考に設計・移植されています。
 

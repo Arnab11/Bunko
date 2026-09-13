@@ -106,6 +106,7 @@ import com.bunko.reader.reader.internal.readerOverviewCursors
 import com.bunko.reader.reader.internal.ReaderPageView
 import com.bunko.reader.reader.internal.ReaderTapLayer
 import com.bunko.reader.reader.internal.ReaderVerticalScroll
+import com.bunko.reader.reader.internal.ReaderWebtoonDetector
 import com.bunko.reader.reader.internal.ReaderZoomEpsilon
 import com.bunko.reader.reader.internal.ReaderZoomPanState
 import com.bunko.reader.reader.internal.lerpTo
@@ -949,6 +950,12 @@ fun ReaderScreen(
                 }
             }
             chapterMetadataJob.join()
+            val effectiveDirection = ReaderWebtoonDetector.resolveEffectiveReadingDirection(
+                preferredDirection = resolvedDirection,
+                autoWebtoonMode = persistedReaderSettings.autoWebtoonMode,
+                pageDimensions = pageDimensions
+            )
+            readingDirection = effectiveDirection
             readerReady = true
             verticalRestoreNonce++
         } catch (t: Throwable) {
@@ -1051,7 +1058,8 @@ fun ReaderScreen(
             null
         }
     val rtl = readingDirection == ReaderReadingDirection.RightToLeft
-    val vertical = readingDirection == ReaderReadingDirection.Vertical
+    val isWebtoon = readingDirection == ReaderReadingDirection.Webtoon
+    val vertical = readingDirection == ReaderReadingDirection.Vertical || isWebtoon
     val spreadPages = spreadPagesFor(page, rtl)
 
     val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
@@ -2192,7 +2200,13 @@ fun ReaderScreen(
                     epubSubpages = epubSubpages,
                     epubFontSizeSp = epubFontSizeSp,
                     epubFontFamily = settings.reader.epubFontFamily,
-                    epubTextAlign = settings.reader.epubTextAlign
+                    epubTextAlign = settings.reader.epubTextAlign,
+                    isWebtoon = isWebtoon,
+                    sidePaddingPercent = settings.reader.webtoonSidePadding,
+                    navigationMode = settings.reader.navigationMode,
+                    tappingInvertMode = settings.reader.tappingInvertMode,
+                    imageScaleType = settings.reader.imageScaleType,
+                    cropBorders = settings.reader.cropBorders
                 )
             } else {
                 Box(
@@ -3018,6 +3032,14 @@ fun ReaderScreen(
                 tappingInvertMode = settings.reader.tappingInvertMode,
                 onSetTappingInvertMode = { newInvert ->
                     scope.launch { settingsStore.setTappingInvertMode(newInvert) }
+                },
+                autoWebtoonMode = settings.reader.autoWebtoonMode,
+                onSetAutoWebtoonMode = { newAuto ->
+                    scope.launch { settingsStore.setAutoWebtoonMode(newAuto) }
+                },
+                webtoonSidePadding = settings.reader.webtoonSidePadding,
+                onSetWebtoonSidePadding = { newPadding ->
+                    scope.launch { settingsStore.setWebtoonSidePadding(newPadding) }
                 },
                 // Fall back to the current chapter so the list is never empty
                 // (e.g. offline opens where the volumes call failed).

@@ -10,12 +10,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -620,11 +623,70 @@ fun ReaderSettingsScreen(
                         )
                         CategoryRowGap()
                         RadioSettingRow(
+                            title = "Webtoon",
+                            subtitle = "Continuous vertical strip with tap-to-scroll (75% height) and side margins",
+                            selected = settings.reader.readingDirection == ReaderReadingDirection.Webtoon,
+                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.Webtoon) } }
+                        )
+                        CategoryRowGap()
+                        RadioSettingRow(
                             title = "Right to Left (RTL)",
                             subtitle = "Standard reading mode for manga and Japanese publications",
                             selected = settings.reader.readingDirection == ReaderReadingDirection.RightToLeft,
                             onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.RightToLeft) } }
                         )
+                        CategoryRowGap()
+                        SwitchSettingRow(
+                            title = "Auto Webtoon Mode",
+                            subtitle = "Automatically switch to Webtoon mode for webtoons and manhwa based on page dimensions and tags",
+                            checked = settings.reader.autoWebtoonMode,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setAutoWebtoonMode(enabled) }
+                            }
+                        )
+                        if (settings.reader.readingDirection == ReaderReadingDirection.Webtoon || settings.reader.autoWebtoonMode) {
+                            CategoryRowGap()
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                Text(
+                                    text = "Webtoon Side Padding: ${settings.reader.webtoonSidePadding}%",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Adds side margins to webtoon strips on wider screens and tablets",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    listOf(0, 5, 10, 15, 20, 25).forEach { paddingVal ->
+                                        val isSelected = settings.reader.webtoonSidePadding == paddingVal
+                                        Surface(
+                                            onClick = { scope.launch { settingsStore.setWebtoonSidePadding(paddingVal) } },
+                                            modifier = Modifier.weight(1f).height(32.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                            )
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = "$paddingVal%",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -94,6 +96,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -166,6 +169,10 @@ internal fun ReaderMenuOverlay(
     onSetNavigationMode: (ReaderNavigationMode) -> Unit = {},
     tappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
     onSetTappingInvertMode: (ReaderTappingInvertMode) -> Unit = {},
+    autoWebtoonMode: Boolean = true,
+    onSetAutoWebtoonMode: (Boolean) -> Unit = {},
+    webtoonSidePadding: Int = 0,
+    onSetWebtoonSidePadding: (Int) -> Unit = {},
     isEpub: Boolean = false,
     epubFontSizeSp: Float = 18f,
     onSetEpubFontSizeSp: ((Float) -> Unit)? = null,
@@ -219,6 +226,10 @@ internal fun ReaderMenuOverlay(
     )
     val liveStatusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val statusBarTopPadding = maxOf(stableStatusBarHeight, liveStatusBarHeight)
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val navBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val dialogBottomPadding = if (isTablet) 24.dp else (navBarBottomPadding + 96.dp)
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -341,23 +352,26 @@ internal fun ReaderMenuOverlay(
         ) {
             Surface(
                 modifier = Modifier
-                    .padding(top = statusBarTopPadding + 64.dp, end = 12.dp, start = 12.dp)
+                    .padding(
+                        top = statusBarTopPadding + 64.dp,
+                        bottom = dialogBottomPadding,
+                        end = 12.dp,
+                        start = 12.dp
+                    )
                     .widthIn(max = 350.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(20.dp))
-                    .pointerInput(Unit) {
-                        detectTapGestures { /* consume taps inside */ }
-                    },
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* consume taps inside */ },
                 shape = RoundedCornerShape(20.dp),
                 color = dialogSurfaceBg,
                 tonalElevation = 8.dp,
                 shadowElevation = 16.dp
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                        .verticalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     // Selected states mirror Reader Settings: M3 ToggleButtons keep
                     // their defaults, custom highlights use the same selected pair.
@@ -412,17 +426,24 @@ internal fun ReaderMenuOverlay(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    val layoutScrollState = rememberScrollState()
+                    val lightingScrollState = rememberScrollState()
 
-                    // TAB CONTENT
-                    when (selectedTab) {
-                        MenuOptionTab.Text -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
+                    // TAB CONTENT (Scrollable on phones with bounded height)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                    ) {
+                        when (selectedTab) {
+                            MenuOptionTab.Text -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .verticalScroll(layoutScrollState)
+                                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
                                 // Font Selection (if EPUB)
                                 if (isEpub) {
                                     val fonts = listOf(
@@ -626,6 +647,7 @@ internal fun ReaderMenuOverlay(
                                         val directions = listOf(
                                             ReaderReadingDirection.LeftToRight to "LTR",
                                             ReaderReadingDirection.Vertical to "Vertical",
+                                            ReaderReadingDirection.Webtoon to "Webtoon",
                                             ReaderReadingDirection.RightToLeft to "RTL"
                                         )
                                         directions.forEachIndexed { index, (direction, label) ->
@@ -644,8 +666,75 @@ internal fun ReaderMenuOverlay(
                                             ) {
                                                 Text(
                                                     text = label,
-                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                    maxLines = 1
                                                 )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Auto Webtoon Mode
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Auto webtoon mode",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = unselectedText
+                                        )
+                                    }
+                                    ToggleButton(
+                                        checked = autoWebtoonMode,
+                                        onCheckedChange = { onSetAutoWebtoonMode(it) },
+                                        modifier = Modifier
+                                            .height(28.dp)
+                                            .semantics { role = Role.Checkbox }
+                                    ) {
+                                        Text(
+                                            text = if (autoWebtoonMode) "On" else "Off",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+
+                                // Webtoon Side Padding (when in Webtoon mode)
+                                if (readingDirection == ReaderReadingDirection.Webtoon) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "Webtoon side padding",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = unselectedText
+                                        )
+                                        val paddingOptions = listOf(0, 5, 10, 15, 20, 25)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                        ) {
+                                            paddingOptions.forEachIndexed { index, paddingVal ->
+                                                val isSelected = webtoonSidePadding == paddingVal
+                                                ToggleButton(
+                                                    checked = isSelected,
+                                                    onCheckedChange = { onSetWebtoonSidePadding(paddingVal) },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .semantics { role = Role.RadioButton },
+                                                    shapes = when (index) {
+                                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                        paddingOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "$paddingVal%",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -929,7 +1018,8 @@ internal fun ReaderMenuOverlay(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
+                                    .verticalScroll(lightingScrollState)
+                                    .padding(horizontal = 16.dp, vertical = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(18.dp)
                             ) {
                                 // Background Color Theme Swatches
@@ -1250,6 +1340,7 @@ internal fun ReaderMenuOverlay(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }

@@ -48,6 +48,8 @@ Several Kavita clients already exist. Bunko focuses on **tablet/phone parity** a
 - Right-to-left and left-to-right binding
 - Pinch zoom, pan, double-tap zoom
 - Tap and swipe page turns
+- Continuous vertical reading and Webtoon mode with 75% viewport tap-to-scroll and configurable side padding
+- Auto Webtoon mode with intelligent detection via strip aspect ratios and metadata tags/genres
 - Customizable tap zones (Default, L-shaped, Kindle-ish, Edge, Right & Left) with inversion options
 - Image scale modes (Fit Screen, Stretch, Fit Width, Fit Height, Original, Smart Fit) and automatic border crop
 - Page-jump slider
@@ -89,5 +91,5 @@ Design notes and implementation scratchpads live under `docs/`. They are interna
   `app/src/main/java/eu/wewox/pagecurl/`; that directory's `README.md` records the origin,
   license, and the Bunko modifications. Bunko itself is Apache-2.0, so the repository's
   root `LICENSE` covers the fork as well.
-- Reader tap navigation zones, tap inversion modes, scale types, and scan border cropping are inspired by and adapted from [Mihon](https://github.com/mihonapp/mihon) (Apache-2.0, © Mihon Open Source Project and contributors).
+- Reader tap navigation zones, tap inversion modes, scale types, scan border cropping, and Webtoon continuous scrolling / auto Webtoon mode detection are inspired by and adapted from [Mihon](https://github.com/mihonapp/mihon) (Apache-2.0, © Mihon Open Source Project and contributors).
 

@@ -20,10 +20,21 @@ import androidx.compose.ui.unit.Dp
 import coil.ImageLoader
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.bunko.reader.EPaperMode
 import com.bunko.reader.EpubTextAlign
 import com.bunko.reader.FileDimensionDto
 import com.bunko.reader.InvertMode
+import com.bunko.reader.ReaderImageScaleType
+import com.bunko.reader.ReaderNavigationMode
+import com.bunko.reader.ReaderTappingInvertMode
 import com.bunko.reader.reader.ReaderTurnDirection
 
 internal sealed interface ReaderVerticalPosition {
@@ -103,8 +114,22 @@ internal fun ReaderVerticalScroll(
     epubFontFamily: String = "Serif",
     epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
     nightModeEnabled: Boolean = false,
-    nightLightIntensity: Float = 0f
+    nightLightIntensity: Float = 0f,
+    isWebtoon: Boolean = false,
+    sidePaddingPercent: Int = 0,
+    navigationMode: ReaderNavigationMode = ReaderNavigationMode.Default,
+    tappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
+    imageScaleType: ReaderImageScaleType = ReaderImageScaleType.FitWidth,
+    cropBorders: Boolean = false
 ) {
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val viewportHeightPx = with(density) { viewportHeight.toPx() }
+    val scrollDistance = viewportHeightPx * 0.75f
+    val sidePaddingFraction = (sidePaddingPercent.coerceIn(0, 25) / 100f) / 2f
+    val horizontalSidePadding = configuration.screenWidthDp.dp * sidePaddingFraction
+
     LaunchedEffect(listState, pageCount) {
         snapshotFlow { listState.layoutInfo }
             .map { layout ->
@@ -134,7 +159,8 @@ internal fun ReaderVerticalScroll(
 
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = horizontalSidePadding)
     ) {
         item(key = "previous-boundary") {
             VerticalBoundaryPage(
@@ -168,10 +194,21 @@ internal fun ReaderVerticalScroll(
 
             Box(
                 itemModifier
-                    .pointerInput(onMenuToggle) {
+                    .pointerInput(onMenuToggle, navigationMode, tappingInvertMode, scrollDistance) {
                         detectTapGestures { position ->
-                            if (position.x in size.width / 3f..size.width * 2f / 3f) {
-                                onMenuToggle()
+                            val action = resolveTapAction(position, size, navigationMode, tappingInvertMode)
+                            when (action) {
+                                ReaderTapAction.Menu -> onMenuToggle()
+                                ReaderTapAction.MoveRight, ReaderTapAction.Next -> {
+                                    coroutineScope.launch {
+                                        listState.animateScrollBy(scrollDistance)
+                                    }
+                                }
+                                ReaderTapAction.MoveLeft, ReaderTapAction.Prev -> {
+                                    coroutineScope.launch {
+                                        listState.animateScrollBy(-scrollDistance)
+                                    }
+                                }
                             }
                         }
                     }
@@ -202,6 +239,8 @@ internal fun ReaderVerticalScroll(
                         invertDecisionCache = invertDecisionCache,
                         pageBackground = pageBackground,
                         ePaperMode = ePaperMode,
+                        imageScaleType = imageScaleType,
+                        cropBorders = cropBorders,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
