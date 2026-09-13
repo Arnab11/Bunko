@@ -1054,6 +1054,7 @@ fun ReaderScreen(
     // after release or a menu-button tap).
     val overviewProgressAnim = remember { Animatable(0f) }
     val overviewProgress = overviewProgressAnim.value
+    val isOverviewActive = overviewProgress > 0.001f || isOverviewMenuOpen
     // When NOT in a live drag, let isOverviewMenuOpen settle the animation.
     LaunchedEffect(isOverviewMenuOpen, isDraggingOverview) {
         if (!isDraggingOverview) {
@@ -1079,7 +1080,6 @@ fun ReaderScreen(
     // Drive effectiveMenuAlpha based on context:
     //  • Overview open (isOverviewMenuOpen true)   → 1f  (fully visible)
     //  • Overview dismissing (progress > 0 but menu off) → 0f (hide BEFORE zoom starts)
-    //  • Overview open (isOverviewMenuOpen true)   → 1f  (fully visible)
     //  • Live pinch drag (isDraggingOverview true)  → overviewProgress (controls fade in
     //    smoothly as the page shrinks to overview card size)
     //  • Settling animation (progress > 0, not dragging) → 0f (keep hidden; avoids
@@ -1090,12 +1090,12 @@ fun ReaderScreen(
         // fades controls with overviewProgress rather than locking them at 1f.
         isDraggingOverview   -> overviewProgress   // live drag: follow gesture (enter OR dismiss)
         isOverviewMenuOpen   -> 1f                 // overview settled open
-        overviewProgress > 0f -> 0f               // settling: keep hidden
+        overviewProgress > 0.001f -> 0f            // settling: keep hidden
         else                 -> menuAlpha          // normal menu
     }
 
     val screenBgColor by animateColorAsState(
-        targetValue = if (overviewProgress > 0f) menuBg else defaultReaderBg,
+        targetValue = if (isOverviewActive) menuBg else defaultReaderBg,
         animationSpec = tween(durationMillis = 200),
         label = "screenBgColor"
     )
@@ -2128,9 +2128,7 @@ fun ReaderScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                // Cross-fade the main viewport back in as the overview
-                                // exits, so both layers animate together with no black frame.
-                                alpha = (1f - overviewProgress).coerceIn(0f, 1f)
+                                alpha = if (!isOverviewActive) 1f else 0f
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -2450,13 +2448,8 @@ fun ReaderScreen(
             }
 
             // Keep the overview gallery mounted for the entire duration of the exit
-            // animation (driven by overviewProgress → 0). Removing the gallery
-            // immediately when isOverviewMenuOpen goes false (via AnimatedVisibility's
-            // own fadeOut) caused a dark flicker because the main viewport was still
-            // invisible at that instant. By gating on `overviewProgress > 0f` and using
-            // ExitTransition.None, the gallery stays rendered until progress fully
-            // reaches 0, while the main page cross-fades in simultaneously.
-            if (overviewProgress > 0f || isOverviewMenuOpen) {
+            // animation (driven by overviewProgress → 0).
+            if (isOverviewActive) {
                 val overviewCursors = remember(pages, portrait, pageDimensions, isEpub) {
                     readerOverviewCursors(
                         pageCount = pages,
@@ -2480,20 +2473,22 @@ fun ReaderScreen(
                     // gallery's Initial-pass interceptor captures 2-finger events before
                     // HorizontalPager can misinterpret them as horizontal scroll.
                     onTransform = { zoomChange, _, _ ->
-                        if (isOverviewMenuOpen && zoomChange > 1f + ReaderZoomEpsilon) {
-                            val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
-                            val delta = (zoomChange - 1f) * 4f
-                            val next = (startProgress - delta).coerceIn(0f, 1f)
-                            isDraggingOverview = true
-                            overviewDragProgress = next
-                            scope.launch { overviewProgressAnim.snapTo(next) }
+                        if (isOverviewMenuOpen) {
+                            if (zoomChange > 1f + ReaderZoomEpsilon || (isDraggingOverview && zoomChange < 1f - ReaderZoomEpsilon)) {
+                                val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
+                                val delta = (zoomChange - 1f) * 4f
+                                val next = (startProgress - delta).coerceIn(0f, 1f)
+                                isDraggingOverview = true
+                                overviewDragProgress = next
+                                scope.launch { overviewProgressAnim.snapTo(next) }
+                            }
                         }
                     },
                     onTransformEnd = { _ ->
                         if (isDraggingOverview) {
                             isDraggingOverview = false
-                            val shouldCommit = overviewDragProgress >= 0.35f
-                            if (!shouldCommit) {
+                            val shouldDismiss = overviewDragProgress <= 0.65f
+                            if (shouldDismiss) {
                                 showReaderMenu = false
                                 overviewDragProgress = 0f
                             } else {
@@ -2653,7 +2648,8 @@ fun ReaderScreen(
                         val shouldCommit = overviewDragProgress >= 0.35f
                         if (isOverviewMenuOpen) {
                             // Was overview open, dragging to dismiss
-                            if (!shouldCommit) {
+                            val shouldDismiss = overviewDragProgress <= 0.65f
+                            if (shouldDismiss) {
                                 // Progress went below threshold → dismiss overview
                                 showReaderMenu = false
                                 overviewDragProgress = 0f

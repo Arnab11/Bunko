@@ -156,12 +156,12 @@ internal fun ReaderOverviewGallery(
         }
     }
 
-    // A settled gallery page commits back to the reader.
+    // A settled or changing gallery page commits back to the reader.
     LaunchedEffect(pagerState, cursors) {
-        snapshotFlow { pagerState.currentPage to pagerState.isScrollInProgress }
-            .collect { (settledPage, scrolling) ->
-                if (!scrolling && settledPage in cursors.indices) {
-                    val cursor = cursors[settledPage]
+        snapshotFlow { pagerState.currentPage }
+            .collect { pageIndex ->
+                if (pageIndex in cursors.indices) {
+                    val cursor = cursors[pageIndex]
                     if (cursor != currentCursor) onSelect(cursor)
                 }
             }
@@ -184,6 +184,8 @@ internal fun ReaderOverviewGallery(
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val pressed = event.changes.filter { it.pressed }
                         if (pressed.isEmpty()) {
+                            val cursor = cursors.getOrNull(pagerState.currentPage)
+                            if (cursor != null && cursor != currentCursor) onSelect(cursor)
                             onTransformEnd?.invoke(if (lastSpan > 0f) lastSpan else 1f)
                             break
                         }
@@ -224,8 +226,12 @@ internal fun ReaderOverviewGallery(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onCenterTap() })
+                .pointerInput(pagerState.currentPage, cursors, currentCursor) {
+                    detectTapGestures(onTap = {
+                        val cursor = cursors.getOrNull(pagerState.currentPage)
+                        if (cursor != null && cursor != currentCursor) onSelect(cursor)
+                        onCenterTap()
+                    })
                 }
         )
 
@@ -308,10 +314,12 @@ internal fun ReaderOverviewGallery(
                         .height(cardHeight)
                         .shadow(elevation = currentElevation, shape = RoundedCornerShape(currentCornerRadius))
                         .clip(RoundedCornerShape(currentCornerRadius))
-                        .pointerInput(pagerState.currentPage, index) {
+                        .pointerInput(pagerState.currentPage, index, cursors, currentCursor) {
                             detectTapGestures(
                                 onTap = {
                                     if (index == pagerState.currentPage) {
+                                        val cursor = cursors.getOrNull(index)
+                                        if (cursor != null && cursor != currentCursor) onSelect(cursor)
                                         onCenterTap()
                                     } else {
                                         scope.launch { pagerState.animateScrollToPage(index) }
