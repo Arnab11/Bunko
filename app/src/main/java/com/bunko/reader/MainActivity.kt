@@ -543,10 +543,14 @@ fun AppRoot(
                     libraryId = libraryId,
                     seriesId = seriesId,
                     seriesName = seriesName,
+                    onOpenSettings = { nav.navigate("settings") },
                     onOpenFilteredSeries = { target, id, label ->
                         nav.navigate("search-series/${target.routeValue}/$id/${Uri.encode(label)}")
                     },
-                    onBack = { nav.popBackStack() }
+                    onBack = { nav.popBackStack() },
+                    onSelectDestination = { dest ->
+                        nav.popBackStack()
+                    }
                 ) { chapterId, volumeId, incognito ->
                     nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=$incognito")
                 }

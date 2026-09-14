@@ -54,7 +54,10 @@ private fun SeriesDto.readingStateText(): String? {
     return when {
         read <= 0 -> "Unread"
         read >= total -> "All read"
-        else -> "In progress"
+        else -> {
+            val pct = ((read.toFloat() / total.toFloat()) * 100f).roundToInt().coerceIn(1, 99)
+            "In progress ($pct%)"
+        }
     }
 }
 

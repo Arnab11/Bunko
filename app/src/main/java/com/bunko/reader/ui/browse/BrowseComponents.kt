@@ -1,5 +1,7 @@
 package com.bunko.reader.ui.browse
 
+import android.net.Uri
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -377,13 +379,16 @@ fun UnifiedListItem(
                 val statusText = when {
                     item.badgeText != null -> item.badgeText
                     total > 0 && read >= total -> "Completed"
-                    read > 0 -> "In Progress"
+                    read > 0 -> {
+                        val pct = if (total > 0) ((read.toFloat() / total.toFloat()) * 100f).roundToInt().coerceIn(1, 99) else null
+                        if (pct != null) "In Progress ($pct%)" else "In Progress"
+                    }
                     item.subtitle != null -> item.subtitle
                     else -> "Unread"
                 }
-                val statusColor = when (statusText) {
-                    "Completed" -> Color(0xFF66BB6A)
-                    "In Progress" -> Color(0xFF42A5F5)
+                val statusColor = when {
+                    statusText == "Completed" -> Color(0xFF66BB6A)
+                    statusText.startsWith("In Progress") -> Color(0xFF42A5F5)
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Text(
@@ -537,12 +542,15 @@ internal fun SeriesListItem(
                 val read = series.pagesRead ?: 0
                 val statusText = when {
                     total > 0 && read >= total -> "Completed"
-                    read > 0 -> "In Progress"
+                    read > 0 -> {
+                        val pct = if (total > 0) ((read.toFloat() / total.toFloat()) * 100f).roundToInt().coerceIn(1, 99) else null
+                        if (pct != null) "In Progress ($pct%)" else "In Progress"
+                    }
                     else -> "Unread"
                 }
-                val statusColor = when (statusText) {
-                    "Completed" -> Color(0xFF66BB6A)
-                    "In Progress" -> Color(0xFF42A5F5)
+                val statusColor = when {
+                    statusText == "Completed" -> Color(0xFF66BB6A)
+                    statusText.startsWith("In Progress") -> Color(0xFF42A5F5)
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Text(

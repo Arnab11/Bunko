@@ -59,6 +59,11 @@ import com.bunko.reader.ui.theme.ReadingProgressInProgress
 import com.bunko.reader.ui.theme.ReadingProgressRead
 import com.bunko.reader.ui.theme.ReadingProgressTrack
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
+
 /** Internal to series, not for external use. */
 @Composable
 internal fun ChapterIssueGrid(
@@ -76,11 +81,11 @@ internal fun ChapterIssueGrid(
     modifier: Modifier = Modifier
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 160.dp),
+        columns = GridCells.Adaptive(minSize = 130.dp),
         modifier = modifier.fillMaxHeight(),
-        contentPadding = PaddingValues(bottom = 18.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             ChapterSectionHeader("Issues", issueCards.size)
@@ -125,7 +130,7 @@ internal fun ChapterIssueGrid(
 @Composable
 internal fun ChapterSectionHeader(title: String, count: Int) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -170,8 +175,7 @@ internal fun ChapterGridCard(
 ) {
     val chapter = item.chapter
     val title = chapter.displayTitle()
-    val label = listOfNotNull(
-        title,
+    val subtitle = listOfNotNull(
         item.volume.displayShortName(),
         chapter.releaseDateText()
     ).joinToString(" • ")
@@ -182,13 +186,15 @@ internal fun ChapterGridCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        shape = RectangleShape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(KavitaCoverAspectRatio)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
@@ -200,14 +206,19 @@ internal fun ChapterGridCard(
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    Text("CH", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        "CH",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 // Download badge
                 if (isDownloading) {
                     Surface(
                         color = Color.Black.copy(alpha = 0.7f),
-                        shape = MaterialTheme.shapes.small,
+                        shape = CircleShape,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(6.dp)
@@ -215,7 +226,7 @@ internal fun ChapterGridCard(
                         CircularProgressIndicator(
                             modifier = Modifier
                                 .padding(4.dp)
-                                .size(16.dp),
+                                .size(14.dp),
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -223,7 +234,7 @@ internal fun ChapterGridCard(
                 } else if (isDownloaded) {
                     Surface(
                         color = Color(0xFF2E7D32).copy(alpha = 0.9f),
-                        shape = MaterialTheme.shapes.small,
+                        shape = CircleShape,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(6.dp)
@@ -234,111 +245,128 @@ internal fun ChapterGridCard(
                             tint = Color.White,
                             modifier = Modifier
                                 .padding(4.dp)
-                                .size(16.dp)
+                                .size(14.dp)
                         )
                     }
                 }
-            }
-            Box(Modifier.fillMaxWidth()) {
-                ReadingProgressBar(
-                    progress = progress,
+
+                // Options menu button on cover
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .fillMaxWidth()
-                        .height(3.dp)
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 10.dp, end = 2.dp, top = 6.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
                 ) {
-                    Text(
-                        text = label,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Box {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.45f),
+                        modifier = Modifier.size(28.dp)
+                    ) {
                         IconButton(
                             onClick = { menuExpanded = true },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.MoreVert,
                                 contentDescription = "Options",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
                             )
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Read") },
-                                leadingIcon = { Icon(Icons.Filled.AutoStories, contentDescription = null) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onClick()
-                                }
-                            )
-                            if (onReadIncognito != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Read Incognito") },
-                                    leadingIcon = { Icon(Icons.Filled.VisibilityOff, contentDescription = null) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onReadIncognito()
-                                    }
-                                )
-                            }
-                            if ((progress ?: 0f) < 1f && onMarkRead != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Mark as Read") },
-                                    leadingIcon = { Icon(Icons.Filled.Visibility, contentDescription = null) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onMarkRead()
-                                    }
-                                )
-                            }
-                            if ((progress ?: 0f) > 0f && onMarkUnread != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Mark as Unread") },
-                                    leadingIcon = { Icon(Icons.Filled.VisibilityOff, contentDescription = null) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onMarkUnread()
-                                    }
-                                )
-                            }
-                            if (isDownloaded && onRemoveDownload != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Remove Download") },
-                                    leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onRemoveDownload()
-                                    }
-                                )
-                            } else if (!isDownloaded && onDownload != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Download") },
-                                    leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onDownload()
-                                    }
-                                )
-                            }
                         }
                     }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Read") },
+                            leadingIcon = { Icon(Icons.Filled.AutoStories, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onClick()
+                            }
+                        )
+                        if (onReadIncognito != null) {
+                            DropdownMenuItem(
+                                text = { Text("Read Incognito") },
+                                leadingIcon = { Icon(Icons.Filled.VisibilityOff, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onReadIncognito()
+                                }
+                            )
+                        }
+                        if ((progress ?: 0f) < 1f && onMarkRead != null) {
+                            DropdownMenuItem(
+                                text = { Text("Mark as Read") },
+                                leadingIcon = { Icon(Icons.Filled.Visibility, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onMarkRead()
+                                }
+                            )
+                        }
+                        if ((progress ?: 0f) > 0f && onMarkUnread != null) {
+                            DropdownMenuItem(
+                                text = { Text("Mark as Unread") },
+                                leadingIcon = { Icon(Icons.Filled.VisibilityOff, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onMarkUnread()
+                                }
+                            )
+                        }
+                        if (isDownloaded && onRemoveDownload != null) {
+                            DropdownMenuItem(
+                                text = { Text("Remove Download") },
+                                leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRemoveDownload()
+                                }
+                            )
+                        } else if (!isDownloaded && onDownload != null) {
+                            DropdownMenuItem(
+                                text = { Text("Download") },
+                                leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDownload()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Progress bar and Labels
+            ReadingProgressBar(
+                progress = progress,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }

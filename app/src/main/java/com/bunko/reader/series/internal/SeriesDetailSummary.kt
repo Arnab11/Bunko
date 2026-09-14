@@ -172,7 +172,7 @@ internal fun SeriesDetailSummary(
         DetailChipBlock(
             title = "Credits",
             showTitle = showTitle,
-            horizontalScroll = true,
+            horizontalScroll = false,
             chips = creditChips.map { (id, name) ->
                 name to { onOpenFilteredSeries(SearchSeriesTarget.Person, id, name) }
             }
@@ -184,7 +184,7 @@ internal fun SeriesDetailSummary(
         DetailChipBlock(
             title = "Publisher",
             showTitle = showTitle,
-            horizontalScroll = true,
+            horizontalScroll = false,
             chips = publisherChips.map { (id, name) ->
                 name to { onOpenFilteredSeries(SearchSeriesTarget.Publisher, id, name) }
             } + imprintChips.map { (id, name) ->
@@ -315,17 +315,21 @@ private fun DetailChipBlock(
             chips.forEach { (label, onClick) ->
                 SuggestionChip(
                     onClick = onClick,
-                    label = { Text(label) }
+                    label = {
+                        Text(
+                            text = label,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 )
             }
         }
         if (horizontalScroll) {
-            // Keep the chips on a single scrollable row instead of wrapping, so a long
-            // credit/publisher list stays compact next to the cover. Fade the scrollable
-            // edge so a clipped chip reads as "there's more", not a rendering glitch.
             val scrollState = rememberScrollState()
             Row(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .horizontalFadingEdges(scrollState)
                     .horizontalScroll(scrollState),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -334,6 +338,7 @@ private fun DetailChipBlock(
             }
         } else {
             FlowRow(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {

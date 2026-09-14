@@ -139,14 +139,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 import kotlin.math.roundToInt
 
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.VerticalDivider
+import com.bunko.reader.library.internal.HomeBottomNavigation
+import com.bunko.reader.library.internal.HomeNavigationRail
+import com.bunko.reader.library.internal.HomeDestination
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ChapterPickScreen(
+internal fun ChapterPickScreen(
     sessionStore: KavitaSessionStore,
     libraryId: Int,
     seriesId: Int,
     seriesName: String,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
+    onOpenSettings: () -> Unit = {},
+    onSelectDestination: (HomeDestination) -> Unit = {},
     onBack: () -> Unit = {},
     onPick: (chapterId: Int, volumeId: Int, incognito: Boolean) -> Unit
 ) {
@@ -370,12 +378,23 @@ fun ChapterPickScreen(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = BunkoBackground,
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
+    val topHeader: @Composable () -> Unit = {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -383,99 +402,188 @@ fun ChapterPickScreen(
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                },
-                title = {
                     Text(
                         text = displaySeries.name,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.ExtraBold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 4.dp)
                     )
-                },
-                actions = {
-                    IconButton(
-                        onClick = { scope.launch { loadSeriesDetails(initialLoad = false) } },
-                        enabled = !refreshing && !loading
-                    ) {
+                    IconButton(onClick = onOpenSettings) {
                         Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = "Refresh",
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "Settings",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        },
-        snackbarHost = {
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(16.dp)
-            )
+                }
+            }
         }
-    ) { innerPadding ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(BunkoBackground)
-        ) {
-            when {
-                loading -> DarkLoadingState()
-                error != null -> DarkMessageState(
-                    title = "Could not load series details",
-                    body = error ?: "Unknown error",
-                    actionLabel = "Retry",
-                    onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
-                )
-                loadedApi == null -> DarkMessageState(
-                    title = "Could not load series details",
-                    body = "API unavailable",
-                    actionLabel = "Retry",
-                    onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
-                )
-                else -> PullToRefreshBox(
-                    isRefreshing = refreshing,
-                    onRefresh = {
-                        if (!refreshing) {
-                            scope.launch { loadSeriesDetails(initialLoad = false) }
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    state = pullRefreshState,
-                    indicator = { BunkoPullToRefreshIndicator(pullRefreshState, refreshing) }
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BunkoBackground)
+    ) {
+        val isTablet = maxWidth >= 720.dp
+
+        if (isTablet) {
+            Column(Modifier.fillMaxSize()) {
+                topHeader()
+
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
                 ) {
-                    SeriesDetailContent(
-                        series = displaySeries,
-                        metadata = metadata,
-                        continueChapter = continueChapter,
-                        chapterCards = chapterCards,
-                        volumeCount = volumes.size,
-                        session = session,
-                        api = loadedApi,
-                        isAdmin = isAdmin,
-                        downloadedChapterIds = downloadedChapterIds,
-                        downloadingChapterIds = downloadingChapterIds,
-                        onOpenFilteredSeries = onOpenFilteredSeries,
-                        onPick = { chapterId, volumeId -> onPick(chapterId, volumeId, false) },
-                        onReadIncognito = { item -> onPick(item.chapter.id, item.volume.id, true) },
-                        onMarkRead = ::markIssueRead,
-                        onMarkUnread = ::markIssueUnread,
-                        onDownload = ::downloadIssue,
-                        onRemoveDownload = ::removeIssueDownload,
-                        onMessage = ::showMessage
+                    HomeNavigationRail(
+                        selected = HomeDestination.Libraries,
+                        onSelect = onSelectDestination
+                    )
+
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        when {
+                            loading -> DarkLoadingState()
+                            error != null -> DarkMessageState(
+                                title = "Could not load series details",
+                                body = error ?: "Unknown error",
+                                actionLabel = "Retry",
+                                onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                            )
+                            loadedApi == null -> DarkMessageState(
+                                title = "Could not load series details",
+                                body = "API unavailable",
+                                actionLabel = "Retry",
+                                onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                            )
+                            else -> PullToRefreshBox(
+                                isRefreshing = refreshing,
+                                onRefresh = {
+                                    if (!refreshing) {
+                                        scope.launch { loadSeriesDetails(initialLoad = false) }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                state = pullRefreshState,
+                                indicator = { BunkoPullToRefreshIndicator(pullRefreshState, refreshing) }
+                            ) {
+                                SeriesDetailContent(
+                                    series = displaySeries,
+                                    metadata = metadata,
+                                    continueChapter = continueChapter,
+                                    chapterCards = chapterCards,
+                                    volumeCount = volumes.size,
+                                    session = session,
+                                    api = loadedApi,
+                                    isAdmin = isAdmin,
+                                    downloadedChapterIds = downloadedChapterIds,
+                                    downloadingChapterIds = downloadingChapterIds,
+                                    onOpenFilteredSeries = onOpenFilteredSeries,
+                                    onPick = { chapterId, volumeId -> onPick(chapterId, volumeId, false) },
+                                    onReadIncognito = { item -> onPick(item.chapter.id, item.volume.id, true) },
+                                    onMarkRead = ::markIssueRead,
+                                    onMarkUnread = ::markIssueUnread,
+                                    onDownload = ::downloadIssue,
+                                    onRemoveDownload = ::removeIssueDownload,
+                                    onMessage = ::showMessage
+                                )
+                            }
+                        }
+
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(16.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Spacer(Modifier.navigationBarsPadding())
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                topHeader()
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    when {
+                        loading -> DarkLoadingState()
+                        error != null -> DarkMessageState(
+                            title = "Could not load series details",
+                            body = error ?: "Unknown error",
+                            actionLabel = "Retry",
+                            onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                        )
+                        loadedApi == null -> DarkMessageState(
+                            title = "Could not load series details",
+                            body = "API unavailable",
+                            actionLabel = "Retry",
+                            onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                        )
+                        else -> PullToRefreshBox(
+                            isRefreshing = refreshing,
+                            onRefresh = {
+                                if (!refreshing) {
+                                    scope.launch { loadSeriesDetails(initialLoad = false) }
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                            state = pullRefreshState,
+                            indicator = { BunkoPullToRefreshIndicator(pullRefreshState, refreshing) }
+                        ) {
+                            SeriesDetailContent(
+                                series = displaySeries,
+                                metadata = metadata,
+                                continueChapter = continueChapter,
+                                chapterCards = chapterCards,
+                                volumeCount = volumes.size,
+                                session = session,
+                                api = loadedApi,
+                                isAdmin = isAdmin,
+                                downloadedChapterIds = downloadedChapterIds,
+                                downloadingChapterIds = downloadingChapterIds,
+                                onOpenFilteredSeries = onOpenFilteredSeries,
+                                onPick = { chapterId, volumeId -> onPick(chapterId, volumeId, false) },
+                                onReadIncognito = { item -> onPick(item.chapter.id, item.volume.id, true) },
+                                onMarkRead = ::markIssueRead,
+                                onMarkUnread = ::markIssueUnread,
+                                onDownload = ::downloadIssue,
+                                onRemoveDownload = ::removeIssueDownload,
+                                onMessage = ::showMessage
+                            )
+                        }
+                    }
+
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(16.dp)
                     )
                 }
+
+                HomeBottomNavigation(
+                    selected = HomeDestination.Libraries,
+                    onSelect = onSelectDestination
+                )
             }
         }
     }
@@ -505,20 +613,21 @@ private fun SeriesDetailContent(
     val specialCards = chapterCards.filter { it.chapter.isSpecial }
     val issueCards = chapterCards.filterNot { it.chapter.isSpecial }
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = maxWidth >= 840.dp && maxWidth > maxHeight
-        if (wide) {
-            val summaryWidth = if (maxWidth >= 1100.dp) 420.dp else 340.dp
+        val isTablet = maxWidth >= 720.dp
+        if (isTablet) {
+            val summaryWidth = if (maxWidth >= 1000.dp) 380.dp else 340.dp
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(18.dp)
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 LazyColumn(
                     modifier = Modifier
                         .width(summaryWidth)
                         .fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
                     item {
                         SeriesDetailSummary(
@@ -536,6 +645,9 @@ private fun SeriesDetailContent(
                         )
                     }
                 }
+                androidx.compose.material3.VerticalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                )
                 ChapterIssueGrid(
                     issueCards = issueCards,
                     specialCards = specialCards,
@@ -553,11 +665,11 @@ private fun SeriesDetailContent(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 160.dp),
+                columns = GridCells.Adaptive(minSize = 130.dp),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     SeriesDetailSummary(
