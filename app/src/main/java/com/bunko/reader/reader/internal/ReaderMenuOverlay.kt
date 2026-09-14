@@ -801,12 +801,13 @@ internal fun ReaderMenuOverlay(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
                                     ) {
-                                        val animOptions = listOf("Off", "Slide", "Book")
+                                        val animOptions = listOf("Off", "Slide", "Book", "Curl")
                                         animOptions.forEachIndexed { index, option ->
                                             val isSelected = when (option) {
                                                 "Off" -> !pageTransitionAnimation
                                                 "Slide" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Slide
                                                 "Book" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.PlayCurl
+                                                "Curl" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Curl
                                                 else -> false
                                             }
                                             ToggleButton(
@@ -821,6 +822,10 @@ internal fun ReaderMenuOverlay(
                                                         "Book" -> {
                                                             onSetPageTransitionAnimation(true)
                                                             onSetPageTurnMode(PageTurnMode.PlayCurl)
+                                                        }
+                                                        "Curl" -> {
+                                                            onSetPageTransitionAnimation(true)
+                                                            onSetPageTurnMode(PageTurnMode.Curl)
                                                         }
                                                     }
                                                 },
@@ -841,7 +846,7 @@ internal fun ReaderMenuOverlay(
                                                         text = option,
                                                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                                                     )
-                                                    if (option == "Book") {
+                                                    if (option == "Book" || option == "Curl") {
                                                         Box(
                                                             modifier = Modifier
                                                                 .size(13.dp)

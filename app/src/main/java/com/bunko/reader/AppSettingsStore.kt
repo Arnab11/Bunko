@@ -27,7 +27,9 @@ enum class EPaperMode {
 enum class PageTurnMode {
     Slide,
     /** Play Books-style soft page fold (PlayLikeCurl renderer). */
-    PlayCurl
+    PlayCurl,
+    /** Realistic 3D mesh page curl with corner crease and physics. */
+    Curl
 }
 
 enum class ReaderReadingDirection {
@@ -190,8 +192,6 @@ class AppSettingsStore(private val context: Context) {
                 pageTurnMode = prefs[KEY_PAGE_TURN_MODE]
                     ?.let { stored ->
                         runCatching { PageTurnMode.valueOf(stored) }.getOrNull()
-                            // Migrate the pre-0.23 "Curl" (vendored 3D pagecurl) to PlayCurl.
-                            ?: if (stored == "Curl") PageTurnMode.PlayCurl else null
                     }
                     ?: PageTurnMode.Slide,
                 pageBackground = prefs[KEY_PAGE_BACKGROUND]

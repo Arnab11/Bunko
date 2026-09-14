@@ -1121,6 +1121,32 @@ fun ReaderSettingsScreen(
                             }
                         )
                         CategoryRowGap()
+                        RadioSettingRow(
+                            title = "Curl",
+                            subtitle = "Interactive 3D page curl with corner crease and physics",
+                            selected = transitionsActive && currentTurnMode == PageTurnMode.Curl,
+                            trailingTitleContent = {
+                                ExperimentalBadge()
+                            },
+                            onClick = {
+                                scope.launch {
+                                    settingsStore.setPageTransitionAnimation(true)
+                                    settingsStore.setPageTurnMode(PageTurnMode.Curl)
+                                }
+                            }
+                        )
+                        if (transitionsActive && currentTurnMode == PageTurnMode.Curl) {
+                            CategoryRowGap()
+                            SwitchSettingRow(
+                                title = "Page-Back Show-Through",
+                                subtitle = "Shows a faint mirror of the page on the back of a curled portrait sheet",
+                                checked = settings.reader.showPortraitPageBackContent,
+                                onCheckedChange = { enabled ->
+                                    scope.launch { settingsStore.setShowPortraitPageBackContent(enabled) }
+                                }
+                            )
+                        }
+                        CategoryRowGap()
                         SwitchSettingRow(
                             title = "Spread Shift Buttons",
                             subtitle = "Shows +/- 1 shift buttons in reader menu to correct two-page spread alignments",
