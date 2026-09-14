@@ -19,17 +19,34 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Login
+import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
 import com.bunko.reader.settings.CategoryRowGap
 import com.bunko.reader.settings.ClickableSettingRow
+import com.bunko.reader.settings.ExperimentalBadge
 import com.bunko.reader.settings.RadioSettingRow
 import com.bunko.reader.settings.SettingsSectionCard
 import com.bunko.reader.settings.SwitchSettingRow
@@ -91,7 +108,14 @@ internal val SettingsFormContentMaxWidth = 720.dp
 internal fun SettingsTopAppBar(title: String, onBack: () -> Unit) {
     MaterialTheme(motionScheme = MotionScheme.expressive()) {
         TopAppBar(
-            title = { Text(title) },
+            title = {
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -172,6 +196,7 @@ fun ServerSettingsScreen(
     var baseUrl by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var apiKey by remember { mutableStateOf("") }
     var profiles by remember { mutableStateOf<List<KavitaServerProfile>>(emptyList()) }
     var selectedProfileId by remember { mutableStateOf<String?>(null) }
@@ -182,6 +207,8 @@ fun ServerSettingsScreen(
     var authStatus by remember { mutableStateOf("(unknown)") }
     var storageStatus by remember { mutableStateOf("(unknown)") }
     var status by remember { mutableStateOf<StatusMessage?>(null) }
+    var isTestingConnection by remember { mutableStateOf(false) }
+    var isLoggingIn by remember { mutableStateOf(false) }
 
     suspend fun refreshSessionState(
         selectProfileId: String? = selectedProfileId,
@@ -199,6 +226,7 @@ fun ServerSettingsScreen(
         username = s.username
         apiKey = s.apiKey
         if (clearPassword) password = ""
+        passwordVisible = false
         openByDefault = selected?.openByDefault ?: false
         serverStatus = if (s.baseUrl.isBlank()) "Not configured" else s.baseUrl
         jwtStatus = if (s.jwt.isBlank()) "Logged out" else "Logged in"
@@ -246,325 +274,655 @@ fun ServerSettingsScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-    ) {
-        SettingsTopAppBar(
-            title = if (page == ServerSettingsPage.Servers) {
-                "Servers"
-            } else {
-                "Server Details"
-            },
-            onBack = {
-                if (page == ServerSettingsPage.ServerSelected) {
-                    page = ServerSettingsPage.Servers
-                } else {
-                    onBack()
-                }
-            }
-        )
         Column(
             Modifier
-                .widthIn(max = SettingsFormContentMaxWidth)
-                .fillMaxWidth()
-                .align(Alignment.CenterHorizontally)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
-            if (page == ServerSettingsPage.Servers) {
-                Text("Servers", style = MaterialTheme.typography.titleMedium)
-                if (profiles.isEmpty()) {
-                    Text("No saved servers", color = Color.Gray)
+            SettingsTopAppBar(
+                title = if (page == ServerSettingsPage.Servers) {
+                    "Media Servers"
                 } else {
-                    profiles.forEach { profile ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = profile.openByDefault,
-                                onClick = { selectDefaultProfile(profile) }
+                    if (selectedProfileId != null) "Edit Server" else "Add Server"
+                },
+                onBack = {
+                    if (page == ServerSettingsPage.ServerSelected) {
+                        page = ServerSettingsPage.Servers
+                    } else {
+                        onBack()
+                    }
+                }
+            )
+
+            Column(
+                Modifier
+                    .widthIn(max = SettingsFormContentMaxWidth)
+                    .fillMaxWidth()
+                    .align(Alignment.CenterHorizontally)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                if (page == ServerSettingsPage.Servers) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Configured Servers",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
+
+                        if (profiles.isEmpty()) {
+                            SettingsSectionCard {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CloudQueue,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                    Text(
+                                        text = "No servers configured",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Add your Kavita media server to stream and read books.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        } else {
+                            SettingsSectionCard {
+                                profiles.forEachIndexed { index, profile ->
+                                    if (index > 0) {
+                                        CategoryRowGap()
+                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { selectDefaultProfile(profile) }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = if (profile.openByDefault) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                            modifier = Modifier.size(42.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Dns,
+                                                    contentDescription = null,
+                                                    tint = if (profile.openByDefault) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Text(
+                                                    text = profile.name.ifBlank { "Kavita Server" },
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (profile.openByDefault) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                                    ) {
+                                                        Text(
+                                                            text = "Active",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Text(
+                                                text = profile.session.baseUrl.ifBlank { "No URL configured" },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    status = null
+                                                    refreshSessionState(profile.id)
+                                                }
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Edit,
+                                                contentDescription = "Edit server",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SettingsSectionCard {
+                            ClickableSettingRow(
+                                title = "Add New Server",
+                                subtitle = "Connect to another Kavita server instance",
+                                icon = Icons.Filled.Add,
+                                onClick = {
+                                    selectedProfileId = null
+                                    page = ServerSettingsPage.ServerSelected
+                                    baseUrl = ""
+                                    username = ""
+                                    password = ""
+                                    passwordVisible = false
+                                    apiKey = ""
+                                    openByDefault = profiles.none { it.openByDefault }
+                                    serverStatus = "Not configured"
+                                    jwtStatus = "Logged out"
+                                    authStatus = "Not saved"
+                                    storageStatus = "No saved auth"
+                                    status = null
+                                }
                             )
+                        }
+                    }
+
+                    Text(
+                        text = "Bunko connects directly to your Kavita server using its REST API. Ensure your server URL includes the port and protocol (e.g. http:// or https://).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                } else {
+                    // Server Details Page
+                    if (status != null) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (status!!.isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (status!!.isError) Icons.Filled.ErrorOutline else Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    tint = if (status!!.isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = status!!.text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (status!!.isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    // Section 1: Server Connection
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Server Connection",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
+
+                        SettingsSectionCard {
                             Column(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { selectDefaultProfile(profile) }
-                                    .padding(vertical = 12.dp)
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Text(profile.name, style = MaterialTheme.typography.bodyLarge)
+                                OutlinedTextField(
+                                    value = baseUrl,
+                                    onValueChange = { baseUrl = it },
+                                    label = { Text("Server URL") },
+                                    placeholder = { Text("https://kavita.example.com") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Link, contentDescription = null)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            CategoryRowGap()
+                            SwitchSettingRow(
+                                title = "Default Server",
+                                subtitle = "Automatically connect to this server when Bunko launches",
+                                checked = openByDefault,
+                                onCheckedChange = { openByDefault = it }
+                            )
+                        }
+                    }
+
+                    // Section 2: Authentication
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Authentication",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
+
+                        SettingsSectionCard {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = username,
+                                    onValueChange = { username = it },
+                                    label = { Text("Username") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Person, contentDescription = null)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                OutlinedTextField(
+                                    value = password,
+                                    onValueChange = { password = it },
+                                    label = { Text("Password") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Lock, contentDescription = null)
+                                    },
+                                    trailingIcon = {
+                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                            Icon(
+                                                imageVector = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                                contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
                                 Text(
-                                    profile.session.baseUrl,
+                                    text = "Password is only used once to obtain a secure token from Kavita. It is never stored on disk.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+
+                                OutlinedTextField(
+                                    value = apiKey,
+                                    onValueChange = { apiKey = it },
+                                    label = { Text("Auth Key (API Key)") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Key, contentDescription = null)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Text(
+                                    text = "Find your API key in Kavita Settings → 3rd Party Clients (x-api-key). Required for image loading.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Spacer(Modifier.height(4.dp))
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            status = null
+                                            isLoggingIn = true
+                                            try {
+                                                val cleanBaseUrl = baseUrl.trim()
+                                                val cleanUsername = username.trim()
+                                                val cleanApiKey = apiKey.trim()
+                                                if (cleanBaseUrl.isBlank()) {
+                                                    throw IllegalArgumentException("Server URL is required")
+                                                }
+                                                if (cleanUsername.isBlank() && cleanApiKey.isBlank()) {
+                                                    throw IllegalArgumentException("Username or Auth Key is required")
+                                                }
+                                                if (cleanApiKey.isBlank()) {
+                                                    throw IllegalArgumentException("Auth Key is required for image loading")
+                                                }
+
+                                                sessionStore.useTransient(
+                                                    KavitaSession(
+                                                        baseUrl = cleanBaseUrl,
+                                                        username = cleanUsername,
+                                                        apiKey = "",
+                                                        jwt = ""
+                                                    )
+                                                )
+                                                val client = KavitaClient(ctx, sessionStore)
+                                                val (api, _) = client.buildApi()
+                                                val user = api.login(LoginDto(cleanUsername, password, cleanApiKey.ifBlank { null }))
+                                                val jwt = user.token ?: throw IllegalStateException("No token returned")
+                                                sessionStore.useTransient(
+                                                    KavitaSession(
+                                                        baseUrl = cleanBaseUrl,
+                                                        username = cleanUsername,
+                                                        apiKey = cleanApiKey,
+                                                        jwt = ""
+                                                    )
+                                                )
+                                                val (apiKeyApi, _) = client.buildApi()
+                                                apiKeyApi.userLibraries()
+                                                val saved = sessionStore.saveProfile(
+                                                    selectedProfileId,
+                                                    KavitaSession(
+                                                        baseUrl = cleanBaseUrl,
+                                                        username = cleanUsername,
+                                                        apiKey = cleanApiKey,
+                                                        jwt = jwt
+                                                    ),
+                                                    rememberAuth = true,
+                                                    openByDefault = openByDefault
+                                                )
+                                                refreshSessionState(saved.id, clearPassword = false)
+                                                status = StatusMessage("Successfully logged in and saved", isError = false)
+                                            } catch (t: HttpException) {
+                                                val body = t.response()?.errorBody()?.string()?.takeIf { it.isNotBlank() }
+                                                status = StatusMessage("Login failed: HTTP ${t.code()}: ${body ?: t.message()}", isError = true)
+                                            } catch (t: Throwable) {
+                                                status = StatusMessage("Login failed: ${t.message ?: t.toString()}", isError = true)
+                                            } finally {
+                                                isLoggingIn = false
+                                                restoreDefaultProfile()
+                                                onActiveServerChanged()
+                                            }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp),
+                                    enabled = !isLoggingIn
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Login,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text(if (isLoggingIn) "Authenticating..." else "Login & Authenticate")
+                                }
                             }
-                            IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        status = null
-                                        refreshSessionState(profile.id)
+                        }
+                    }
+
+                    // Section 3: Configuration & Diagnostics
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Connection & Status",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
+
+                        SettingsSectionCard {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Server Endpoint", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(serverStatus, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Saved Auth", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(authStatus, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Session Status", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(jwtStatus, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Keystore Storage", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(storageStatus, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                            CategoryRowGap()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            status = null
+                                            isTestingConnection = true
+                                            try {
+                                                val prev = profiles.firstOrNull { it.id == selectedProfileId }?.session
+                                                    ?: KavitaSession()
+                                                val saved = sessionStore.saveProfile(
+                                                    selectedProfileId,
+                                                    prev.copy(baseUrl = baseUrl, username = username, apiKey = apiKey),
+                                                    rememberAuth = true,
+                                                    openByDefault = openByDefault
+                                                )
+                                                refreshSessionState(saved.id, clearPassword = false)
+                                                val client = KavitaClient(ctx, sessionStore)
+                                                val (api, _) = client.buildApi()
+                                                api.health()
+                                                status = StatusMessage("Connection healthy (/api/Health OK)", isError = false)
+                                            } catch (t: Throwable) {
+                                                status = StatusMessage("Health check failed: ${t.message ?: t.toString()}", isError = true)
+                                            } finally {
+                                                isTestingConnection = false
+                                                restoreDefaultProfile()
+                                                onActiveServerChanged()
+                                            }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp),
+                                    enabled = !isTestingConnection
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.NetworkCheck,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text(if (isTestingConnection) "Testing..." else "Test")
+                                }
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            status = null
+                                            try {
+                                                val prev = profiles.firstOrNull { it.id == selectedProfileId }?.session
+                                                    ?: KavitaSession()
+                                                val saved = sessionStore.saveProfile(
+                                                    selectedProfileId,
+                                                    prev.copy(baseUrl = baseUrl, username = username, apiKey = apiKey),
+                                                    rememberAuth = true,
+                                                    openByDefault = openByDefault
+                                                )
+                                                refreshSessionState(saved.id, clearPassword = false)
+                                                status = StatusMessage("Configuration saved", isError = false)
+                                            } catch (t: Throwable) {
+                                                status = StatusMessage("Save failed: ${t.message ?: t.toString()}", isError = true)
+                                            } finally {
+                                                restoreDefaultProfile()
+                                                onActiveServerChanged()
+                                            }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Save,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Save")
+                                }
+                            }
+                        }
+                    }
+
+                    // Section 4: Danger Zone
+                    if (selectedProfileId != null) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "Danger Zone",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                            )
+
+                            SettingsSectionCard {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            scope.launch {
+                                                status = null
+                                                try {
+                                                    sessionStore.clearCredentials(selectedProfileId)
+                                                    username = ""
+                                                    password = ""
+                                                    apiKey = ""
+                                                    refreshSessionState(selectedProfileId)
+                                                    restoreDefaultProfile()
+                                                    onActiveServerChanged()
+                                                    status = StatusMessage("Saved credentials cleared", isError = false)
+                                                } catch (t: Throwable) {
+                                                    status = StatusMessage("Clear auth failed: ${t.message ?: t.toString()}", isError = true)
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.error
+                                        ),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(46.dp)
+                                    ) {
+                                        Text("Clear Auth")
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                val forgottenId = selectedProfileId
+                                                val wasDefault = profiles.firstOrNull { it.id == forgottenId }?.openByDefault == true
+                                                sessionStore.deleteProfile(forgottenId)
+                                                val remainingProfiles = sessionStore.profiles()
+                                                if (wasDefault && remainingProfiles.none { it.openByDefault }) {
+                                                    remainingProfiles.firstOrNull()?.let {
+                                                        sessionStore.setOpenByDefault(it.id, true)
+                                                    }
+                                                }
+                                                baseUrl = ""
+                                                username = ""
+                                                password = ""
+                                                apiKey = ""
+                                                selectedProfileId = null
+                                                page = ServerSettingsPage.Servers
+                                                restoreDefaultProfile()
+                                                selectedProfileId = profiles.firstOrNull { it.openByDefault }?.id
+                                                onActiveServerChanged()
+                                                status = StatusMessage("Server deleted", isError = false)
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(46.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.DeleteOutline,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.size(8.dp))
+                                        Text("Forget")
                                     }
                                 }
-                            ) {
-                                Icon(Icons.Filled.Edit, contentDescription = "Edit ${profile.name}")
                             }
                         }
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            selectedProfileId = null
-                            page = ServerSettingsPage.ServerSelected
-                            baseUrl = ""
-                            username = ""
-                            password = ""
-                            apiKey = ""
-                            openByDefault = profiles.none { it.openByDefault }
-                            serverStatus = "Not configured"
-                            jwtStatus = "Logged out"
-                            authStatus = "Not saved"
-                            storageStatus = "No saved auth"
-                            status = null
-                        },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Filled.Add,
-                        contentDescription = null,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                    Text(
-                        "New server",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(vertical = 12.dp)
-                    )
-                }
-                Text("Choose the default server or edit its connection details.", color = Color.Gray)
-            } else {
-                Text("Connection", style = MaterialTheme.typography.titleMedium)
-                OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("Server URL") }, singleLine = true)
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                status = null
-                                try {
-                                    val prev = profiles.firstOrNull { it.id == selectedProfileId }?.session
-                                        ?: KavitaSession()
-                                    val saved = sessionStore.saveProfile(
-                                        selectedProfileId,
-                                        prev.copy(baseUrl = baseUrl, username = username, apiKey = apiKey),
-                                        rememberAuth = true,
-                                        openByDefault = openByDefault
-                                    )
-                                    refreshSessionState(saved.id, clearPassword = false)
-                                    status = StatusMessage("Saved", isError = false)
-                                } catch (t: Throwable) {
-                                    status = StatusMessage("Save failed: ${t.message ?: t.toString()}", isError = true)
-                                } finally {
-                                    restoreDefaultProfile()
-                                    onActiveServerChanged()
-                                }
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Save") }
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                status = null
-                                try {
-                                    val prev = profiles.firstOrNull { it.id == selectedProfileId }?.session
-                                        ?: KavitaSession()
-                                    val saved = sessionStore.saveProfile(
-                                        selectedProfileId,
-                                        prev.copy(baseUrl = baseUrl, username = username, apiKey = apiKey),
-                                        rememberAuth = true,
-                                        openByDefault = openByDefault
-                                    )
-                                    refreshSessionState(saved.id, clearPassword = false)
-                                    val client = KavitaClient(ctx, sessionStore)
-                                    val (api, _) = client.buildApi()
-                                    api.health()
-                                    status = StatusMessage("OK: /api/Health", isError = false)
-                                } catch (t: Throwable) {
-                                    status = StatusMessage("Health failed: ${t.message ?: t.toString()}", isError = true)
-                                } finally {
-                                    restoreDefaultProfile()
-                                    onActiveServerChanged()
-                                }
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Test") }
-                }
-
-                Text("Auth Details", style = MaterialTheme.typography.titleMedium)
-                OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation()
-                )
-                Text(
-                    "Password is only used for the first login to fetch a token. It is never saved — after that, the stored token / Auth Key is used.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text("Auth Key (x-api-key)") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation()
-                )
-
-                Button(
-                    onClick = {
-                        scope.launch {
-                            status = null
-                            try {
-                                val cleanBaseUrl = baseUrl.trim()
-                                val cleanUsername = username.trim()
-                                val cleanApiKey = apiKey.trim()
-                                if (cleanBaseUrl.isBlank()) {
-                                    throw IllegalArgumentException("Server URL is required")
-                                }
-                                if (cleanUsername.isBlank() && cleanApiKey.isBlank()) {
-                                    throw IllegalArgumentException("Username or Auth Key is required")
-                                }
-                                if (cleanApiKey.isBlank()) {
-                                    throw IllegalArgumentException("Auth Key is required for image loading")
-                                }
-
-                                sessionStore.useTransient(
-                                    KavitaSession(
-                                        baseUrl = cleanBaseUrl,
-                                        username = cleanUsername,
-                                        apiKey = "",
-                                        jwt = ""
-                                    )
-                                )
-                                val client = KavitaClient(ctx, sessionStore)
-                                val (api, _) = client.buildApi()
-                                val user = api.login(LoginDto(cleanUsername, password, cleanApiKey.ifBlank { null }))
-                                val jwt = user.token ?: throw IllegalStateException("No token returned")
-                                sessionStore.useTransient(
-                                    KavitaSession(
-                                        baseUrl = cleanBaseUrl,
-                                        username = cleanUsername,
-                                        apiKey = cleanApiKey,
-                                        jwt = ""
-                                    )
-                                )
-                                val (apiKeyApi, _) = client.buildApi()
-                                apiKeyApi.userLibraries()
-                                val saved = sessionStore.saveProfile(
-                                    selectedProfileId,
-                                    KavitaSession(
-                                        baseUrl = cleanBaseUrl,
-                                        username = cleanUsername,
-                                        apiKey = cleanApiKey,
-                                        jwt = jwt
-                                    ),
-                                    rememberAuth = true,
-                                    openByDefault = openByDefault
-                                )
-                                refreshSessionState(saved.id, clearPassword = false)
-                                status = StatusMessage("Logged in and saved", isError = false)
-                            } catch (t: HttpException) {
-                                val body = t.response()?.errorBody()?.string()?.takeIf { it.isNotBlank() }
-                                status = StatusMessage("Login failed: HTTP ${t.code()}: ${body ?: t.message()}", isError = true)
-                            } catch (t: Throwable) {
-                                status = StatusMessage("Login failed: ${t.message ?: t.toString()}", isError = true)
-                            } finally {
-                                restoreDefaultProfile()
-                                onActiveServerChanged()
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Login & Save Auth") }
-
-                Text("Storage", style = MaterialTheme.typography.titleMedium)
-                Text("Server: $serverStatus", color = Color.Gray)
-                Text("Saved auth: $authStatus", color = Color.Gray)
-                Text("Auth status: $jwtStatus", color = Color.Gray)
-                Text("Secret storage: $storageStatus", color = Color.Gray)
-                status?.let { Text(it.text, color = if (it.isError) Color.Red else StatusSuccessColor) }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                status = null
-                                try {
-                                    sessionStore.clearCredentials(selectedProfileId)
-                                    username = ""
-                                    password = ""
-                                    apiKey = ""
-                                    refreshSessionState(selectedProfileId)
-                                    restoreDefaultProfile()
-                                    onActiveServerChanged()
-                                    status = StatusMessage("Saved auth cleared", isError = false)
-                                } catch (t: Throwable) {
-                                    status = StatusMessage("Clear auth failed: ${t.message ?: t.toString()}", isError = true)
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Clear Auth") }
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val forgottenId = selectedProfileId
-                                val wasDefault = profiles.firstOrNull { it.id == forgottenId }?.openByDefault == true
-                                sessionStore.deleteProfile(forgottenId)
-                                val remainingProfiles = sessionStore.profiles()
-                                if (wasDefault && remainingProfiles.none { it.openByDefault }) {
-                                    remainingProfiles.firstOrNull()?.let {
-                                        sessionStore.setOpenByDefault(it.id, true)
-                                    }
-                                }
-                                baseUrl = ""
-                                username = ""
-                                password = ""
-                                apiKey = ""
-                                selectedProfileId = null
-                                page = ServerSettingsPage.Servers
-                                restoreDefaultProfile()
-                                selectedProfileId = profiles.firstOrNull { it.openByDefault }?.id
-                                onActiveServerChanged()
-                                status = StatusMessage("Server settings cleared", isError = false)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Forget Server") }
-                }
             }
         }
-    }
     }
 }
 
@@ -749,9 +1107,12 @@ fun ReaderSettingsScreen(
                         )
                         CategoryRowGap()
                         RadioSettingRow(
-                            title = "Play Curl",
-                            subtitle = "Play Books-style soft page fold for portrait and landscape spreads",
+                            title = "Book",
+                            subtitle = "Realistic 3D book page curl for portrait and landscape spreads",
                             selected = transitionsActive && currentTurnMode == PageTurnMode.PlayCurl,
+                            trailingTitleContent = {
+                                ExperimentalBadge()
+                            },
                             onClick = {
                                 scope.launch {
                                     settingsStore.setPageTransitionAnimation(true)

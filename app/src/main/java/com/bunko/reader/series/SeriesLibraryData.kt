@@ -20,6 +20,7 @@ internal suspend fun KavitaApi.loadAllSeriesForLibrary(
         )
     }
         .filter { it.libraryId == null || it.libraryId == libraryId }
+        .distinctBy { it.id }
         .sortedBy { it.name }
 }
 

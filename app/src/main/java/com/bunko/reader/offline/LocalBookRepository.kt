@@ -1,6 +1,7 @@
 package com.bunko.reader.offline
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -29,6 +30,7 @@ class LocalBookRepository(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
 
+    private val KEY_FOLDERS_JSON = stringPreferencesKey("local_library_folders_json")
     private val KEY_FOLDER_URI = stringPreferencesKey("default_folder_uri")
     private val KEY_FOLDER_NAME = stringPreferencesKey("default_folder_name")
     private val KEY_BOOKS_JSON = stringPreferencesKey("local_books_catalog")
@@ -58,8 +60,18 @@ class LocalBookRepository(context: Context) {
         }
     }
 
-    val folderFlow: Flow<Pair<String?, String?>> = appContext.localBooksDataStore.data.map { prefs ->
-        Pair(prefs[KEY_FOLDER_URI], prefs[KEY_FOLDER_NAME])
+    val foldersFlow: Flow<List<LocalFolder>> = appContext.localBooksDataStore.data.map { prefs ->
+        decodeFolders(prefs[KEY_FOLDERS_JSON], prefs[KEY_FOLDER_URI], prefs[KEY_FOLDER_NAME])
+    }
+
+    val folderFlow: Flow<Pair<String?, String?>> = foldersFlow.map { folders ->
+        if (folders.isEmpty()) {
+            Pair(null, null)
+        } else if (folders.size == 1) {
+            Pair(folders.first().uriString, folders.first().name)
+        } else {
+            Pair(folders.first().uriString, "${folders.size} Folders")
+        }
     }
 
     val booksFlow: Flow<List<LocalBook>> = appContext.localBooksDataStore.data.map { prefs ->
@@ -71,20 +83,67 @@ class LocalBookRepository(context: Context) {
         return decodeBooks(prefs[KEY_BOOKS_JSON])
     }
 
+    suspend fun getSavedFolders(): List<LocalFolder> {
+        val prefs = appContext.localBooksDataStore.data.first()
+        return decodeFolders(prefs[KEY_FOLDERS_JSON], prefs[KEY_FOLDER_URI], prefs[KEY_FOLDER_NAME])
+    }
+
     suspend fun getBook(bookId: String): LocalBook? {
         return getSavedBooks().firstOrNull { it.id == bookId }
     }
 
-    suspend fun setDefaultFolder(uri: Uri, displayName: String) {
+    suspend fun addFolder(uri: Uri, displayName: String) {
+        val uriStr = uri.toString()
         appContext.localBooksDataStore.edit { prefs ->
-            prefs[KEY_FOLDER_URI] = uri.toString()
-            prefs[KEY_FOLDER_NAME] = displayName
+            val existingFolders = decodeFolders(prefs[KEY_FOLDERS_JSON], prefs[KEY_FOLDER_URI], prefs[KEY_FOLDER_NAME]).toMutableList()
+            if (existingFolders.none { it.uriString == uriStr }) {
+                existingFolders.add(LocalFolder(uriString = uriStr, name = displayName))
+            }
+            prefs[KEY_FOLDERS_JSON] = encodeFolders(existingFolders)
+            // Update legacy keys for safety
+            prefs[KEY_FOLDER_URI] = existingFolders.first().uriString
+            prefs[KEY_FOLDER_NAME] = existingFolders.first().name
         }
         rescan()
     }
 
-    suspend fun clearDefaultFolder() {
+    suspend fun removeFolder(uriString: String) {
         appContext.localBooksDataStore.edit { prefs ->
+            val existingFolders = decodeFolders(prefs[KEY_FOLDERS_JSON], prefs[KEY_FOLDER_URI], prefs[KEY_FOLDER_NAME]).filter { it.uriString != uriString }
+            prefs[KEY_FOLDERS_JSON] = encodeFolders(existingFolders)
+            if (existingFolders.isNotEmpty()) {
+                prefs[KEY_FOLDER_URI] = existingFolders.first().uriString
+                prefs[KEY_FOLDER_NAME] = existingFolders.first().name
+            } else {
+                prefs.remove(KEY_FOLDER_URI)
+                prefs.remove(KEY_FOLDER_NAME)
+            }
+
+            // Remove books belonging to this folder
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON]).filter { it.folderUriString != uriString }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(books)
+        }
+
+        runCatching {
+            val uri = Uri.parse(uriString)
+            appContext.contentResolver.releasePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+    }
+
+    suspend fun setDefaultFolder(uri: Uri, displayName: String) {
+        addFolder(uri, displayName)
+    }
+
+    suspend fun clearDefaultFolder() {
+        clearAllFolders()
+    }
+
+    suspend fun clearAllFolders() {
+        appContext.localBooksDataStore.edit { prefs ->
+            prefs.remove(KEY_FOLDERS_JSON)
             prefs.remove(KEY_FOLDER_URI)
             prefs.remove(KEY_FOLDER_NAME)
             prefs.remove(KEY_BOOKS_JSON)
@@ -97,17 +156,26 @@ class LocalBookRepository(context: Context) {
             _isScanning.value = true
             try {
                 val prefs = appContext.localBooksDataStore.data.first()
-                val uriString = prefs[KEY_FOLDER_URI]
-                if (uriString.isNullOrBlank()) {
+                val folders = decodeFolders(prefs[KEY_FOLDERS_JSON], prefs[KEY_FOLDER_URI], prefs[KEY_FOLDER_NAME])
+                if (folders.isEmpty()) {
                     _isScanning.value = false
                     return@launch
                 }
 
-                val treeUri = Uri.parse(uriString)
-                val scannedBooks = LocalBookScanner.scanTree(appContext, treeUri)
+                val allScanned = mutableListOf<LocalBook>()
+                for (folder in folders) {
+                    try {
+                        val treeUri = Uri.parse(folder.uriString)
+                        val scanned = LocalBookScanner.scanTree(appContext, treeUri, folder.name)
+                        allScanned.addAll(scanned)
+                    } catch (t: Throwable) {
+                        BunkoLog.w("Failed to scan folder ${folder.name}", t)
+                    }
+                }
+
                 val existingBooksMap = decodeBooks(prefs[KEY_BOOKS_JSON]).associateBy { it.id }
 
-                val merged = scannedBooks.map { scanned ->
+                val merged = allScanned.map { scanned ->
                     val existing = existingBooksMap[scanned.id]
                     if (existing != null) {
                         scanned.copy(
@@ -189,10 +257,6 @@ class LocalBookRepository(context: Context) {
         }
     }
 
-    /**
-     * Prepares a local File in app cache directory for random-access reading if needed.
-     * For large files, if already cached, returns existing file.
-     */
     suspend fun prepareBookFile(book: LocalBook): File = withContext(Dispatchers.IO) {
         val cacheFolder = File(appContext.cacheDir, "active_books").apply { mkdirs() }
         val targetFile = File(cacheFolder, "${book.id}.${book.extension}")
@@ -213,6 +277,23 @@ class LocalBookRepository(context: Context) {
                 tempFile
             }
         } ?: targetFile
+    }
+
+    private fun decodeFolders(jsonStr: String?, legacyUri: String?, legacyName: String?): List<LocalFolder> {
+        if (!jsonStr.isNullOrBlank()) {
+            val parsed = runCatching {
+                json.decodeFromString(ListSerializer(LocalFolder.serializer()), jsonStr)
+            }.getOrDefault(emptyList())
+            if (parsed.isNotEmpty()) return parsed
+        }
+        if (!legacyUri.isNullOrBlank()) {
+            return listOf(LocalFolder(uriString = legacyUri, name = legacyName ?: "eBooks & Comics"))
+        }
+        return emptyList()
+    }
+
+    private fun encodeFolders(folders: List<LocalFolder>): String {
+        return json.encodeToString(ListSerializer(LocalFolder.serializer()), folders)
     }
 
     private fun decodeBooks(jsonStr: String?): List<LocalBook> {

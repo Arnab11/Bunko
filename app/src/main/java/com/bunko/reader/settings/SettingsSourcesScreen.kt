@@ -58,6 +58,9 @@ import com.bunko.reader.KavitaSessionStore
 import com.bunko.reader.offline.LocalBookRepository
 import kotlinx.coroutines.launch
 
+import androidx.compose.material.icons.filled.Add
+import com.bunko.reader.offline.LocalFolder
+
 @Composable
 fun SettingsSourcesScreen(
     localRepository: LocalBookRepository,
@@ -70,7 +73,7 @@ fun SettingsSourcesScreen(
     val scope = rememberCoroutineScope()
 
     val activeMode by localRepository.activeModeFlow.collectAsState(initial = "offline")
-    val folderInfo by localRepository.folderFlow.collectAsState(initial = Pair(null, null))
+    val folders by localRepository.foldersFlow.collectAsState(initial = emptyList())
     val books by localRepository.booksFlow.collectAsState(initial = emptyList())
     val isScanning by localRepository.isScanning.collectAsState()
 
@@ -86,7 +89,7 @@ fun SettingsSourcesScreen(
             val displayName = DocumentsContract.getTreeDocumentId(uri).substringAfterLast('/')
                 .ifBlank { "eBooks & Comics" }
             scope.launch {
-                localRepository.setDefaultFolder(uri, displayName)
+                localRepository.addFolder(uri, displayName)
             }
         }
     }
@@ -172,15 +175,29 @@ fun SettingsSourcesScreen(
             }
         }
 
-        // Offline Storage / Base Folder
+        // Offline Storage / Multi-Folder Section
         Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "Offline Storage",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Offline Library Folders",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (folders.isNotEmpty()) {
+                    Text(
+                        text = "${folders.size} folders • ${books.size} books",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             SettingsSectionCard(contentPadding = PaddingValues(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -205,18 +222,18 @@ fun SettingsSourcesScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Base Library Folder",
+                                text = "Local Storage Folders",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Root directory for local EPUB, CBZ, and PDF scanning",
+                                text = "Directories scanned for EPUB, CBZ, and PDF books",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
-                        if (!folderInfo.first.isNullOrBlank()) {
+                        if (folders.isNotEmpty()) {
                             FilledTonalIconButton(
                                 onClick = { localRepository.rescan() },
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -232,7 +249,7 @@ fun SettingsSourcesScreen(
                                 } else {
                                     Icon(
                                         imageVector = Icons.Filled.Refresh,
-                                        contentDescription = "Rescan",
+                                        contentDescription = "Rescan all folders",
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
@@ -240,62 +257,80 @@ fun SettingsSourcesScreen(
                         }
                     }
 
-                    val hasFolder = !folderInfo.first.isNullOrBlank()
-                    if (hasFolder) {
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = folderInfo.second ?: "Selected Folder",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${books.size} books & comics indexed",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                    if (folders.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            folders.forEach { folder ->
+                                val folderBooksCount = books.count {
+                                    it.folderUriString == folder.uriString || (folders.size == 1 && it.folderUriString.isBlank())
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.FolderOpen,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = folder.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "$folderBooksCount books indexed",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        FilledTonalIconButton(
+                                            onClick = {
+                                                scope.launch { localRepository.removeFolder(folder.uriString) }
+                                            },
+                                            modifier = Modifier.size(32.dp),
+                                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                                                contentColor = MaterialTheme.colorScheme.error
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.DeleteOutline,
+                                                contentDescription = "Remove folder",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
 
-                        Row(
+                        Button(
+                            onClick = { folderLauncher.launch(null) },
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         ) {
-                            OutlinedButton(
-                                onClick = { folderLauncher.launch(null) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Change Folder")
-                            }
-
-                            FilledTonalButton(
-                                onClick = {
-                                    scope.launch { localRepository.clearDefaultFolder() }
-                                },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(
-                                    Icons.Filled.DeleteOutline,
-                                    contentDescription = "Clear",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
+                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add Folder", fontWeight = FontWeight.SemiBold)
                         }
                     } else {
                         Button(
@@ -305,7 +340,7 @@ fun SettingsSourcesScreen(
                         ) {
                             Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Choose Base Folder")
+                            Text("Choose Library Folder")
                         }
                     }
                 }

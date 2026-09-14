@@ -1044,12 +1044,16 @@ fun ReaderScreen(
 
     val client = remember { KavitaClient(ctx, sessionStore) }
     val activeImageLoader = readerImageLoader ?: fallbackImageLoader
-    fun pageModel(index: Int): Any? = offlineChapter?.pages?.getOrNull(index)
-        ?: if (s != null && index in 0 until pages) {
-            client.pageImageUrl(s.baseUrl, s.apiKey, currentChapterId, index)
-        } else {
-            null
-        }
+    fun pageModel(index: Int): Any? = if (isEpub) {
+        epubSubpages.getOrNull(index)
+    } else {
+        offlineChapter?.pages?.getOrNull(index)
+            ?: if (s != null && index in 0 until pages) {
+                client.pageImageUrl(s.baseUrl, s.apiKey, currentChapterId, index)
+            } else {
+                null
+            }
+    }
     val rtl = readingDirection == ReaderReadingDirection.RightToLeft
     val isWebtoon = readingDirection == ReaderReadingDirection.Webtoon
     val vertical = readingDirection == ReaderReadingDirection.Vertical || isWebtoon
@@ -1125,8 +1129,6 @@ fun ReaderScreen(
     // status-bar and nav-bar inset strips (which the gallery card never covers) are
     // always the same shade as the reader — no animated colour transition means no
     // visible dark bar either during zoom-out or zoom-in.
-    // Note: menuBg (0xFF141518) and defaultReaderBg (Color.Black) are visually
-    // indistinguishable so the gallery appearance is unchanged.
     val screenBgColor = defaultReaderBg
 
     BoxWithConstraints(Modifier.fillMaxSize().background(screenBgColor)) {
@@ -1143,7 +1145,7 @@ fun ReaderScreen(
         val stableInsets = WindowInsets.navigationBars.union(WindowInsets.displayCutout).asPaddingValues()
         val layoutDirection = LocalLayoutDirection.current
         val safeTopPadding = (stableInsets.calculateTopPadding() + 16.dp).coerceAtLeast(28.dp)
-        val safeBottomPadding = (stableInsets.calculateBottomPadding() + 24.dp).coerceAtLeast(36.dp)
+        val safeBottomPadding = (stableInsets.calculateBottomPadding() + 36.dp).coerceAtLeast(48.dp)
         val safeStartPadding = stableInsets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp)
         val safeEndPadding = stableInsets.calculateEndPadding(layoutDirection).coerceAtLeast(20.dp)
 
@@ -1183,16 +1185,18 @@ fun ReaderScreen(
             end = safeEndPadding,
             bottom = safeBottomPadding
         )
+        val landscapeOuterMargin = maxOf(safeStartPadding, safeEndPadding).coerceIn(20.dp, 32.dp)
+        val landscapeInnerMargin = 16.dp
         val landscapeLeftPadding = PaddingValues(
-            start = safeStartPadding,
+            start = landscapeOuterMargin,
             top = safeTopPadding,
-            end = 16.dp,
+            end = landscapeInnerMargin,
             bottom = safeBottomPadding
         )
         val landscapeRightPadding = PaddingValues(
-            start = 16.dp,
+            start = landscapeInnerMargin,
             top = safeTopPadding,
-            end = safeEndPadding,
+            end = landscapeOuterMargin,
             bottom = safeBottomPadding
         )
 
@@ -1205,15 +1209,17 @@ fun ReaderScreen(
             safeTopPadding,
             safeBottomPadding,
             safeStartPadding,
-            safeEndPadding
+            safeEndPadding,
+            settings.reader.epubFontFamily
         ) {
             if (isEpub && epubSpineBlocks.isNotEmpty() && viewportWidthPx > 0f && viewportHeightPx > 0f) {
                 val horizontalPaddingPx = with(density) { (safeStartPadding + safeEndPadding).roundToPx() }
+                val landscapeHorizontalPaddingPx = with(density) { (landscapeOuterMargin + landscapeInnerMargin).roundToPx() }
                 val verticalPaddingPx = with(density) { (safeTopPadding + safeBottomPadding).roundToPx() }
                 val contentWidthPx = if (portrait) {
                     (viewportWidthPx.toInt() - horizontalPaddingPx).coerceAtLeast(100)
                 } else {
-                    ((viewportWidthPx / 2f).toInt() - horizontalPaddingPx).coerceAtLeast(100)
+                    ((viewportWidthPx / 2f).toInt() - landscapeHorizontalPaddingPx).coerceAtLeast(100)
                 }
                 val contentHeightPx = (viewportHeightPx.toInt() - verticalPaddingPx).coerceAtLeast(100)
                 val fontSizePx = with(density) { epubFontSizeSp.sp.toPx() }
@@ -1228,6 +1234,7 @@ fun ReaderScreen(
                                 availableWidthPx = contentWidthPx,
                                 availableHeightPx = contentHeightPx,
                                 fontSizePx = fontSizePx,
+                                fontFamily = settings.reader.epubFontFamily,
                                 density = density
                             )
                         }
@@ -1550,8 +1557,7 @@ fun ReaderScreen(
                 settings.reader.pageTransitionAnimation &&
                 portrait &&
                 layout.singlePage &&
-                !zoomPanEnabled &&
-                !isEpub
+                !zoomPanEnabled
         val useSpreadPlayCurl =
             !vertical &&
             settings.reader.pageTurnMode == PageTurnMode.PlayCurl &&
@@ -1565,9 +1571,8 @@ fun ReaderScreen(
                 // a full-width leaf with the fold at the centre. Other landscape singles
                 // (cover, chapter end, the page displayed alone next to a wide one) sit
                 // centred with no spine under them, so they fall back to Slide.
-                (!layout.singlePage || pageDimensions.pageIsWide(page)) &&
-                !zoomPanEnabled &&
-                !isEpub
+                (!layout.singlePage || pageDimensions.pageIsWide(page) || isEpub) &&
+                !zoomPanEnabled
         val usePlayCurl = usePortraitPlayCurl || useSpreadPlayCurl
         val initialZoomPanState = ReaderZoomPanState()
 
@@ -2206,6 +2211,12 @@ fun ReaderScreen(
                     cropBorders = settings.reader.cropBorders,
                     nightModeEnabled = nightModeEnabled,
                     nightLightIntensity = nightLightIntensity,
+                    epubFontSizeSp = epubFontSizeSp,
+                    epubFontFamily = settings.reader.epubFontFamily,
+                    epubTextAlign = settings.reader.epubTextAlign,
+                    epubContentPadding = portraitPadding,
+                    density = density,
+                    isEpub = isEpub,
                     host = playCurlHost,
                     onPageTurned = ::onPlayCurlSettled,
                     modifier = Modifier
@@ -2250,38 +2261,38 @@ fun ReaderScreen(
                 } else {
                     zoomPan.offsetX
                 }
-                if (transition.distanceFraction < 1f && !zoomPanEnabled) {
-                    // Spread shift: the two whole-spread layers cannot slide seamlessly
-                    // because each hugs the pages to its own spine — at the layer seam the
-                    // outer margins meet and open a gap at the spine. Instead draw one
-                    // paper background and the three page images (enter / stay / exit)
-                    // glued edge-to-edge, all travelling by the staying page's rendered
-                    // width; the leaving page fades out.
-                    fun halfPageWidthPx(pageIndex: Int): Float {
-                        val dims = pageDimensions[pageIndex] ?: return viewportWidthPx / 2f
-                        val w = dims.width?.toFloat() ?: return viewportWidthPx / 2f
-                        val h = dims.height?.toFloat() ?: return viewportWidthPx / 2f
-                        if (w <= 0f || h <= 0f) return viewportWidthPx / 2f
-                        return minOf(viewportWidthPx / 2f, viewportHeightPx * (w / h))
-                    }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(readerPageBackground)
+                ) {
+                    if (transition.distanceFraction < 1f && !zoomPanEnabled) {
+                        // Spread shift: the two whole-spread layers cannot slide seamlessly
+                        // because each hugs the pages to its own spine — at the layer seam the
+                        // outer margins meet and open a gap at the spine. Instead draw one
+                        // paper background and the three page images (enter / stay / exit)
+                        // glued edge-to-edge, all travelling by the staying page's rendered
+                        // width; the leaving page fades out.
+                        fun halfPageWidthPx(pageIndex: Int): Float {
+                            val dims = pageDimensions[pageIndex] ?: return viewportWidthPx / 2f
+                            val w = dims.width?.toFloat() ?: return viewportWidthPx / 2f
+                            val h = dims.height?.toFloat() ?: return viewportWidthPx / 2f
+                            if (w <= 0f || h <= 0f) return viewportWidthPx / 2f
+                            return minOf(viewportWidthPx / 2f, viewportHeightPx * (w / h))
+                        }
 
-                    val (enterPage, stayPage, exitPage) = readerShiftStripPages(
-                        outgoingPage = transition.outgoingPage,
-                        targetPage = transition.targetPage,
-                        direction = transition.direction
-                    )
-                    val geometry = readerShiftStripGeometry(
-                        physicalSign = physicalSign,
-                        halfViewportPx = viewportWidthPx / 2f,
-                        stayWidthPx = halfPageWidthPx(stayPage),
-                        enterWidthPx = halfPageWidthPx(enterPage),
-                        exitWidthPx = halfPageWidthPx(exitPage)
-                    )
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(readerPageBackground)
-                    ) {
+                        val (enterPage, stayPage, exitPage) = readerShiftStripPages(
+                            outgoingPage = transition.outgoingPage,
+                            targetPage = transition.targetPage,
+                            direction = transition.direction
+                        )
+                        val geometry = readerShiftStripGeometry(
+                            physicalSign = physicalSign,
+                            halfViewportPx = viewportWidthPx / 2f,
+                            stayWidthPx = halfPageWidthPx(stayPage),
+                            enterWidthPx = halfPageWidthPx(enterPage),
+                            exitWidthPx = halfPageWidthPx(exitPage)
+                        )
                         listOf(
                             // The entering page starts glued to the staying page, which puts
                             // a sliver of it inside the resting view's outer margin; fade it
@@ -2321,52 +2332,52 @@ fun ReaderScreen(
                                 }
                             }
                         }
+                    } else {
+                        RenderReaderPage(
+                            cursor = transition.targetPage,
+                            pageCount = pages,
+                            portrait = portrait,
+                            pageDimensions = pageDimensions,
+                            rightToLeft = rtl,
+                            pageModel = ::pageModel,
+                            imageLoader = activeImageLoader,
+                            invertMode = invertMode,
+                            ePaperMode = ePaperMode,
+                            whiteThreshold = settings.reader.invertWhiteThreshold,
+                            invertDecisionCache = invertDecisionCache,
+                            pageBackground = readerPageBackground,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    translationX = -physicalSign * slideDistancePx * (1f - progress) + targetOffsetX
+                                    translationY = zoomPan.offsetY
+                                    scaleX = totalZoomScale
+                                    scaleY = totalZoomScale
+                                }
+                        )
+                        RenderReaderPage(
+                            cursor = transition.outgoingPage,
+                            pageCount = pages,
+                            portrait = portrait,
+                            pageDimensions = pageDimensions,
+                            rightToLeft = rtl,
+                            pageModel = ::pageModel,
+                            imageLoader = activeImageLoader,
+                            invertMode = invertMode,
+                            ePaperMode = ePaperMode,
+                            whiteThreshold = settings.reader.invertWhiteThreshold,
+                            invertDecisionCache = invertDecisionCache,
+                            pageBackground = readerPageBackground,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    translationX = physicalSign * slideDistancePx * progress + zoomPan.offsetX
+                                    translationY = zoomPan.offsetY
+                                    scaleX = totalZoomScale
+                                    scaleY = totalZoomScale
+                                }
+                        )
                     }
-                } else {
-                RenderReaderPage(
-                    cursor = transition.targetPage,
-                    pageCount = pages,
-                    portrait = portrait,
-                    pageDimensions = pageDimensions,
-                    rightToLeft = rtl,
-                    pageModel = ::pageModel,
-                    imageLoader = activeImageLoader,
-                    invertMode = invertMode,
-                    ePaperMode = ePaperMode,
-                    whiteThreshold = settings.reader.invertWhiteThreshold,
-                    invertDecisionCache = invertDecisionCache,
-                    pageBackground = readerPageBackground,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            translationX = -physicalSign * slideDistancePx * (1f - progress) + targetOffsetX
-                            translationY = zoomPan.offsetY
-                            scaleX = totalZoomScale
-                            scaleY = totalZoomScale
-                        }
-                )
-                RenderReaderPage(
-                    cursor = transition.outgoingPage,
-                    pageCount = pages,
-                    portrait = portrait,
-                    pageDimensions = pageDimensions,
-                    rightToLeft = rtl,
-                    pageModel = ::pageModel,
-                    imageLoader = activeImageLoader,
-                    invertMode = invertMode,
-                    ePaperMode = ePaperMode,
-                    whiteThreshold = settings.reader.invertWhiteThreshold,
-                    invertDecisionCache = invertDecisionCache,
-                    pageBackground = readerPageBackground,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            translationX = physicalSign * slideDistancePx * progress + zoomPan.offsetX
-                            translationY = zoomPan.offsetY
-                            scaleX = totalZoomScale
-                            scaleY = totalZoomScale
-                        }
-                )
                 }
             }
             }

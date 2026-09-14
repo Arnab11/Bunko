@@ -54,6 +54,7 @@ import com.bunko.reader.ui.theme.BunkoSurface
 internal fun CollectionsScreen(
     sessionStore: KavitaSessionStore,
     onBack: () -> Unit,
+    statusBarPadding: Boolean = true,
     onOpenCollection: (CollectionDto) -> Unit
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -86,7 +87,7 @@ internal fun CollectionsScreen(
         loadCollections(initialLoad = true)
     }
 
-    BrowsePageScaffold(title = "Collections", onBack = onBack) {
+    BrowsePageScaffold(title = "Collections", onBack = onBack, statusBarPadding = statusBarPadding) {
         when {
             loading -> DarkLoadingState()
             error != null -> DarkMessageState(

@@ -162,10 +162,6 @@ fun ChapterPickScreen(
     var session by remember { mutableStateOf(KavitaSession()) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
     var isAdmin by remember { mutableStateOf(false) }
-    var selectedIssue by remember { mutableStateOf<ChapterCardItem?>(null) }
-    var selectedIssueDetail by remember { mutableStateOf<ChapterDto?>(null) }
-    var selectedIssueSize by remember { mutableStateOf<Long?>(null) }
-    var issueLoading by remember { mutableStateOf(false) }
     var issueActionBusy by remember { mutableStateOf(false) }
     val offlineRepository = remember(ctx) { OfflineIssueRepository(ctx) }
     val pullRefreshState = rememberPullToRefreshState()
@@ -237,24 +233,12 @@ fun ChapterPickScreen(
     }
     val displaySeries = series ?: SeriesDto(id = seriesId, name = seriesName, libraryId = libraryId)
     val loadedApi = api
-    val selectedChapterId = selectedIssue?.chapter?.id
-    val downloadFlow = remember(session.baseUrl, selectedChapterId) {
-        selectedChapterId?.let { offlineRepository.observe(session, it) } ?: flowOf(null)
+    val downloadedList by offlineRepository.observeDownloaded(session).collectAsState(initial = emptyList())
+    val downloadedChapterIds = remember(downloadedList) {
+        downloadedList.filter { it.status == OfflineDownloadStatus.Ready }.mapTo(mutableSetOf()) { it.chapterId }
     }
-    val downloadRecord by downloadFlow.collectAsState(initial = null)
-
-    LaunchedEffect(session.baseUrl, selectedChapterId, downloadRecord?.status) {
-        val chapterId = selectedChapterId ?: return@LaunchedEffect
-        if (offlineRepository.cleanupUnavailableDownload(session, chapterId)) {
-            return@LaunchedEffect
-        }
-        while (downloadRecord?.status in setOf(
-                OfflineDownloadStatus.Queued,
-                OfflineDownloadStatus.Downloading
-            )) {
-            offlineRepository.reconcile(session, chapterId)
-            delay(750)
-        }
+    val downloadingChapterIds = remember(downloadedList) {
+        downloadedList.filter { it.status in setOf(OfflineDownloadStatus.Queued, OfflineDownloadStatus.Downloading) }.mapTo(mutableSetOf()) { it.chapterId }
     }
 
     fun updateChapter(updated: ChapterDto) {
@@ -269,37 +253,10 @@ fun ChapterPickScreen(
                 )
             }
         }
-        selectedIssue = selectedIssue?.let { item ->
-            if (item.chapter.id == updated.id) item.copy(chapter = updated) else item
-        }
-        selectedIssueDetail = updated
     }
 
-    fun openIssue(item: ChapterCardItem) {
+    fun markIssueRead(item: ChapterCardItem) {
         val currentApi = loadedApi ?: return
-        selectedIssue = item
-        selectedIssueDetail = item.chapter
-        selectedIssueSize = null
-        issueLoading = true
-        scope.launch {
-            val chapterId = item.chapter.id
-            val detail = runCatching { currentApi.seriesChapter(chapterId) }
-                .onFailure { BunkoLog.w("Could not load issue detail for chapter $chapterId.", it) }
-                .getOrNull()
-            val size = runCatching { currentApi.chapterSize(chapterId) }
-                .onFailure { BunkoLog.w("Could not load issue size for chapter $chapterId.", it) }
-                .getOrNull()
-            if (selectedIssue?.chapter?.id == chapterId) {
-                detail?.let(::updateChapter)
-                selectedIssueSize = size
-                issueLoading = false
-            }
-        }
-    }
-
-    fun markSelectedIssueRead() {
-        val currentApi = loadedApi ?: return
-        val item = selectedIssue ?: return
         if (issueActionBusy) return
         issueActionBusy = true
         scope.launch {
@@ -332,9 +289,8 @@ fun ChapterPickScreen(
         }
     }
 
-    fun markSelectedIssueUnread() {
+    fun markIssueUnread(item: ChapterCardItem) {
         val currentApi = loadedApi ?: return
-        val item = selectedIssue ?: return
         if (issueActionBusy) return
         issueActionBusy = true
         scope.launch {
@@ -366,6 +322,54 @@ fun ChapterPickScreen(
         }
     }
 
+    fun downloadIssue(item: ChapterCardItem) {
+        if (issueActionBusy) return
+        issueActionBusy = true
+        scope.launch {
+            try {
+                offlineRepository.enqueue(
+                    session = session,
+                    libraryId = libraryId,
+                    seriesId = seriesId,
+                    volumeId = item.volume.id,
+                    chapterId = item.chapter.id,
+                    seriesName = displaySeries.name,
+                    issueName = item.volume.displayName() ?: item.chapter.displayTitle(),
+                    expectedBytes = null,
+                    expectedPageCount = item.chapter.pages
+                )
+                showMessage("Download queued")
+            } catch (c: CancellationException) {
+                throw c
+            } catch (error: Throwable) {
+                BunkoLog.w("Could not queue offline download for chapter ${item.chapter.id}.", error)
+                showMessage(error.message ?: "Could not queue download")
+            } finally {
+                issueActionBusy = false
+            }
+        }
+    }
+
+    fun removeIssueDownload(item: ChapterCardItem) {
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = "Download removed",
+                actionLabel = "Undo",
+                withDismissAction = true,
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) return@launch
+            try {
+                offlineRepository.remove(session, item.chapter.id)
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                BunkoLog.w("Could not remove offline download for chapter ${item.chapter.id}.", t)
+                snackbarHostState.showSnackbar("Could not remove download")
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = BunkoBackground,
@@ -381,24 +385,14 @@ fun ChapterPickScreen(
                     }
                 },
                 title = {
-                    Column(verticalArrangement = Arrangement.Center) {
-                        Text(
-                            text = displaySeries.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (chapterCards.isNotEmpty()) {
-                            Text(
-                                text = "${chapterCards.size} ${if (chapterCards.size == 1) "issue" else "issues"}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
+                    Text(
+                        text = displaySeries.name,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 },
                 actions = {
                     IconButton(
@@ -470,97 +464,19 @@ fun ChapterPickScreen(
                         session = session,
                         api = loadedApi,
                         isAdmin = isAdmin,
+                        downloadedChapterIds = downloadedChapterIds,
+                        downloadingChapterIds = downloadingChapterIds,
                         onOpenFilteredSeries = onOpenFilteredSeries,
                         onPick = { chapterId, volumeId -> onPick(chapterId, volumeId, false) },
-                        onIssueClick = ::openIssue,
+                        onReadIncognito = { item -> onPick(item.chapter.id, item.volume.id, true) },
+                        onMarkRead = ::markIssueRead,
+                        onMarkUnread = ::markIssueUnread,
+                        onDownload = ::downloadIssue,
+                        onRemoveDownload = ::removeIssueDownload,
                         onMessage = ::showMessage
                     )
                 }
             }
-
-            val issue = selectedIssue
-            val seriesActionColor = displaySeries.coverActionColor()
-            val issueActionColor = (selectedIssueDetail ?: issue?.chapter)
-                ?.coverActionColor(fallback = seriesActionColor)
-                ?: seriesActionColor
-            IssueDetailSideSheet(
-                visible = issue != null,
-                seriesName = displaySeries.name,
-                volume = issue?.volume,
-                chapter = selectedIssueDetail ?: issue?.chapter,
-                fileSizeBytes = selectedIssueSize,
-                downloadRecord = downloadRecord,
-                loading = issueLoading,
-                actionBusy = issueActionBusy,
-                session = session,
-                actionColor = issueActionColor,
-                onDismissRequest = {
-                    selectedIssue = null
-                    selectedIssueDetail = null
-                    selectedIssueSize = null
-                },
-                onRead = {
-                    issue?.let { onPick(it.chapter.id, it.volume.id, false) }
-                },
-                onReadIncognito = {
-                    issue?.let { onPick(it.chapter.id, it.volume.id, true) }
-                },
-                onMarkRead = ::markSelectedIssueRead,
-                onMarkUnread = ::markSelectedIssueUnread,
-                onDownload = {
-                    issue?.let { item ->
-                        if (issueActionBusy) return@IssueDetailSideSheet
-                        issueActionBusy = true
-                        scope.launch {
-                            try {
-                                offlineRepository.enqueue(
-                                    session = session,
-                                    libraryId = libraryId,
-                                    seriesId = seriesId,
-                                    volumeId = item.volume.id,
-                                    chapterId = item.chapter.id,
-                                    seriesName = displaySeries.name,
-                                    issueName = item.volume.displayName() ?: item.chapter.displayTitle(),
-                                    expectedBytes = selectedIssueSize,
-                                    expectedPageCount = selectedIssueDetail?.pages ?: item.chapter.pages
-                                )
-                                showMessage("Download queued")
-                            } catch (c: CancellationException) {
-                                throw c
-                            } catch (error: Throwable) {
-                                BunkoLog.w("Could not queue offline download for chapter ${item.chapter.id}.", error)
-                                showMessage(error.message ?: "Could not queue download")
-                            } finally {
-                                issueActionBusy = false
-                            }
-                        }
-                    }
-                },
-                onRemoveDownload = {
-                    issue?.let { item ->
-                        scope.launch {
-                            selectedIssue = null
-                            selectedIssueDetail = null
-                            selectedIssueSize = null
-                            val result = snackbarHostState.showSnackbar(
-                                message = "Download removed",
-                                actionLabel = "Undo",
-                                withDismissAction = true,
-                                duration = SnackbarDuration.Long
-                            )
-                            if (result == SnackbarResult.ActionPerformed) return@launch
-                            try {
-                                offlineRepository.remove(session, item.chapter.id)
-                            } catch (c: CancellationException) {
-                                throw c
-                            } catch (t: Throwable) {
-                                BunkoLog.w("Could not remove offline download for chapter ${item.chapter.id}.", t)
-                                snackbarHostState.showSnackbar("Could not remove download")
-                            }
-                        }
-                    }
-                }
-            )
         }
     }
 }
@@ -575,9 +491,15 @@ private fun SeriesDetailContent(
     session: KavitaSession,
     api: KavitaApi,
     isAdmin: Boolean,
+    downloadedChapterIds: Set<Int>,
+    downloadingChapterIds: Set<Int>,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onPick: (chapterId: Int, volumeId: Int) -> Unit,
-    onIssueClick: (ChapterCardItem) -> Unit,
+    onReadIncognito: (ChapterCardItem) -> Unit,
+    onMarkRead: (ChapterCardItem) -> Unit,
+    onMarkUnread: (ChapterCardItem) -> Unit,
+    onDownload: (ChapterCardItem) -> Unit,
+    onRemoveDownload: (ChapterCardItem) -> Unit,
     onMessage: (String) -> Unit
 ) {
     val specialCards = chapterCards.filter { it.chapter.isSpecial }
@@ -618,7 +540,14 @@ private fun SeriesDetailContent(
                     issueCards = issueCards,
                     specialCards = specialCards,
                     session = session,
-                    onIssueClick = onIssueClick,
+                    onIssueClick = { onPick(it.chapter.id, it.volume.id) },
+                    onReadIncognito = onReadIncognito,
+                    onMarkRead = onMarkRead,
+                    onMarkUnread = onMarkUnread,
+                    onDownload = onDownload,
+                    onRemoveDownload = onRemoveDownload,
+                    downloadedChapterIds = downloadedChapterIds,
+                    downloadingChapterIds = downloadingChapterIds,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -652,7 +581,14 @@ private fun SeriesDetailContent(
                     ChapterGridCard(
                         item = item,
                         session = session,
-                        onClick = { onIssueClick(item) }
+                        isDownloaded = item.chapter.id in downloadedChapterIds,
+                        isDownloading = item.chapter.id in downloadingChapterIds,
+                        onClick = { onPick(item.chapter.id, item.volume.id) },
+                        onReadIncognito = { onReadIncognito(item) },
+                        onMarkRead = { onMarkRead(item) },
+                        onMarkUnread = { onMarkUnread(item) },
+                        onDownload = { onDownload(item) },
+                        onRemoveDownload = { onRemoveDownload(item) }
                     )
                 }
                 if (specialCards.isNotEmpty()) {
@@ -663,7 +599,14 @@ private fun SeriesDetailContent(
                         ChapterGridCard(
                             item = item,
                             session = session,
-                            onClick = { onIssueClick(item) }
+                            isDownloaded = item.chapter.id in downloadedChapterIds,
+                            isDownloading = item.chapter.id in downloadingChapterIds,
+                            onClick = { onPick(item.chapter.id, item.volume.id) },
+                            onReadIncognito = { onReadIncognito(item) },
+                            onMarkRead = { onMarkRead(item) },
+                            onMarkUnread = { onMarkUnread(item) },
+                            onDownload = { onDownload(item) },
+                            onRemoveDownload = { onRemoveDownload(item) }
                         )
                     }
                 }

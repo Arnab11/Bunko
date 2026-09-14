@@ -36,7 +36,7 @@ internal fun readerPageLayout(
         return ReaderPageLayout(
             singlePage = singlePage,
             nextStep = if (singlePage) 1 else 2,
-            previousStep = if (page <= 1) 1 else (if (page % 2 != 0) 1 else 2),
+            previousStep = if (page <= 1) 1 else 2,
             singleAlignment = Alignment.Center
         )
     }

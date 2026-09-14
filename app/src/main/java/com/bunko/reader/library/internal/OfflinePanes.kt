@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Folder
@@ -59,12 +61,22 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.bunko.reader.offline.LocalBook
 import com.bunko.reader.offline.LocalBookFormat
+import com.bunko.reader.offline.LocalFolder
 import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.browse.PosterGrid
 import com.bunko.reader.ui.theme.ReadingProgressInProgress
 import com.bunko.reader.ui.theme.ReadingProgressTrack
 import java.io.File
 import kotlin.math.absoluteValue
+
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.TextButton
+import com.bunko.reader.ui.browse.UnifiedPosterCard
+import com.bunko.reader.ui.browse.UnifiedListItem
+import com.bunko.reader.ui.browse.toUnifiedMediaItem
+
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 
 enum class LocalBookSort(val label: String) {
     Title("Title"),
@@ -79,6 +91,7 @@ internal fun OfflineHomePane(
     isGridView: Boolean = true,
     onOpenBook: (LocalBook) -> Unit,
     onSeeAll: () -> Unit,
+    onOpenContinueReading: () -> Unit = onSeeAll,
     onChangeFolder: () -> Unit,
     onRescan: () -> Unit,
     modifier: Modifier = Modifier
@@ -102,104 +115,253 @@ internal fun OfflineHomePane(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 16.dp)
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp)
     ) {
         if (continueReading.isNotEmpty()) {
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Continue Reading",
-                        color = MaterialTheme.colorScheme.onBackground,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "${continueReading.size}",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-            }
-            if (isGridView) {
-                item {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenContinueReading() }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(continueReading, key = { "cr_${it.id}" }) { book ->
-                            Box(Modifier.width(135.dp)) {
-                                LocalBookPosterCard(
-                                    book = book,
+                        Text(
+                            text = "Continue Reading",
+                            color = MaterialTheme.colorScheme.onBackground,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                text = "${continueReading.size}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                        Text(
+                            text = "See all",
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Open Continue Reading",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    if (isGridView) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val minCardWidth = 130.dp
+                            val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
+                            val maxItems = columns * 2
+                            val previewItems = continueReading.take(maxItems)
+                            val chunked = previewItems.chunked(columns)
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                chunked.forEach { rowItems ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        rowItems.forEach { book ->
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                UnifiedPosterCard(
+                                                    item = book.toUnifiedMediaItem(),
+                                                    onClick = { onOpenBook(book) }
+                                                )
+                                            }
+                                        }
+                                        repeat(columns - rowItems.size) {
+                                            Spacer(Modifier.weight(1f))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            continueReading.take(5).forEach { book ->
+                                UnifiedListItem(
+                                    item = book.toUnifiedMediaItem(),
                                     onClick = { onOpenBook(book) }
                                 )
                             }
                         }
                     }
-                    Spacer(Modifier.height(20.dp))
-                }
-            } else {
-                items(continueReading, key = { "cr_${it.id}" }) { book ->
-                    LocalBookListItem(
-                        book = book,
-                        onClick = { onOpenBook(book) }
-                    )
-                }
-                item {
-                    Spacer(Modifier.height(16.dp))
                 }
             }
         }
 
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Recently Added",
-                    color = MaterialTheme.colorScheme.onBackground,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "See all (${books.size})",
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.clickable(onClick = onSeeAll)
-                )
-            }
-        }
-        if (isGridView) {
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSeeAll() }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(recentlyAdded.take(20), key = { "ra_${it.id}" }) { book ->
-                        Box(Modifier.width(135.dp)) {
-                            LocalBookPosterCard(
-                                book = book,
+                    Text(
+                        text = "Recently Added",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = "${books.size}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = "See all",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "Open Recently Added",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                if (isGridView) {
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val minCardWidth = 130.dp
+                        val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
+                        val maxItems = columns * 2
+                        val previewItems = recentlyAdded.take(maxItems)
+                        val chunked = previewItems.chunked(columns)
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            chunked.forEach { rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    rowItems.forEach { book ->
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            UnifiedPosterCard(
+                                                item = book.toUnifiedMediaItem(),
+                                                onClick = { onOpenBook(book) }
+                                            )
+                                        }
+                                    }
+                                    repeat(columns - rowItems.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        recentlyAdded.take(5).forEach { book ->
+                            UnifiedListItem(
+                                item = book.toUnifiedMediaItem(),
                                 onClick = { onOpenBook(book) }
                             )
                         }
                     }
                 }
             }
-        } else {
-            items(recentlyAdded.take(20), key = { "ra_${it.id}" }) { book ->
-                LocalBookListItem(
-                    book = book,
+        }
+    }
+}
+
+@Composable
+internal fun OfflineHistoryPane(
+    books: List<LocalBook>,
+    sort: LocalBookSort = LocalBookSort.Recent,
+    isGridView: Boolean = true,
+    onOpenBook: (LocalBook) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val historyBooks = remember(books, sort) {
+        val inProgress = books.filter { it.lastReadPage > 0 && !it.isCompleted }
+        val targetList = if (inProgress.isNotEmpty()) inProgress else books.filter { it.lastReadPage > 0 }
+        when (sort) {
+            LocalBookSort.Title -> targetList.sortedBy { it.title.lowercase() }
+            LocalBookSort.Recent -> targetList.sortedByDescending { it.lastReadPage }
+            LocalBookSort.Modified -> targetList.sortedByDescending { it.lastModified }
+            LocalBookSort.Size -> targetList.sortedByDescending { it.sizeBytes }
+        }
+    }
+
+    if (historyBooks.isEmpty()) {
+        Box(modifier = modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "No Reading History",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Books you start reading will appear here with your progress.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    } else {
+        if (isGridView) {
+            PosterGrid(
+                items = historyBooks,
+                key = { it.id },
+                modifier = modifier.fillMaxSize()
+            ) { book ->
+                UnifiedPosterCard(
+                    item = book.toUnifiedMediaItem(),
                     onClick = { onOpenBook(book) }
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(historyBooks, key = { it.id }) { book ->
+                    UnifiedListItem(
+                        item = book.toUnifiedMediaItem(),
+                        onClick = { onOpenBook(book) }
+                    )
+                }
             }
         }
     }
@@ -238,19 +400,20 @@ internal fun OfflineBrowsePane(
                 items = sortedBooks,
                 key = { it.id }
             ) { book ->
-                LocalBookPosterCard(
-                    book = book,
+                UnifiedPosterCard(
+                    item = book.toUnifiedMediaItem(),
                     onClick = { onOpenBook(book) }
                 )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 16.dp)
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(sortedBooks, key = { it.id }) { book ->
-                    LocalBookListItem(
-                        book = book,
+                    UnifiedListItem(
+                        item = book.toUnifiedMediaItem(),
                         onClick = { onOpenBook(book) }
                     )
                 }
@@ -331,15 +494,22 @@ internal fun OfflineSearchPane(
                     items = searchResults,
                     key = { it.id }
                 ) { book ->
-                    LocalBookPosterCard(book = book, onClick = { onOpenBook(book) })
+                    UnifiedPosterCard(
+                        item = book.toUnifiedMediaItem(),
+                        onClick = { onOpenBook(book) }
+                    )
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp)
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(searchResults, key = { it.id }) { book ->
-                        LocalBookListItem(book = book, onClick = { onOpenBook(book) })
+                        UnifiedListItem(
+                            item = book.toUnifiedMediaItem(),
+                            onClick = { onOpenBook(book) }
+                        )
                     }
                 }
             }
@@ -350,10 +520,12 @@ internal fun OfflineSearchPane(
 @Composable
 internal fun OfflineLibrariesPane(
     folderName: String?,
+    folders: List<LocalFolder> = emptyList(),
     books: List<LocalBook>,
     isScanning: Boolean,
     isGridView: Boolean = true,
     onChangeFolder: () -> Unit,
+    onAddFolder: () -> Unit = onChangeFolder,
     onRescan: () -> Unit,
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
@@ -363,176 +535,437 @@ internal fun OfflineLibrariesPane(
     val pdfBooks = remember(books) { books.filter { it.format.isPdf } }
 
     var selectedFormatFilter by remember { mutableStateOf<LocalBookFormat?>(null) }
-    val displayedBooks = remember(books, selectedFormatFilter) {
-        if (selectedFormatFilter == null) emptyList()
-        else books.filter { it.format == selectedFormatFilter }
+    var selectedFolderFilter by remember { mutableStateOf<LocalFolder?>(null) }
+
+    val displayedBooks = remember(books, selectedFormatFilter, selectedFolderFilter) {
+        when {
+            selectedFormatFilter != null -> books.filter { it.format == selectedFormatFilter }
+            selectedFolderFilter != null -> books.filter {
+                it.folderUriString == selectedFolderFilter?.uriString || (folders.size <= 1 && it.folderUriString.isBlank())
+            }
+            else -> emptyList()
+        }
     }
 
-    if (selectedFormatFilter != null) {
-        Column(modifier = modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isTablet = maxWidth >= 720.dp
+
+        if (isTablet) {
+            // Tablet Dual Pane: Library categories on Left, Books on Right
+            val activeFilterTitle = selectedFormatFilter?.displayName
+                ?: selectedFolderFilter?.name
+                ?: "All Books"
+            val tabletBooks = if (selectedFormatFilter == null && selectedFolderFilter == null) books else displayedBooks
+
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Text(
-                    text = "← Back to Folders",
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.clickable { selectedFormatFilter = null }
-                )
-                Text(
-                    text = "• ${selectedFormatFilter?.displayName} (${displayedBooks.size})",
-                    color = MaterialTheme.colorScheme.onBackground,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            if (isGridView) {
-                PosterGrid(
-                    items = displayedBooks,
-                    key = { it.id }
-                ) { book ->
-                    LocalBookPosterCard(book = book, onClick = { onOpenBook(book) })
-                }
-            } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp)
+                    modifier = Modifier
+                        .width(320.dp)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(displayedBooks, key = { it.id }) { book ->
-                        LocalBookListItem(
-                            book = book,
-                            onClick = { onOpenBook(book) }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.size(44.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Folder,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (folders.size > 1) "${folders.size} Folders" else folderName ?: "Default Storage",
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "${books.size} books",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Button(
+                                        onClick = onAddFolder,
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    ) {
+                                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Folder")
+                                    }
+                                    Button(
+                                        onClick = onRescan,
+                                        enabled = !isScanning,
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    ) {
+                                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(if (isScanning) "Scanning..." else "Rescan")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        FormatLibraryCard(
+                            title = "All Offline Items",
+                            subtitle = "Complete offline library",
+                            count = books.size,
+                            icon = Icons.Filled.Folder,
+                            onClick = {
+                                selectedFormatFilter = null
+                                selectedFolderFilter = null
+                            }
+                        )
+                    }
+
+                    if (folders.size > 1) {
+                        item {
+                            Text(
+                                text = "Folders",
+                                color = MaterialTheme.colorScheme.onBackground,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        items(folders, key = { it.uriString }) { folder ->
+                            val count = books.count { it.folderUriString == folder.uriString }
+                            FormatLibraryCard(
+                                title = folder.name,
+                                subtitle = "Folder source",
+                                count = count,
+                                icon = Icons.Filled.FolderOpen,
+                                onClick = {
+                                    selectedFormatFilter = null
+                                    selectedFolderFilter = folder
+                                }
+                            )
+                        }
+                    }
+
+                    item {
+                        Text(
+                            text = "Formats",
+                            color = MaterialTheme.colorScheme.onBackground,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+
+                    item {
+                        FormatLibraryCard(
+                            title = "eBooks",
+                            subtitle = "EPUB publications",
+                            count = epubBooks.size,
+                            icon = Icons.Filled.AutoStories,
+                            onClick = {
+                                selectedFolderFilter = null
+                                selectedFormatFilter = LocalBookFormat.EPUB
+                            }
+                        )
+                    }
+                    item {
+                        FormatLibraryCard(
+                            title = "Comics & Manga",
+                            subtitle = "CBZ archives",
+                            count = comicBooks.size,
+                            icon = Icons.Filled.Folder,
+                            onClick = {
+                                selectedFolderFilter = null
+                                selectedFormatFilter = LocalBookFormat.CBZ
+                            }
+                        )
+                    }
+                    item {
+                        FormatLibraryCard(
+                            title = "PDF Documents",
+                            subtitle = "Portable documents",
+                            count = pdfBooks.size,
+                            icon = Icons.Filled.PictureAsPdf,
+                            onClick = {
+                                selectedFolderFilter = null
+                                selectedFormatFilter = LocalBookFormat.PDF
+                            }
                         )
                     }
                 }
-            }
-        }
-        return
-    }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(48.dp)
+                // Right Pane: Books Grid
+                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    Text(
+                        text = "$activeFilterTitle (${tabletBooks.size})",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    if (isGridView) {
+                        PosterGrid(
+                            items = tabletBooks,
+                            key = { it.id }
+                        ) { book ->
+                            UnifiedPosterCard(
+                                item = book.toUnifiedMediaItem(),
+                                onClick = { onOpenBook(book) }
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Filled.Folder,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            items(tabletBooks, key = { it.id }) { book ->
+                                UnifiedListItem(
+                                    item = book.toUnifiedMediaItem(),
+                                    onClick = { onOpenBook(book) }
                                 )
                             }
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = folderName ?: "Default Storage",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "${books.size} total books found",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Button(
-                            onClick = onChangeFolder,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        ) {
-                            Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Change Folder")
-                        }
-                        Button(
-                            onClick = onRescan,
-                            enabled = !isScanning,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            )
-                        ) {
-                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (isScanning) "Scanning..." else "Rescan")
                         }
                     }
                 }
             }
+            return@BoxWithConstraints
         }
 
-        item {
-            Text(
-                text = "Format Libraries",
-                color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+        // Phone layout
+        if (selectedFormatFilter != null || selectedFolderFilter != null) {
+            val filterTitle = selectedFormatFilter?.displayName ?: selectedFolderFilter?.name.orEmpty()
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "← Back to Libraries",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.clickable {
+                            selectedFormatFilter = null
+                            selectedFolderFilter = null
+                        }
+                    )
+                    Text(
+                        text = "• $filterTitle (${displayedBooks.size})",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (isGridView) {
+                    PosterGrid(
+                        items = displayedBooks,
+                        key = { it.id }
+                    ) { book ->
+                        UnifiedPosterCard(
+                            item = book.toUnifiedMediaItem(),
+                            onClick = { onOpenBook(book) }
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(displayedBooks, key = { it.id }) { book ->
+                            UnifiedListItem(
+                                item = book.toUnifiedMediaItem(),
+                                onClick = { onOpenBook(book) }
+                            )
+                        }
+                    }
+                }
+            }
+            return@BoxWithConstraints
         }
 
-        item {
-            FormatLibraryCard(
-                title = "eBooks",
-                subtitle = "EPUB publications",
-                count = epubBooks.size,
-                icon = Icons.Filled.AutoStories,
-                onClick = { selectedFormatFilter = LocalBookFormat.EPUB }
-            )
-        }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Folder,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = if (folders.size > 1) "${folders.size} Library Folders" else folderName ?: "Default Storage",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${books.size} total books indexed",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
 
-        item {
-            FormatLibraryCard(
-                title = "Comics & Manga",
-                subtitle = "CBZ and ZIP archives",
-                count = comicBooks.size,
-                icon = Icons.Filled.Folder,
-                onClick = { selectedFormatFilter = LocalBookFormat.CBZ }
-            )
-        }
+                        Spacer(Modifier.height(16.dp))
 
-        item {
-            FormatLibraryCard(
-                title = "PDF Documents",
-                subtitle = "Portable Document Format",
-                count = pdfBooks.size,
-                icon = Icons.Filled.PictureAsPdf,
-                onClick = { selectedFormatFilter = LocalBookFormat.PDF }
-            )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Button(
+                                onClick = onAddFolder,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurface
+                                )
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add Folder")
+                            }
+                            Button(
+                                onClick = onRescan,
+                                enabled = !isScanning,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (isScanning) "Scanning..." else "Rescan All")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (folders.size > 1) {
+                item {
+                    Text(
+                        text = "Library Folders",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
+                items(folders, key = { it.uriString }) { folder ->
+                    val count = books.count { it.folderUriString == folder.uriString }
+                    FormatLibraryCard(
+                        title = folder.name,
+                        subtitle = "Folder source",
+                        count = count,
+                        icon = Icons.Filled.FolderOpen,
+                        onClick = { selectedFolderFilter = folder }
+                    )
+                }
+            }
+
+            item {
+                Text(
+                    text = "Format Libraries",
+                    color = MaterialTheme.colorScheme.onBackground,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+
+            item {
+                FormatLibraryCard(
+                    title = "eBooks",
+                    subtitle = "EPUB publications",
+                    count = epubBooks.size,
+                    icon = Icons.Filled.AutoStories,
+                    onClick = { selectedFormatFilter = LocalBookFormat.EPUB }
+                )
+            }
+
+            item {
+                FormatLibraryCard(
+                    title = "Comics & Manga",
+                    subtitle = "CBZ and ZIP archives",
+                    count = comicBooks.size,
+                    icon = Icons.Filled.Folder,
+                    onClick = { selectedFormatFilter = LocalBookFormat.CBZ }
+                )
+            }
+
+            item {
+                FormatLibraryCard(
+                    title = "PDF Documents",
+                    subtitle = "Portable Document Format",
+                    count = pdfBooks.size,
+                    icon = Icons.Filled.PictureAsPdf,
+                    onClick = { selectedFormatFilter = LocalBookFormat.PDF }
+                )
+            }
         }
     }
 }
@@ -560,19 +993,20 @@ internal fun OfflineWantToReadPane(
                 items = unreadBooks,
                 key = { it.id }
             ) { book ->
-                LocalBookPosterCard(
-                    book = book,
+                UnifiedPosterCard(
+                    item = book.toUnifiedMediaItem(),
                     onClick = { onOpenBook(book) }
                 )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 16.dp)
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(unreadBooks, key = { it.id }) { book ->
-                    LocalBookListItem(
-                        book = book,
+                    UnifiedListItem(
+                        item = book.toUnifiedMediaItem(),
                         onClick = { onOpenBook(book) }
                     )
                 }

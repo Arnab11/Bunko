@@ -3,6 +3,7 @@ package com.bunko.reader.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,17 +27,25 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bunko.reader.ui.theme.AppTheme
 import com.bunko.reader.ui.theme.resolveBunkoColorScheme
 
@@ -297,6 +306,7 @@ fun RadioSettingRow(
     modifier: Modifier = Modifier,
     subtitle: String = "",
     enabled: Boolean = true,
+    trailingTitleContent: @Composable (() -> Unit)? = null,
 ) {
     val alpha = if (enabled) 1f else 0.38f
     Row(
@@ -312,12 +322,18 @@ fun RadioSettingRow(
     ) {
         RadioButton(selected = selected, onClick = null, enabled = enabled)
         Column(modifier = Modifier.padding(start = 12.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                )
+                trailingTitleContent?.invoke()
+            }
             if (subtitle.isNotBlank()) {
                 Text(
                     text = subtitle,
@@ -327,6 +343,29 @@ fun RadioSettingRow(
                 )
             }
         }
+    }
+}
+
+/** Rounded exclamation badge indicating experimental features. */
+@Composable
+fun ExperimentalBadge(
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.primary,
+    containerColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+) {
+    Box(
+        modifier = modifier
+            .size(15.dp)
+            .background(color = containerColor, shape = CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "!",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = tint,
+            lineHeight = 10.sp
+        )
     }
 }
 
@@ -341,7 +380,7 @@ fun ThemeSwatchItem(
     isSelected: Boolean,
     isDark: Boolean,
     isAmoled: Boolean,
-    onClick: () -> Unit,
+    onClick: (Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -352,12 +391,16 @@ fun ThemeSwatchItem(
     val secondaryColor = colorScheme.secondary
     val tertiaryColor = colorScheme.tertiary
     val bgColor = colorScheme.background
+    var itemBounds by remember { mutableStateOf(Rect.Zero) }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .width(76.dp)
-            .clickable(onClick = onClick)
+            .onGloballyPositioned { coordinates ->
+                itemBounds = coordinates.boundsInRoot()
+            }
+            .clickable { onClick(itemBounds.center) }
             .padding(4.dp),
     ) {
         Box(

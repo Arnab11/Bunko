@@ -21,16 +21,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.bunko.reader.ui.theme.LocalThemeTransitionState
-import kotlinx.coroutines.delay
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
@@ -58,8 +61,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
 import com.bunko.reader.offline.LocalBook
+import com.bunko.reader.offline.LocalFolder
 import com.bunko.reader.series.SeriesLibrarySort
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -94,8 +100,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import com.bunko.reader.CollectionDto
 import com.bunko.reader.KavitaApi
 import com.bunko.reader.KavitaSession
+import com.bunko.reader.KavitaSessionStore
 import com.bunko.reader.LibraryDto
 import com.bunko.reader.SearchHistoryStore
 import com.bunko.reader.SeriesDto
@@ -110,6 +118,7 @@ internal enum class HomeDestination(
     val expandedLabel: String = label
 ) {
     Home("Home", Icons.Filled.Home),
+    History("History", Icons.Filled.History),
     Libraries("Libraries", Icons.Filled.CollectionsBookmark),
     WantToRead("Want", Icons.Filled.BookmarkBorder, "Want to Read"),
     Browse("Browse", Icons.Filled.Explore),
@@ -129,6 +138,7 @@ internal fun HomeShell(
     onRefresh: () -> Unit,
     error: String?,
     session: KavitaSession,
+    sessionStore: KavitaSessionStore,
     onDeck: List<SeriesDto>,
     recentlyUpdated: List<SeriesDto>,
     newlyAdded: List<SeriesDto>,
@@ -146,6 +156,9 @@ internal fun HomeShell(
     onOpenBookmarks: () -> Unit,
     onOpenCollections: () -> Unit,
     onOpenDownloaded: () -> Unit,
+    onOpenBookmark: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, page: Int) -> Unit = { _, _, _, _, _ -> },
+    onOpenCollection: (CollectionDto) -> Unit = {},
+    onPickIssue: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, incognito: Boolean) -> Unit = { _, _, _, _, _ -> },
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onSelectLibrary: (LibraryDto) -> Unit,
     onScanLibrary: (LibraryDto) -> Unit,
@@ -156,10 +169,12 @@ internal fun HomeShell(
     onSwitchToOffline: (() -> Unit)? = null,
     isOffline: Boolean = false,
     offlineBooks: List<LocalBook> = emptyList(),
+    offlineFolders: List<LocalFolder> = emptyList(),
     offlineFolderName: String? = null,
     isOfflineScanning: Boolean = false,
     onOpenOfflineBook: (LocalBook) -> Unit = {},
     onChangeOfflineFolder: () -> Unit = {},
+    onAddOfflineFolder: () -> Unit = onChangeOfflineFolder,
     onRescanOffline: () -> Unit = {},
     onToggleLibraryMode: () -> Unit = {},
     onToggleTheme: (() -> Unit)? = null
@@ -181,38 +196,41 @@ internal fun HomeShell(
     var kavitaSort by rememberSaveable { mutableStateOf(SeriesLibrarySort.Title) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
+    var browseDrilldown by rememberSaveable { mutableStateOf<BrowseDrilldown?>(null) }
+    var selectedLibrary by remember { mutableStateOf<LibraryDto?>(null) }
+    var selectedShelf by remember { mutableStateOf<HomeShelfKind?>(null) }
+
     fun selectDestination(next: HomeDestination) {
         if (next == destination) {
             reselectionCount++
+            // Reset drilldowns on re-clicking the same tab
+            browseDrilldown = null
+            selectedLibrary = null
+            selectedShelf = null
         } else {
             destination = next
+            browseDrilldown = null
+            selectedShelf = null
+            if (next != HomeDestination.Libraries) {
+                selectedLibrary = null
+            }
         }
     }
 
-    // The tabs are internal state on a single nav destination, so on a non-Home tab the
-    // system back would pop past Home and exit. Send it to Home instead; Home lets back
-    // through (exit).
-    BackHandler(enabled = destination != HomeDestination.Home) {
+    BackHandler(enabled = browseDrilldown != null) {
+        browseDrilldown = null
+    }
+    BackHandler(enabled = browseDrilldown == null && selectedLibrary != null) {
+        selectedLibrary = null
+    }
+    BackHandler(enabled = browseDrilldown == null && selectedLibrary == null && selectedShelf != null) {
+        selectedShelf = null
+    }
+    BackHandler(enabled = browseDrilldown == null && selectedLibrary == null && selectedShelf == null && destination != HomeDestination.Home) {
         selectDestination(HomeDestination.Home)
     }
 
-    val topBarSubtitle = if (isOffline) {
-        val folderLabel = offlineFolderName ?: "No folder selected"
-        val countLabel = if (offlineBooks.size == 1) "1 item" else "${offlineBooks.size} items"
-        "$folderLabel • $countLabel"
-    } else {
-        serverName
-    }
-
     val topBarActions: @Composable RowScope.() -> Unit = {
-        IconButton(onClick = { selectDestination(HomeDestination.Search) }) {
-            Icon(
-                imageVector = Icons.Filled.Search,
-                contentDescription = "Search",
-                tint = if (destination == HomeDestination.Search) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-            )
-        }
-
         if (isOffline) {
             Box {
                 IconButton(onClick = { sortMenuExpanded = true }) {
@@ -260,12 +278,12 @@ internal fun HomeShell(
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
-        } else {
+        } else if (destination == HomeDestination.Home || destination == HomeDestination.History || destination == HomeDestination.Libraries || destination == HomeDestination.WantToRead) {
             Box {
                 IconButton(onClick = { sortMenuExpanded = true }) {
                     Icon(
                         imageVector = Icons.Filled.Sort,
-                        contentDescription = "Sort and filter options",
+                        contentDescription = "Sort options",
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -313,15 +331,53 @@ internal fun HomeShell(
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(BunkoBackground)
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        val wide = maxWidth >= 720.dp
-        if (wide) {
+        val isWide = maxWidth >= 720.dp
+
+        val topBarBackAction: (() -> Unit)? = when {
+            destination == HomeDestination.Browse && browseDrilldown != null -> {
+                { browseDrilldown = null }
+            }
+            destination == HomeDestination.Libraries && selectedLibrary != null && !isWide -> {
+                { selectedLibrary = null }
+            }
+            destination == HomeDestination.Home && selectedShelf != null -> {
+                { selectedShelf = null }
+            }
+            else -> null
+        }
+
+        val topBarTitle = when {
+            destination == HomeDestination.Browse && browseDrilldown != null -> when (browseDrilldown) {
+                BrowseDrilldown.Bookmarks -> "Bookmarks"
+                BrowseDrilldown.Collections -> "Collections"
+                BrowseDrilldown.ReadingLists -> "Reading Lists"
+                BrowseDrilldown.Downloaded -> "Downloaded"
+                null -> "Browse"
+            }
+            destination == HomeDestination.Libraries && selectedLibrary != null && !isWide -> selectedLibrary?.name.orEmpty()
+            destination == HomeDestination.Home && selectedShelf != null -> selectedShelf?.title.orEmpty()
+            else -> when (destination) {
+                HomeDestination.Home -> "Bunko"
+                HomeDestination.History -> "History"
+                HomeDestination.Libraries -> "Libraries"
+                HomeDestination.WantToRead -> "Want to Read"
+                HomeDestination.Browse -> "Browse"
+                HomeDestination.Search -> "Search"
+            }
+        }
+
+        if (isWide) {
             Column(Modifier.fillMaxSize()) {
                 HomeTopBar(
-                    subtitle = topBarSubtitle,
+                    title = topBarTitle,
+                    onBack = topBarBackAction,
+                    showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
                     isOffline = isOffline,
                     onOpenSettings = onOpenSettings,
+                    onSearch = { selectDestination(HomeDestination.Search) },
+                    isSearchActive = destination == HomeDestination.Search,
                     onSwitchMode = onToggleLibraryMode,
                     onToggleTheme = onToggleTheme,
                     actions = topBarActions
@@ -347,6 +403,7 @@ internal fun HomeShell(
                         onRefresh = onRefresh,
                         error = error,
                         session = session,
+                        sessionStore = sessionStore,
                         onDeck = onDeck,
                         recentlyUpdated = recentlyUpdated,
                         newlyAdded = newlyAdded,
@@ -359,23 +416,53 @@ internal fun HomeShell(
                         api = api,
                         searchHistoryStore = searchHistoryStore,
                         initialSearchQuery = initialSearchQuery,
-                        onSelectLibrary = onSelectLibrary,
+                        selectedLibrary = selectedLibrary,
+                        onSelectLibraryChange = { selectedLibrary = it },
+                        selectedShelf = selectedShelf,
+                        onSelectShelfChange = { selectedShelf = it },
+                        browseDrilldown = browseDrilldown,
+                        onBrowseDrilldownChange = { browseDrilldown = it },
+                        onSelectLibrary = { lib ->
+                            selectedLibrary = lib
+                            destination = HomeDestination.Libraries
+                        },
                         onScanLibrary = onScanLibrary,
                         onSelectSeries = onSelectSeries,
-                        onOpenShelf = onOpenShelf,
+                        onOpenShelf = { shelfKind ->
+                            if (shelfKind == HomeShelfKind.OnDeck) {
+                                selectDestination(HomeDestination.History)
+                            } else {
+                                selectedShelf = shelfKind
+                                destination = HomeDestination.Home
+                            }
+                        },
                         onRemoveWantToRead = onRemoveWantToRead,
                         onLoadMoreWantToRead = onLoadMoreWantToRead,
                         onLoadAllWantToRead = onLoadAllWantToRead,
-                        onOpenBookmarks = onOpenBookmarks,
-                        onOpenCollections = onOpenCollections,
-                        onOpenDownloaded = onOpenDownloaded,
+                        onOpenBookmarks = {
+                            selectDestination(HomeDestination.Browse)
+                            browseDrilldown = BrowseDrilldown.Bookmarks
+                        },
+                        onOpenCollections = {
+                            selectDestination(HomeDestination.Browse)
+                            browseDrilldown = BrowseDrilldown.Collections
+                        },
+                        onOpenDownloaded = {
+                            selectDestination(HomeDestination.Browse)
+                            browseDrilldown = BrowseDrilldown.Downloaded
+                        },
+                        onOpenBookmark = onOpenBookmark,
+                        onOpenCollection = onOpenCollection,
+                        onPickIssue = onPickIssue,
                         onOpenFilteredSeries = onOpenFilteredSeries,
                         isOffline = isOffline,
                         offlineBooks = offlineBooks,
+                        offlineFolders = offlineFolders,
                         offlineFolderName = offlineFolderName,
                         isOfflineScanning = isOfflineScanning,
                         onOpenOfflineBook = onOpenOfflineBook,
                         onChangeOfflineFolder = onChangeOfflineFolder,
+                        onAddOfflineFolder = onAddOfflineFolder,
                         onRescanOffline = onRescanOffline,
                         selectedSort = selectedSort,
                         kavitaSort = kavitaSort,
@@ -394,9 +481,13 @@ internal fun HomeShell(
         } else {
             Column(Modifier.fillMaxSize()) {
                 HomeTopBar(
-                    subtitle = topBarSubtitle,
+                    title = topBarTitle,
+                    onBack = topBarBackAction,
+                    showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
                     isOffline = isOffline,
                     onOpenSettings = onOpenSettings,
+                    onSearch = { selectDestination(HomeDestination.Search) },
+                    isSearchActive = destination == HomeDestination.Search,
                     onSwitchMode = onToggleLibraryMode,
                     onToggleTheme = onToggleTheme,
                     actions = topBarActions
@@ -413,6 +504,7 @@ internal fun HomeShell(
                     onRefresh = onRefresh,
                     error = error,
                     session = session,
+                    sessionStore = sessionStore,
                     onDeck = onDeck,
                     recentlyUpdated = recentlyUpdated,
                     newlyAdded = newlyAdded,
@@ -425,23 +517,53 @@ internal fun HomeShell(
                     api = api,
                     searchHistoryStore = searchHistoryStore,
                     initialSearchQuery = initialSearchQuery,
-                    onSelectLibrary = onSelectLibrary,
+                    selectedLibrary = selectedLibrary,
+                    onSelectLibraryChange = { selectedLibrary = it },
+                    selectedShelf = selectedShelf,
+                    onSelectShelfChange = { selectedShelf = it },
+                    browseDrilldown = browseDrilldown,
+                    onBrowseDrilldownChange = { browseDrilldown = it },
+                    onSelectLibrary = { lib ->
+                        selectedLibrary = lib
+                        destination = HomeDestination.Libraries
+                    },
                     onScanLibrary = onScanLibrary,
                     onSelectSeries = onSelectSeries,
-                    onOpenShelf = onOpenShelf,
+                    onOpenShelf = { shelfKind ->
+                        if (shelfKind == HomeShelfKind.OnDeck) {
+                            selectDestination(HomeDestination.History)
+                        } else {
+                            selectedShelf = shelfKind
+                            destination = HomeDestination.Home
+                        }
+                    },
                     onRemoveWantToRead = onRemoveWantToRead,
-                    onLoadMoreWantToRead = onLoadMoreWantToRead,
+                    onLoadMoreWantToRead = { onLoadMoreWantToRead() },
                     onLoadAllWantToRead = onLoadAllWantToRead,
-                    onOpenBookmarks = onOpenBookmarks,
-                    onOpenCollections = onOpenCollections,
-                    onOpenDownloaded = onOpenDownloaded,
+                    onOpenBookmarks = {
+                        selectDestination(HomeDestination.Browse)
+                        browseDrilldown = BrowseDrilldown.Bookmarks
+                    },
+                    onOpenCollections = {
+                        selectDestination(HomeDestination.Browse)
+                        browseDrilldown = BrowseDrilldown.Collections
+                    },
+                    onOpenDownloaded = {
+                        selectDestination(HomeDestination.Browse)
+                        browseDrilldown = BrowseDrilldown.Downloaded
+                    },
+                    onOpenBookmark = onOpenBookmark,
+                    onOpenCollection = onOpenCollection,
+                    onPickIssue = onPickIssue,
                     onOpenFilteredSeries = onOpenFilteredSeries,
                     isOffline = isOffline,
                     offlineBooks = offlineBooks,
+                    offlineFolders = offlineFolders,
                     offlineFolderName = offlineFolderName,
                     isOfflineScanning = isOfflineScanning,
                     onOpenOfflineBook = onOpenOfflineBook,
                     onChangeOfflineFolder = onChangeOfflineFolder,
+                    onAddOfflineFolder = onAddOfflineFolder,
                     onRescanOffline = onRescanOffline,
                     selectedSort = selectedSort,
                     kavitaSort = kavitaSort,
@@ -461,19 +583,20 @@ internal fun HomeShell(
 /** Internal to library, not for external use. */
 @Composable
 internal fun HomeTopBar(
-    subtitle: String,
+    title: String = "Bunko",
+    onBack: (() -> Unit)? = null,
+    showModeSwitch: Boolean = onBack == null,
     isOffline: Boolean = false,
     onOpenSettings: () -> Unit,
+    onSearch: (() -> Unit)? = null,
+    isSearchActive: Boolean = false,
     onSwitchMode: (() -> Unit)? = null,
     onToggleTheme: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     var modeMenuExpanded by remember { mutableStateOf(false) }
-    val titleBounds = remember { mutableStateOf(Rect.Zero) }
+    var titleBounds by remember { mutableStateOf(Rect.Zero) }
     val themeTransition = LocalThemeTransitionState.current
-    val coroutineScope = rememberCoroutineScope()
-    val currentOnToggleTheme by rememberUpdatedState(onToggleTheme)
-    val currentThemeTransition by rememberUpdatedState(themeTransition)
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -483,139 +606,155 @@ internal fun HomeTopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(start = if (onBack != null) 4.dp else 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-        Column(Modifier.weight(1f)) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
             Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = if (onBack != null) 4.dp else 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Bunko",
+                    text = title,
                     color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .onGloballyPositioned { coordinates ->
-                            titleBounds.value = coordinates.boundsInWindow()
-                        }
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { localOffset ->
-                                    val transition = currentThemeTransition
-                                    if (transition?.isAnimating == true) return@detectTapGestures
-                                    val windowOffset = Offset(
-                                        titleBounds.value.left + localOffset.x,
-                                        titleBounds.value.top + localOffset.y
-                                    )
-                                    transition?.startTransition(windowOffset)
-                                    coroutineScope.launch {
-                                        delay(50)
-                                        currentOnToggleTheme?.invoke()
-                                    }
+                    style = if (onBack == null) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = if (onBack == null && onToggleTheme != null) {
+                        Modifier
+                            .onGloballyPositioned { coordinates ->
+                                titleBounds = coordinates.boundsInRoot()
+                            }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                val transition = themeTransition
+                                if (transition?.isAnimating != true) {
+                                    val clickPos = if (titleBounds != Rect.Zero) titleBounds.center else Offset.Zero
+                                    transition?.startTransition(clickPos)
+                                    onToggleTheme()
                                 }
-                            )
-                        }
+                            }
+                    } else Modifier
                 )
 
-                Box {
-                    Surface(
-                        onClick = { modeMenuExpanded = true },
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                if (showModeSwitch) {
+                    Box {
+                        Surface(
+                            onClick = { modeMenuExpanded = true },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ) {
-                            Text(
-                                text = if (isOffline) "Offline" else "Kavita",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Medium
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = if (isOffline) "Offline" else "Kavita",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Icon(
+                                    imageVector = Icons.Filled.ArrowDropDown,
+                                    contentDescription = "Switch library mode",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = modeMenuExpanded,
+                            onDismissRequest = { modeMenuExpanded = false },
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Kavita Server", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.CloudSync,
+                                        contentDescription = null,
+                                        tint = if (!isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (!isOffline) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    modeMenuExpanded = false
+                                    if (isOffline) onSwitchMode?.invoke()
+                                }
                             )
-                            Icon(
-                                imageVector = Icons.Filled.ArrowDropDown,
-                                contentDescription = "Switch library mode",
-                                modifier = Modifier.size(16.dp)
+                            DropdownMenuItem(
+                                text = { Text("Offline Library", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Folder,
+                                        contentDescription = null,
+                                        tint = if (isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (isOffline) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    modeMenuExpanded = false
+                                    if (!isOffline) onSwitchMode?.invoke()
+                                }
                             )
                         }
-                    }
-
-                    DropdownMenu(
-                        expanded = modeMenuExpanded,
-                        onDismissRequest = { modeMenuExpanded = false },
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Kavita Server", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.CloudSync,
-                                    contentDescription = null,
-                                    tint = if (!isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            trailingIcon = {
-                                if (!isOffline) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            },
-                            onClick = {
-                                modeMenuExpanded = false
-                                if (isOffline) onSwitchMode?.invoke()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Offline Library", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.Folder,
-                                    contentDescription = null,
-                                    tint = if (isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            trailingIcon = {
-                                if (isOffline) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            },
-                            onClick = {
-                                modeMenuExpanded = false
-                                if (!isOffline) onSwitchMode?.invoke()
-                            }
-                        )
                     }
                 }
             }
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        actions()
-        IconButton(onClick = onOpenSettings) {
-            Icon(
-                imageVector = Icons.Filled.Settings,
-                contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.onSurface
-            )
+
+            if (onSearch != null) {
+                IconButton(onClick = onSearch) {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = "Search",
+                        tint = if (isSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            actions()
+
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    imageVector = Icons.Filled.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
-}
 }
 
 /** Backward-compatible overload for existing Kavita Home calls. */
@@ -625,7 +764,7 @@ internal fun HomeTopBar(
     onOpenSettings: () -> Unit,
     onSwitchToOffline: (() -> Unit)? = null
 ) = HomeTopBar(
-    subtitle = serverName,
+    title = "Bunko",
     isOffline = false,
     onOpenSettings = onOpenSettings,
     onSwitchMode = onSwitchToOffline
@@ -633,6 +772,7 @@ internal fun HomeTopBar(
 
 private val MainNavDestinations = listOf(
     HomeDestination.Home,
+    HomeDestination.History,
     HomeDestination.Libraries,
     HomeDestination.WantToRead,
     HomeDestination.Browse

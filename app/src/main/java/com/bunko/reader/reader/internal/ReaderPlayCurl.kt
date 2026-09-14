@@ -37,6 +37,18 @@ import com.bunko.reader.InvertMode
 import com.bunko.reader.ReaderImageScaleType
 import com.bunko.reader.download.OfflinePage
 import com.bunko.reader.download.decodeOfflinePage
+import android.graphics.Typeface
+import android.os.Build
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.bunko.reader.EpubTextAlign
 import karacken.curl.DeckRejectionReason
 import karacken.curl.DeckReleaseReason
 import karacken.curl.LandscapePageDeck
@@ -224,7 +236,13 @@ internal fun PlayCurlPage(
     nightLightIntensity: Float,
     host: PlayCurlHostState,
     onPageTurned: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    epubFontSizeSp: Float = 18f,
+    epubFontFamily: String = "Serif",
+    epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
+    epubContentPadding: PaddingValues? = null,
+    density: Density? = null,
+    isEpub: Boolean = false
 ) {
     val scope = rememberCoroutineScope()
     val appContext = LocalContext.current.applicationContext
@@ -315,7 +333,8 @@ internal fun PlayCurlPage(
         viewportWidthPx, viewportHeightPx, paperArgb,
         invertMode, whiteThreshold, ePaperMode, imageScaleType, cropBorders,
         nightModeEnabled, nightLightIntensity, pageDimensions,
-        capabilitiesAvailable
+        epubFontSizeSp, epubFontFamily, epubTextAlign, epubContentPadding,
+        capabilitiesAvailable, isEpub
     ) {
         val surface = host.view ?: return@LaunchedEffect
         if (pageCount <= 0) return@LaunchedEffect
@@ -350,7 +369,13 @@ internal fun PlayCurlPage(
                     imageScaleType = imageScaleType,
                     cropBorders = cropBorders,
                     nightModeEnabled = nightModeEnabled,
-                    nightLightIntensity = nightLightIntensity
+                    nightLightIntensity = nightLightIntensity,
+                    epubFontSizeSp = epubFontSizeSp,
+                    epubFontFamily = epubFontFamily,
+                    epubTextAlign = epubTextAlign,
+                    epubContentPadding = epubContentPadding,
+                    density = density,
+                    isEpub = isEpub
                 )
             } catch (e: Exception) {
                 Log.w(PlayCurlLogTag, "deck build failed: ${e.message}")
@@ -380,7 +405,13 @@ private data class PlayCurlStyle(
     val imageScaleType: ReaderImageScaleType,
     val cropBorders: Boolean,
     val nightModeEnabled: Boolean,
-    val nightLightIntensity: Float
+    val nightLightIntensity: Float,
+    val epubFontSizeSp: Float = 18f,
+    val epubFontFamily: String = "Serif",
+    val epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
+    val epubContentPadding: PaddingValues? = null,
+    val density: Density? = null,
+    val isEpub: Boolean = false
 )
 
 private suspend fun buildPlayCurlDeck(
@@ -403,7 +434,13 @@ private suspend fun buildPlayCurlDeck(
     imageScaleType: ReaderImageScaleType,
     cropBorders: Boolean,
     nightModeEnabled: Boolean,
-    nightLightIntensity: Float
+    nightLightIntensity: Float,
+    epubFontSizeSp: Float = 18f,
+    epubFontFamily: String = "Serif",
+    epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
+    epubContentPadding: PaddingValues? = null,
+    density: Density? = null,
+    isEpub: Boolean = false
 ): PageDeck<Bitmap> {
     val style = PlayCurlStyle(
         paperArgb = paperArgb,
@@ -413,7 +450,13 @@ private suspend fun buildPlayCurlDeck(
         imageScaleType = imageScaleType,
         cropBorders = cropBorders,
         nightModeEnabled = nightModeEnabled,
-        nightLightIntensity = nightLightIntensity
+        nightLightIntensity = nightLightIntensity,
+        epubFontSizeSp = epubFontSizeSp,
+        epubFontFamily = epubFontFamily,
+        epubTextAlign = epubTextAlign,
+        epubContentPadding = epubContentPadding,
+        density = density,
+        isEpub = isEpub
     )
     // Warm the shared Smart-invert cache for every page the deck needs, exactly
     // like the Slide path's prefetch does, so invert decisions match.
@@ -450,7 +493,7 @@ private suspend fun buildPlayCurlDeck(
     }
     val leftW = (viewW / 2).coerceAtLeast(1)
     val rightW = (viewW - leftW).coerceAtLeast(1)
-    val curLayout = readerPageLayout(anchor, pageCount, portrait = false, pageDimensions = pageDimensions)
+    val curLayout = readerPageLayout(anchor, pageCount, portrait = false, pageDimensions = pageDimensions, isEpub = isEpub)
     val prevAnchor = (anchor - curLayout.previousStep).coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     val nextAnchor = (anchor + curLayout.nextStep).coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     // Render the three neighboring spreads full-width, then split each into
@@ -548,7 +591,8 @@ private suspend fun playCurlSpread(
         page = boundedAnchor,
         pageCount = pageCount,
         portrait = false,
-        pageDimensions = pageDimensions
+        pageDimensions = pageDimensions,
+        isEpub = style.isEpub
     )
     val (leftIndex, rightIndex) = if (layout.singlePage) {
         boundedAnchor to boundedAnchor
@@ -661,6 +705,22 @@ private suspend fun drawPlayCurlPage(
     } catch (_: Exception) {
         null
     } ?: return
+
+    if (model is EpubSubpage) {
+        val src = renderEpubSubpageToBitmap(context, model, box.width(), box.height(), style, imageLoader, glue)
+            ?: return
+        try {
+            if (src.width <= 0 || src.height <= 0 || src.isRecycled) return
+            canvas.save()
+            canvas.clipRect(box)
+            canvas.drawBitmap(src, null, box, null)
+            canvas.restore()
+        } finally {
+            recycleQuietly(src)
+        }
+        return
+    }
+
     var src = loadPlayCurlSource(context, model, imageLoader, box.width(), box.height(), style.cropBorders)
         ?: return
     try {
@@ -681,6 +741,184 @@ private suspend fun drawPlayCurlPage(
         canvas.restore()
     } finally {
         recycleQuietly(src)
+    }
+}
+
+private suspend fun renderEpubSubpageToBitmap(
+    context: Context,
+    subpage: EpubSubpage,
+    width: Int,
+    height: Int,
+    style: PlayCurlStyle,
+    imageLoader: ImageLoader,
+    glue: PlayCurlHalf? = null
+): Bitmap? {
+    return try {
+        val bitmap = Bitmap.createBitmap(width.coerceAtLeast(1), height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(style.paperArgb)
+
+        val r = (style.paperArgb shr 16) and 0xFF
+        val g = (style.paperArgb shr 8) and 0xFF
+        val b = style.paperArgb and 0xFF
+        val isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 128
+        val textColor = if (isDark) 0xFFEDEDED.toInt() else 0xFF141414.toInt()
+        val dividerColor = if (isDark) 0xFF333333.toInt() else 0xFFDCD7CC.toInt()
+        val quoteBarColor = if (isDark) 0xFF666666.toInt() else 0xFF9E988D.toInt()
+
+        val activeTypeface = when (style.epubFontFamily.lowercase()) {
+            "sans", "sansserif", "sans-serif" -> Typeface.SANS_SERIF
+            "mono", "monospace" -> Typeface.MONOSPACE
+            "cursive" -> Typeface.create("cursive", Typeface.NORMAL)
+            else -> Typeface.SERIF
+        }
+
+        val density = style.density ?: Density(context)
+        val fontSizePx = with(density) { style.epubFontSizeSp.sp.toPx() }
+
+        val basePaint = TextPaint().apply {
+            isAntiAlias = true
+            textSize = fontSizePx
+            color = textColor
+            typeface = activeTypeface
+        }
+        val quotePaint = TextPaint(basePaint).apply {
+            typeface = Typeface.create(activeTypeface, Typeface.ITALIC)
+        }
+        val headingPaints = (1..6).associateWith { level ->
+            val mult = when (level) {
+                1 -> 1.45f
+                2 -> 1.3f
+                3 -> 1.2f
+                else -> 1.1f
+            }
+            TextPaint(basePaint).apply {
+                textSize = fontSizePx * mult
+                typeface = Typeface.create(activeTypeface, Typeface.BOLD)
+            }
+        }
+
+        val slAlign = when (style.epubTextAlign) {
+            EpubTextAlign.Left -> Layout.Alignment.ALIGN_NORMAL
+            EpubTextAlign.Center -> Layout.Alignment.ALIGN_CENTER
+            EpubTextAlign.Right -> Layout.Alignment.ALIGN_OPPOSITE
+            EpubTextAlign.Justify -> Layout.Alignment.ALIGN_NORMAL
+        }
+
+        val defaultPad = style.epubContentPadding ?: PaddingValues(20.dp, 28.dp, 20.dp, 48.dp)
+        val outerMargin = with(density) {
+            maxOf(
+                defaultPad.calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                defaultPad.calculateEndPadding(androidx.compose.ui.unit.LayoutDirection.Ltr)
+            ).coerceIn(20.dp, 32.dp).roundToPx()
+        }
+        val innerMargin = with(density) { 16.dp.roundToPx() }
+        val (startPadPx, endPadPx) = when (glue) {
+            PlayCurlHalf.Left -> outerMargin to innerMargin
+            PlayCurlHalf.Right -> innerMargin to outerMargin
+            null -> with(density) {
+                defaultPad.calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr).roundToPx() to
+                    defaultPad.calculateEndPadding(androidx.compose.ui.unit.LayoutDirection.Ltr).roundToPx()
+            }
+        }
+        val topPadPx = with(density) { defaultPad.calculateTopPadding().roundToPx() }
+        val contentWidthPx = (width - startPadPx - endPadPx).coerceAtLeast(10)
+
+        val blockSpacingPx = with(density) { 10.dp.roundToPx() }
+        val dividerPaint = Paint().apply {
+            color = dividerColor
+            strokeWidth = with(density) { 1.dp.toPx() }
+        }
+        val quoteBarPaint = Paint().apply {
+            color = quoteBarColor
+            this.style = Paint.Style.FILL
+        }
+
+        var currentY = topPadPx.toFloat()
+
+        for (block in subpage.blocks) {
+            when (block) {
+                is EpubBlock.DividerBlock -> {
+                    val lineY = currentY + with(density) { 4.dp.toPx() }
+                    canvas.drawLine(startPadPx.toFloat(), lineY, (startPadPx + contentWidthPx).toFloat(), lineY, dividerPaint)
+                    currentY += with(density) { 9.dp.toPx() } + blockSpacingPx
+                }
+                is EpubBlock.ImageBlock -> {
+                    val req = ImageRequest.Builder(context)
+                        .data(block.url)
+                        .size(contentWidthPx, (height * 0.55f).toInt())
+                        .allowHardware(false)
+                        .build()
+                    val res = imageLoader.execute(req)
+                    if (res is SuccessResult) {
+                        val img = res.drawable.toBitmapCompat()
+                        if (img != null && !img.isRecycled) {
+                            val scale = minOf(contentWidthPx.toFloat() / img.width.toFloat(), (height * 0.55f) / img.height.toFloat(), 1f)
+                            val dstW = img.width * scale
+                            val dstH = img.height * scale
+                            val dstLeft = startPadPx + (contentWidthPx - dstW) / 2f
+                            val dstRect = RectF(dstLeft, currentY, dstLeft + dstW, currentY + dstH)
+                            canvas.drawBitmap(img, null, dstRect, null)
+                            currentY += dstH + blockSpacingPx
+                            recycleQuietly(img)
+                        }
+                    }
+                }
+                is EpubBlock.TextBlock -> {
+                    val paint = when {
+                        block.isHeading -> headingPaints[block.headingLevel] ?: basePaint
+                        block.isQuote -> quotePaint
+                        else -> basePaint
+                    }
+                    val text = block.text.text
+                    if (text.isNotEmpty()) {
+                        val sl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            StaticLayout.Builder.obtain(text, 0, text.length, paint, contentWidthPx)
+                                .setAlignment(slAlign)
+                                .setLineSpacing(0f, 1.45f)
+                                .setIncludePad(true)
+                                .build()
+                        } else {
+                            @Suppress("DEPRECATION")
+                            StaticLayout(text, paint, contentWidthPx, slAlign, 1.45f, 0f, true)
+                        }
+
+                        if (block.isHeading) {
+                            currentY += with(density) { 4.dp.toPx() }
+                        }
+
+                        if (block.isQuote) {
+                            val barWidth = with(density) { 3.dp.toPx() }
+                            val quoteBarRect = RectF(
+                                startPadPx.toFloat(),
+                                currentY,
+                                startPadPx + barWidth,
+                                currentY + sl.height.toFloat()
+                            )
+                            canvas.drawRect(quoteBarRect, quoteBarPaint)
+                            canvas.save()
+                            canvas.translate(startPadPx + barWidth + with(density) { 10.dp.toPx() }, currentY)
+                            sl.draw(canvas)
+                            canvas.restore()
+                        } else {
+                            canvas.save()
+                            canvas.translate(startPadPx.toFloat(), currentY)
+                            sl.draw(canvas)
+                            canvas.restore()
+                        }
+
+                        currentY += sl.height.toFloat()
+                        if (block.isHeading) {
+                            currentY += with(density) { 4.dp.toPx() }
+                        }
+                        currentY += blockSpacingPx
+                    }
+                }
+            }
+        }
+        bitmap
+    } catch (_: Exception) {
+        null
     }
 }
 

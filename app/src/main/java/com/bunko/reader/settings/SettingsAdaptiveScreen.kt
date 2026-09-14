@@ -123,8 +123,9 @@ fun SettingsAdaptiveScreen(
                         title = {
                             Text(
                                 text = "Settings",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         },
                         navigationIcon = {
@@ -176,8 +177,9 @@ fun SettingsAdaptiveScreen(
                         title = {
                             Text(
                                 text = selectedCategory.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -225,8 +227,9 @@ fun SettingsAdaptiveScreen(
                     title = {
                         Text(
                             text = activeCategory?.title ?: "Settings",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold
                         )
                     },
                     navigationIcon = {

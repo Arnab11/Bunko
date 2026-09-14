@@ -35,11 +35,13 @@ object LocalBookScanner {
     suspend fun scanTree(
         context: Context,
         treeUri: Uri,
+        folderName: String = "",
         maxDepth: Int = 3
     ): List<LocalBook> = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val books = mutableListOf<LocalBook>()
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
+        val folderUriStr = treeUri.toString()
 
         fun scanFolder(folderDocId: String, currentDepth: Int) {
             if (currentDepth > maxDepth) return
@@ -86,7 +88,9 @@ object LocalBookScanner {
                                         extension = ext,
                                         format = LocalBookFormat.fromExtension(ext),
                                         sizeBytes = size,
-                                        lastModified = modified
+                                        lastModified = modified,
+                                        folderUriString = folderUriStr,
+                                        folderName = folderName
                                     )
                                 )
                             }

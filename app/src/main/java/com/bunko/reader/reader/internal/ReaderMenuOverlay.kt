@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -721,18 +723,11 @@ internal fun ReaderMenuOverlay(
                                             color = unselectedText
                                         )
                                     }
-                                    ToggleButton(
+                                    DialogToggleButton(
                                         checked = autoWebtoonMode,
                                         onCheckedChange = { onSetAutoWebtoonMode(it) },
-                                        modifier = Modifier
-                                            .height(28.dp)
-                                            .semantics { role = Role.Checkbox }
-                                    ) {
-                                        Text(
-                                            text = if (autoWebtoonMode) "On" else "Off",
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    }
+                                        text = if (autoWebtoonMode) "On" else "Off"
+                                    )
                                 }
 
                                 // Overview Mode (for horizontal reading)
@@ -749,18 +744,11 @@ internal fun ReaderMenuOverlay(
                                                 color = unselectedText
                                             )
                                         }
-                                        ToggleButton(
+                                        DialogToggleButton(
                                             checked = overviewMode,
                                             onCheckedChange = { onSetOverviewMode(it) },
-                                            modifier = Modifier
-                                                .height(28.dp)
-                                                .semantics { role = Role.Checkbox }
-                                        ) {
-                                            Text(
-                                                text = if (overviewMode) "On" else "Off",
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
+                                            text = if (overviewMode) "On" else "Off"
+                                        )
                                     }
                                 }
 
@@ -813,12 +801,12 @@ internal fun ReaderMenuOverlay(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
                                     ) {
-                                        val animOptions = listOf("Off", "Slide", "Play Curl")
+                                        val animOptions = listOf("Off", "Slide", "Book")
                                         animOptions.forEachIndexed { index, option ->
                                             val isSelected = when (option) {
                                                 "Off" -> !pageTransitionAnimation
                                                 "Slide" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Slide
-                                                "Play Curl" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.PlayCurl
+                                                "Book" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.PlayCurl
                                                 else -> false
                                             }
                                             ToggleButton(
@@ -830,7 +818,7 @@ internal fun ReaderMenuOverlay(
                                                             onSetPageTransitionAnimation(true)
                                                             onSetPageTurnMode(PageTurnMode.Slide)
                                                         }
-                                                        "Play Curl" -> {
+                                                        "Book" -> {
                                                             onSetPageTransitionAnimation(true)
                                                             onSetPageTurnMode(PageTurnMode.PlayCurl)
                                                         }
@@ -845,10 +833,36 @@ internal fun ReaderMenuOverlay(
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                                 }
                                             ) {
-                                                Text(
-                                                    text = option,
-                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                                                )
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = option,
+                                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                                    )
+                                                    if (option == "Book") {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(13.dp)
+                                                                .background(
+                                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                                                                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                                                    shape = CircleShape
+                                                                ),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Text(
+                                                                text = "!",
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.ExtraBold,
+                                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                                                        else MaterialTheme.colorScheme.primary,
+                                                                lineHeight = 9.sp
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -957,18 +971,11 @@ internal fun ReaderMenuOverlay(
                                             style = MaterialTheme.typography.labelMedium,
                                             color = unselectedText
                                         )
-                                        ToggleButton(
+                                        DialogToggleButton(
                                             checked = cropBorders,
                                             onCheckedChange = { onSetCropBorders(it) },
-                                            modifier = Modifier
-                                                .height(28.dp)
-                                                .semantics { role = Role.Checkbox }
-                                        ) {
-                                            Text(
-                                                text = if (cropBorders) "On" else "Off",
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
+                                            text = if (cropBorders) "On" else "Off"
+                                        )
                                     }
                                 }
 
@@ -1267,20 +1274,13 @@ internal fun ReaderMenuOverlay(
                                             style = MaterialTheme.typography.labelMedium,
                                             color = unselectedText
                                         )
-                                        ToggleButton(
+                                        DialogToggleButton(
                                             checked = isAuto,
                                             onCheckedChange = { auto ->
                                                 onSetReaderBrightness(if (auto) -1f else currentSystemBrightness)
                                             },
-                                            modifier = Modifier
-                                                .height(28.dp)
-                                                .semantics { role = Role.Checkbox }
-                                        ) {
-                                            Text(
-                                                text = if (isAuto) "Auto" else "Custom",
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
+                                            text = if (isAuto) "Auto" else "Custom"
+                                        )
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -1342,18 +1342,11 @@ internal fun ReaderMenuOverlay(
                                                 color = if (nightModeEnabled) onSurface else unselectedText
                                             )
                                         }
-                                        ToggleButton(
+                                        DialogToggleButton(
                                             checked = nightModeEnabled,
                                             onCheckedChange = onSetNightModeEnabled,
-                                            modifier = Modifier
-                                                .height(28.dp)
-                                                .semantics { role = Role.Checkbox }
-                                        ) {
-                                            Text(
-                                                text = if (nightModeEnabled) "On" else "Off",
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
+                                            text = if (nightModeEnabled) "On" else "Off"
+                                        )
                                     }
                                     AnimatedVisibility(visible = nightModeEnabled) {
                                         Column(
@@ -1674,3 +1667,38 @@ private fun Modifier.dialogVerticalScrollbar(
         cornerRadius = CornerRadius(radiusPx, radiusPx)
     )
 }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun DialogToggleButton(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    val fixedShape = RoundedCornerShape(8.dp)
+    ToggleButton(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        shapes = ToggleButtonDefaults.shapes(
+            shape = fixedShape,
+            checkedShape = fixedShape
+        ),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        modifier = modifier
+            .height(28.dp)
+            .semantics { role = Role.Checkbox }
+    ) {
+        Box(
+            modifier = Modifier.fillMaxHeight(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+

@@ -13,13 +13,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.RemoveDone
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -77,8 +83,12 @@ private fun DownloadedGrid(
     records: List<OfflineIssueRecord>,
     session: KavitaSession,
     onSelect: (OfflineIssueRecord) -> Unit,
+    onReadIncognito: (OfflineIssueRecord) -> Unit,
+    onMarkRead: (OfflineIssueRecord) -> Unit,
+    onMarkUnread: (OfflineIssueRecord) -> Unit,
     onDelete: (List<OfflineIssueRecord>) -> Unit,
     onBack: () -> Unit,
+    statusBarPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var selectionMode by rememberSaveable { mutableStateOf(false) }
@@ -109,6 +119,7 @@ private fun DownloadedGrid(
     BrowsePageScaffold(
         title = if (selectionMode) "${selectedIds.size} selected" else "Downloaded",
         modifier = modifier,
+        statusBarPadding = statusBarPadding,
         onBack = if (selectionMode) ::exitSelectionMode else onBack,
         navigationIcon = if (selectionMode) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack,
         navigationContentDescription = if (selectionMode) "Cancel selection" else "Back",
@@ -174,6 +185,10 @@ private fun DownloadedGrid(
                         if (!selectionMode) selectionMode = true
                         toggleSelection(record.chapterId)
                     },
+                    onReadIncognito = { onReadIncognito(record) },
+                    onMarkRead = { onMarkRead(record) },
+                    onMarkUnread = { onMarkUnread(record) },
+                    onDelete = { onDelete(listOf(record)) },
                     onSelectionChange = { toggleSelection(record.chapterId) }
                 )
             }
@@ -188,10 +203,16 @@ private fun DownloadedIssueCard(
     session: KavitaSession,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onReadIncognito: () -> Unit,
+    onMarkRead: () -> Unit,
+    onMarkUnread: () -> Unit,
+    onDelete: () -> Unit,
     selectionMode: Boolean,
     selected: Boolean,
     onSelectionChange: () -> Unit
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Box {
         Card(
             modifier = Modifier
@@ -203,15 +224,82 @@ private fun DownloadedIssueCard(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
         ) {
             Column {
-                AsyncImage(
-                    model = record.localCoverFile() ?: chapterCoverUrl(session, record.chapterId),
-                    contentDescription = record.issueName,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(KavitaCoverAspectRatio)
-                        .background(MaterialTheme.colorScheme.surfaceContainerLowest),
-                    contentScale = ContentScale.Crop
-                )
+                Box {
+                    AsyncImage(
+                        model = record.localCoverFile() ?: chapterCoverUrl(session, record.chapterId),
+                        contentDescription = record.issueName,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(KavitaCoverAspectRatio)
+                            .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                        contentScale = ContentScale.Crop
+                    )
+                    if (!selectionMode) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(2.dp)
+                        ) {
+                            IconButton(
+                                onClick = { menuExpanded = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.MoreVert,
+                                    contentDescription = "Options",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                            ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Read") },
+                                    leadingIcon = { Icon(Icons.Filled.AutoStories, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onClick()
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Read Incognito") },
+                                    leadingIcon = { Icon(Icons.Filled.VisibilityOff, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onReadIncognito()
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Mark as Read") },
+                                    leadingIcon = { Icon(Icons.Filled.DoneAll, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onMarkRead()
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Mark as Unread") },
+                                    leadingIcon = { Icon(Icons.Filled.RemoveDone, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onMarkUnread()
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Delete download", color = MaterialTheme.colorScheme.error) },
+                                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onDelete()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
                     Text(
                         text = record.issueName,
@@ -259,6 +347,8 @@ private fun DownloadedIssueCard(
 internal fun DownloadedScreen(
     sessionStore: KavitaSessionStore,
     onBack: () -> Unit,
+    statusBarPadding: Boolean = true,
+    navigationBarPadding: Boolean = true,
     onPickIssue: (
         libraryId: Int,
         seriesId: Int,
@@ -273,11 +363,6 @@ internal fun DownloadedScreen(
 
     var session by remember { mutableStateOf(KavitaSession()) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
-    var selectedDownload by remember { mutableStateOf<OfflineIssueRecord?>(null) }
-    var selectedChapter by remember { mutableStateOf<ChapterDto?>(null) }
-    var selectedVolume by remember { mutableStateOf<VolumeDto?>(null) }
-    var issueLoading by remember { mutableStateOf(false) }
-    var issueActionBusy by remember { mutableStateOf(false) }
     var pendingDeleteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -303,56 +388,58 @@ internal fun DownloadedScreen(
         }.getOrNull()
     }
 
-    fun openDownloaded(record: OfflineIssueRecord) {
-        selectedDownload = record
-        val fallbackChapter = ChapterDto(
-            id = record.chapterId,
-            title = record.issueName,
-            pages = record.pageCount.takeIf { it > 0 },
-            pagesRead = record.localPage,
-            volumeId = record.volumeId
-        )
-        selectedChapter = fallbackChapter
-        selectedVolume = VolumeDto(
-            id = record.volumeId,
-            name = record.issueName,
-            chapters = listOf(fallbackChapter)
-        )
-        val currentApi = api
-        issueLoading = currentApi != null
-        if (currentApi == null) return
+    fun handleMarkRead(record: OfflineIssueRecord) {
         scope.launch {
-            val detail = runCatching { currentApi.seriesChapter(record.chapterId) }
-                .onFailure { BunkoLog.w("Could not load downloaded issue detail for chapter ${record.chapterId}.", it) }
-                .getOrNull()
-            val volume = runCatching { currentApi.volumes(record.seriesId) }
-                .onFailure { BunkoLog.w("Could not load downloaded issue volume for series ${record.seriesId}.", it) }
-                .getOrNull()
-                ?.firstOrNull { candidate ->
-                    candidate.id == record.volumeId || candidate.chapters.any { it.id == record.chapterId }
+            try {
+                val currentApi = api
+                if (currentApi != null) {
+                    currentApi.markChapterRead(MarkChapterReadDto(record.seriesId, record.chapterId, false))
+                } else {
+                    offlineRepository.saveLocalProgress(
+                        session = session,
+                        chapterId = record.chapterId,
+                        page = record.pageCount,
+                        markRead = true
+                    )
                 }
-            if (selectedDownload?.chapterId == record.chapterId) {
-                selectedChapter = detail ?: fallbackChapter
-                selectedVolume = volume ?: detail?.let {
-                    VolumeDto(id = record.volumeId, name = record.issueName, chapters = listOf(it))
-                } ?: selectedVolume
-                issueLoading = false
+                showMessage("Marked as read")
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                BunkoLog.w("Could not mark downloaded chapter ${record.chapterId} as read.", t)
+                showMessage("Could not mark issue as read")
             }
         }
     }
 
-    fun deleteDownloaded(records: List<OfflineIssueRecord>, closeSheet: Boolean = false) {
+    fun handleMarkUnread(record: OfflineIssueRecord) {
+        scope.launch {
+            try {
+                val currentApi = api
+                if (currentApi != null) {
+                    currentApi.markChaptersUnread(
+                        MarkVolumesReadDto(record.seriesId, chapterIds = listOf(record.chapterId))
+                    )
+                } else {
+                    offlineRepository.markLocalUnread(session, record.chapterId)
+                }
+                showMessage("Marked as unread")
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                BunkoLog.w("Could not mark downloaded chapter ${record.chapterId} as unread.", t)
+                showMessage("Could not mark issue as unread")
+            }
+        }
+    }
+
+    fun deleteDownloaded(records: List<OfflineIssueRecord>) {
         val deletingRecords = records.distinctBy { it.chapterId }
             .filterNot { it.chapterId in pendingDeleteIds }
         if (deletingRecords.isEmpty()) return
         val deletingIds = deletingRecords.mapTo(mutableSetOf()) { it.chapterId }
         pendingDeleteIds = pendingDeleteIds + deletingIds
         scope.launch {
-            if (closeSheet && selectedDownload?.chapterId in deletingIds) {
-                selectedDownload = null
-                selectedChapter = null
-                selectedVolume = null
-            }
             try {
                 val result = snackbarHostState.showSnackbar(
                     message = if (deletingRecords.size == 1) {
@@ -400,14 +487,22 @@ internal fun DownloadedScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
+            .then(if (statusBarPadding) Modifier.statusBarsPadding() else Modifier)
+            .then(if (navigationBarPadding) Modifier.navigationBarsPadding() else Modifier)
             .background(BunkoBackground)
     ) {
         DownloadedGrid(
             records = visibleDownloads,
             session = session,
-            onSelect = ::openDownloaded,
+            statusBarPadding = statusBarPadding,
+            onSelect = { record ->
+                onPickIssue(record.libraryId, record.seriesId, record.volumeId, record.chapterId, false)
+            },
+            onReadIncognito = { record ->
+                onPickIssue(record.libraryId, record.seriesId, record.volumeId, record.chapterId, true)
+            },
+            onMarkRead = ::handleMarkRead,
+            onMarkUnread = ::handleMarkUnread,
             onDelete = ::deleteDownloaded,
             onBack = onBack,
             modifier = Modifier.fillMaxSize()
@@ -419,114 +514,6 @@ internal fun DownloadedScreen(
                 .padding(16.dp)
         )
     }
-
-    val selectedRecord = selectedDownload
-    val detail = selectedChapter
-    val actionColor = detail?.coverActionColor(Color(0xFF6A5BB7)) ?: Color(0xFF6A5BB7)
-    IssueDetailSideSheet(
-        visible = selectedRecord != null,
-        seriesName = selectedRecord?.seriesName.orEmpty(),
-        volume = selectedVolume,
-        chapter = detail,
-        fileSizeBytes = selectedRecord?.totalBytes,
-        downloadRecord = selectedRecord,
-        loading = issueLoading,
-        actionBusy = issueActionBusy,
-        session = session,
-        actionColor = actionColor,
-        onDismissRequest = {
-            selectedDownload = null
-            selectedChapter = null
-            selectedVolume = null
-        },
-        onRead = {
-            selectedRecord?.let {
-                onPickIssue(it.libraryId, it.seriesId, it.volumeId, it.chapterId, false)
-            }
-        },
-        onReadIncognito = {
-            selectedRecord?.let {
-                onPickIssue(it.libraryId, it.seriesId, it.volumeId, it.chapterId, true)
-            }
-        },
-        onMarkRead = {
-            val record = selectedRecord ?: return@IssueDetailSideSheet
-            val currentApi = api
-            if (issueActionBusy) return@IssueDetailSideSheet
-            issueActionBusy = true
-            scope.launch {
-                try {
-                    if (currentApi != null) {
-                        currentApi.markChapterRead(MarkChapterReadDto(record.seriesId, record.chapterId, false))
-                    } else {
-                        offlineRepository.saveLocalProgress(
-                            session = session,
-                            chapterId = record.chapterId,
-                            page = record.pageCount,
-                            markRead = true
-                        )
-                    }
-                    selectedChapter = currentApi?.let {
-                        try {
-                            it.seriesChapter(record.chapterId)
-                        } catch (c: CancellationException) {
-                            throw c
-                        } catch (t: Throwable) {
-                            BunkoLog.w("Could not refresh downloaded issue after marking read.", t)
-                            null
-                        }
-                    } ?: detail?.copy(pagesRead = detail.pages)
-                    showMessage("Marked as read")
-                } catch (c: CancellationException) {
-                    throw c
-                } catch (t: Throwable) {
-                    BunkoLog.w("Could not mark downloaded chapter ${record.chapterId} as read.", t)
-                    showMessage("Could not mark issue as read")
-                } finally {
-                    issueActionBusy = false
-                }
-            }
-        },
-        onMarkUnread = {
-            val record = selectedRecord ?: return@IssueDetailSideSheet
-            val currentApi = api
-            if (issueActionBusy) return@IssueDetailSideSheet
-            issueActionBusy = true
-            scope.launch {
-                try {
-                    if (currentApi != null) {
-                        currentApi.markChaptersUnread(
-                            MarkVolumesReadDto(record.seriesId, chapterIds = listOf(record.chapterId))
-                        )
-                    } else {
-                        offlineRepository.markLocalUnread(session, record.chapterId)
-                    }
-                    selectedChapter = currentApi?.let {
-                        try {
-                            it.seriesChapter(record.chapterId)
-                        } catch (c: CancellationException) {
-                            throw c
-                        } catch (t: Throwable) {
-                            BunkoLog.w("Could not refresh downloaded issue after marking unread.", t)
-                            null
-                        }
-                    } ?: detail?.copy(pagesRead = 0)
-                    showMessage("Marked as unread")
-                } catch (c: CancellationException) {
-                    throw c
-                } catch (t: Throwable) {
-                    BunkoLog.w("Could not mark downloaded chapter ${record.chapterId} as unread.", t)
-                    showMessage("Could not mark issue as unread")
-                } finally {
-                    issueActionBusy = false
-                }
-            }
-        },
-        onDownload = {},
-        onRemoveDownload = {
-            selectedRecord?.let { deleteDownloaded(listOf(it), closeSheet = true) }
-        }
-    )
 }
 
 

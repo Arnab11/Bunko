@@ -32,9 +32,12 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -84,7 +87,15 @@ internal fun ReaderEpubPageView(
         start = insets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp),
         top = (insets.calculateTopPadding() + 16.dp).coerceAtLeast(28.dp),
         end = insets.calculateEndPadding(layoutDirection).coerceAtLeast(20.dp),
-        bottom = (insets.calculateBottomPadding() + 24.dp).coerceAtLeast(36.dp)
+        bottom = (insets.calculateBottomPadding() + 36.dp).coerceAtLeast(48.dp)
+    )
+
+    val baseTextStyle = TextStyle(
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.None
+        )
     )
 
     Box(
@@ -144,6 +155,7 @@ internal fun ReaderEpubPageView(
                                 color = textColor,
                                 textAlign = activeTextAlign,
                                 lineHeight = (fontSizeSp * headingScale * 1.35f).sp,
+                                style = baseTextStyle,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp)
@@ -169,6 +181,7 @@ internal fun ReaderEpubPageView(
                                     color = textColor,
                                     textAlign = activeTextAlign,
                                     lineHeight = (fontSizeSp * 1.45f).sp,
+                                    style = baseTextStyle,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -180,6 +193,7 @@ internal fun ReaderEpubPageView(
                                 color = textColor,
                                 textAlign = activeTextAlign,
                                 lineHeight = (fontSizeSp * 1.45f).sp,
+                                style = baseTextStyle,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }

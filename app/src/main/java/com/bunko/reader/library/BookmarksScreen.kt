@@ -54,6 +54,7 @@ import com.bunko.reader.ui.browse.PosterGrid
 internal fun BookmarksScreen(
     sessionStore: KavitaSessionStore,
     onBack: () -> Unit,
+    statusBarPadding: Boolean = true,
     onOpenBookmark: (
         libraryId: Int,
         seriesId: Int,
@@ -102,7 +103,7 @@ internal fun BookmarksScreen(
         loadBookmarks(initialLoad = true)
     }
 
-    BrowsePageScaffold(title = "Bookmarks", onBack = onBack) {
+    BrowsePageScaffold(title = "Bookmarks", onBack = onBack, statusBarPadding = statusBarPadding) {
         when {
             loading -> DarkLoadingState()
             error != null -> DarkMessageState(

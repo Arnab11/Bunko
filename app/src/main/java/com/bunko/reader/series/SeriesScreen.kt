@@ -15,12 +15,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -62,7 +66,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +81,7 @@ import com.bunko.reader.SeriesDto
 import com.bunko.reader.ui.DarkLoadingState
 import com.bunko.reader.ui.DarkMessageState
 import com.bunko.reader.ui.BunkoPullToRefreshIndicator
+import com.bunko.reader.ui.browse.SeriesListItem
 import com.bunko.reader.ui.browse.SeriesPosterCard
 import com.bunko.reader.ui.theme.BunkoBackground
 import com.bunko.reader.ui.theme.BunkoChrome
@@ -93,12 +97,17 @@ internal fun chapterCoverUrl(session: KavitaSession, chapterId: Int): String {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun SeriesScreen(
+internal fun SeriesScreen(
     sessionStore: KavitaSessionStore,
     libraryId: Int,
     libraryName: String,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     onSearchHome: (String) -> Unit = {},
+    statusBarPadding: Boolean = true,
+    navigationBarPadding: Boolean = true,
+    showTopBar: Boolean = statusBarPadding,
+    externalSort: SeriesLibrarySort? = null,
+    isGridView: Boolean = true,
     onSelect: (SeriesDto) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -121,6 +130,7 @@ fun SeriesScreen(
     var sort by rememberSaveable(libraryId) { mutableStateOf(SeriesLibrarySort.Title) }
     val pullRefreshState = rememberPullToRefreshState()
     val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     fun showMessage(message: String) {
@@ -175,16 +185,16 @@ fun SeriesScreen(
         loadLibrarySeries(initialLoad = true)
     }
 
+    val activeSort = externalSort ?: sort
     val normalizedQuery = remember(query) { normalizeSeriesSearchQuery(query) }
-    val visibleSeries = remember(series, normalizedQuery, sort) {
+    val visibleSeries = remember(series, normalizedQuery, activeSort) {
         val filtered = if (normalizedQuery.isBlank()) {
             series
         } else {
             series.filter { it.matchesSeriesTitle(normalizedQuery) }
         }
-        filtered.sortedForLibrary(sort)
+        filtered.sortedForLibrary(activeSort)
     }
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     LaunchedEffect(searchActive) {
         if (searchActive) {
@@ -193,29 +203,27 @@ fun SeriesScreen(
         }
     }
 
-    LaunchedEffect(sort, normalizedQuery) {
-        gridState.scrollToItem(0)
-    }
-
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+            .then(if (statusBarPadding) Modifier.statusBarsPadding() else Modifier)
+            .then(if (navigationBarPadding) Modifier.navigationBarsPadding() else Modifier),
         containerColor = BunkoBackground,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                },
+            if (showTopBar) {
+                TopAppBar(
+                    navigationIcon = {
+                        if (onBack != null) {
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    },
                 title = {
                     if (searchActive) {
                         LibrarySearchField(
@@ -233,22 +241,14 @@ fun SeriesScreen(
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
-                        Column(verticalArrangement = Arrangement.Center) {
-                            Text(
-                                text = libraryName,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (!loading && error == null) {
-                                Text(
-                                    text = series.size.seriesCountLabel(),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        Text(
+                            text = libraryName,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 },
                 actions = {
@@ -369,22 +369,15 @@ fun SeriesScreen(
                             }
                         }
                     }
-                },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = BunkoBackground,
-                    scrolledContainerColor = BunkoChrome,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
-                )
+                }
             )
         }
+    }
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(if (showTopBar) innerPadding else PaddingValues(0.dp))
                 .background(BunkoBackground)
         ) {
             when {
@@ -411,11 +404,19 @@ fun SeriesScreen(
                             "No series",
                             "This library did not return any visible series."
                         )
-                        else -> SeriesLibraryGrid(
+                        isGridView -> SeriesLibraryGrid(
                             series = visibleSeries,
                             session = session,
                             query = normalizedQuery,
                             gridState = gridState,
+                            onSelect = onSelect,
+                            onSearchHome = onSearchHome
+                        )
+                        else -> SeriesLibraryList(
+                            series = visibleSeries,
+                            session = session,
+                            query = normalizedQuery,
+                            listState = listState,
                             onSelect = onSelect,
                             onSearchHome = onSearchHome
                         )
@@ -488,12 +489,12 @@ private fun SeriesLibraryGrid(
     onSearchHome: (String) -> Unit
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 150.dp),
+        columns = GridCells.Adaptive(minSize = 130.dp),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         if (series.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -548,6 +549,44 @@ private fun HomeSearchLink(query: String, onSearchHome: (String) -> Unit) {
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null
             )
+        }
+    }
+}
+
+@Composable
+private fun SeriesLibraryList(
+    series: List<SeriesDto>,
+    session: KavitaSession,
+    query: String,
+    listState: LazyListState,
+    onSelect: (SeriesDto) -> Unit,
+    onSearchHome: (String) -> Unit
+) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (series.isEmpty()) {
+            item {
+                DarkMessageState(
+                    title = "No local matches",
+                    body = "This library does not contain a title matching \"$query\"."
+                )
+            }
+        }
+        items(items = series, key = { it.id }) { item ->
+            SeriesListItem(
+                series = item,
+                session = session,
+                onClick = { onSelect(item) }
+            )
+        }
+        if (query.isNotBlank()) {
+            item {
+                HomeSearchLink(query = query, onSearchHome = onSearchHome)
+            }
         }
     }
 }

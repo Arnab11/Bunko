@@ -54,7 +54,9 @@ data class LocalBook(
     val isCompleted: Boolean = false,
     val coverPath: String = "",
     val seriesName: String = "",
-    val volumeOrIssue: String = ""
+    val volumeOrIssue: String = "",
+    val folderUriString: String = "",
+    val folderName: String = ""
 ) {
     val formattedSize: String
         get() {

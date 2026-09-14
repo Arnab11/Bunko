@@ -135,6 +135,8 @@ internal fun SeriesShelfScreen(
     sessionStore: KavitaSessionStore,
     shelfKind: HomeShelfKind,
     onBack: () -> Unit,
+    statusBarPadding: Boolean = true,
+    navigationBarPadding: Boolean = true,
     onSelectSeries: (SeriesDto) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -214,11 +216,11 @@ internal fun SeriesShelfScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
+            .then(if (statusBarPadding) Modifier.statusBarsPadding() else Modifier)
+            .then(if (navigationBarPadding) Modifier.navigationBarsPadding() else Modifier)
             .background(BunkoBackground)
     ) {
-        BrowsePageScaffold(title = shelfKind.title, onBack = onBack) {
+        BrowsePageScaffold(title = shelfKind.title, onBack = onBack, statusBarPadding = statusBarPadding) {
             when {
                 loading -> DarkLoadingState()
                 error != null -> DarkMessageState(

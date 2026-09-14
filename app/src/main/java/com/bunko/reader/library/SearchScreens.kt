@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,8 +19,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import com.bunko.reader.ui.browse.UnifiedPosterCard
+import com.bunko.reader.ui.browse.toUnifiedMediaItem
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -341,30 +343,41 @@ private fun SearchSeriesSection(
     session: KavitaSession,
     onSelectSeries: (SeriesDto) -> Unit
 ) {
-    Column {
+    Column(modifier = Modifier.fillMaxWidth()) {
         SearchSectionHeader(title = title)
         Spacer(Modifier.height(10.dp))
-        val cardShape = MaterialTheme.shapes.small
-        // Same scheme as the Home shelf; shared dimensions live in BrowseComponents. A Carousel
-        // is avoided here because its masked cut-off edge item trembled against the overscroll
-        // spring at the right edge, and uniform cards don't need the masking.
-        val shelfHeight = seriesShelfHeight()
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(SeriesShelfItemSpacing)
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
         ) {
-            items(series, key = { it.id }) { item ->
-                SeriesPosterCard(
-                    series = item,
-                    session = session,
-                    shape = cardShape,
-                    coverFillsHeight = true,
-                    modifier = Modifier
-                        .width(SeriesShelfItemWidth)
-                        .height(shelfHeight)
-                        .clickable { onSelectSeries(item) }
-                )
+            val minCardWidth = 130.dp
+            val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
+            val maxItems = columns * 2
+            val previewItems = series.take(maxItems)
+            val chunked = previewItems.chunked(columns)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                chunked.forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        rowItems.forEach { item ->
+                            Box(modifier = Modifier.weight(1f)) {
+                                UnifiedPosterCard(
+                                    item = item.toUnifiedMediaItem(session),
+                                    onClick = { onSelectSeries(item) }
+                                )
+                            }
+                        }
+                        repeat(columns - rowItems.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
             }
         }
     }

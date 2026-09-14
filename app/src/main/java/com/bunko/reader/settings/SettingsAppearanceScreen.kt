@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,16 +15,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bunko.reader.ui.theme.AppTheme
 import com.bunko.reader.ui.theme.LocalThemeTransitionState
-
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsAppearanceScreen(
@@ -37,7 +40,6 @@ fun SettingsAppearanceScreen(
     modifier: Modifier = Modifier,
 ) {
     val themeTransition = LocalThemeTransitionState.current
-    val scope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -60,10 +62,9 @@ fun SettingsAppearanceScreen(
                 currentTheme = currentTheme,
                 isDarkMode = isDarkMode,
                 isAmoled = isAmoledMode,
-                onThemeSelected = { theme ->
-                    themeTransition?.startTransition(Offset.Zero)
-                    scope.launch {
-                        delay(50)
+                onThemeSelected = { theme, position ->
+                    if (theme != currentTheme) {
+                        themeTransition?.startTransition(position)
                         onThemeSelected(theme)
                     }
                 }
@@ -81,32 +82,30 @@ fun SettingsAppearanceScreen(
             )
 
             SettingsSectionCard {
+                var darkModeRowBounds by remember { mutableStateOf(Rect.Zero) }
                 SwitchSettingRow(
                     title = "Dark Mode",
                     subtitle = "Use dark backgrounds across all screens",
                     checked = isDarkMode,
+                    modifier = Modifier.onGloballyPositioned { darkModeRowBounds = it.boundsInRoot() },
                     onCheckedChange = { checked ->
-                        themeTransition?.startTransition(Offset.Zero)
-                        scope.launch {
-                            delay(50)
-                            onDarkModeChanged(checked)
-                        }
+                        themeTransition?.startTransition(darkModeRowBounds.center)
+                        onDarkModeChanged(checked)
                     }
                 )
 
                 SettingsDivider()
 
+                var amoledRowBounds by remember { mutableStateOf(Rect.Zero) }
                 SwitchSettingRow(
                     title = "AMOLED Mode",
                     subtitle = "Pure black (#000000) surfaces for OLED displays",
                     checked = isAmoledMode,
                     enabled = isDarkMode,
+                    modifier = Modifier.onGloballyPositioned { amoledRowBounds = it.boundsInRoot() },
                     onCheckedChange = { amoled ->
-                        themeTransition?.startTransition(Offset.Zero)
-                        scope.launch {
-                            delay(50)
-                            onAmoledModeChanged(amoled)
-                        }
+                        themeTransition?.startTransition(amoledRowBounds.center)
+                        onAmoledModeChanged(amoled)
                     }
                 )
             }
@@ -119,32 +118,33 @@ fun ThemePicker(
     currentTheme: AppTheme,
     isDarkMode: Boolean,
     isAmoled: Boolean,
-    onThemeSelected: (AppTheme) -> Unit,
+    onThemeSelected: (AppTheme, Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+    val entries = remember { AppTheme.entries }
+    val selectedIndex = remember(entries, currentTheme) {
+        entries.indexOf(currentTheme).coerceAtLeast(0)
+    }
 
-    LaunchedEffect(Unit) {
-        val index = AppTheme.entries.indexOf(currentTheme)
-        if (index >= 0) {
-            listState.animateScrollToItem(maxOf(0, index - 1))
-        }
+    LaunchedEffect(selectedIndex) {
+        listState.animateScrollToItem(selectedIndex)
     }
 
     LazyRow(
-        modifier = modifier.fillMaxWidth(),
         state = listState,
+        modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(AppTheme.entries, key = { it.name }) { theme ->
+        itemsIndexed(entries, key = { _, theme -> theme.name }) { _, theme ->
             ThemeSwatchItem(
                 theme = theme,
                 isSelected = theme == currentTheme,
                 isDark = isDarkMode,
                 isAmoled = isAmoled,
-                onClick = {
-                    onThemeSelected(theme)
+                onClick = { position ->
+                    onThemeSelected(theme, position)
                 }
             )
         }

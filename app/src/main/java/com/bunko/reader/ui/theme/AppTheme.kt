@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 
 /**
- * App themes inspired by modern Material 3 and anime reader designs.
+ * App themes inspired by mpvRx and modern Material 3 designs.
  * Each theme has light and dark color schemes with unique backgrounds,
  * plus AMOLED (pure black) mode.
  */
@@ -28,18 +28,7 @@ enum class AppTheme(
     val isDynamic: Boolean = false,
 ) {
     Default(
-        displayName = "Bunko Teal",
-        primaryLight = Color(0xFF154733),
-        primaryDark = Color(0xFF97D8BE),
-        secondaryLight = Color(0xFF1F352E),
-        secondaryDark = Color(0xFFB4CCC2),
-        tertiaryLight = Color(0xFF00353D),
-        tertiaryDark = Color(0xFFA0CDD7),
-        backgroundLight = Color(0xFFF2F5F4),
-        backgroundDark = Color(0xFF161A18),
-    ),
-    Dynamic(
-        displayName = "Material You",
+        displayName = "Default",
         primaryLight = Color(0xFF6750A4),
         primaryDark = Color(0xFFD0BCFF),
         secondaryLight = Color(0xFF625B71),
@@ -50,27 +39,27 @@ enum class AppTheme(
         backgroundDark = Color(0xFF1C1B1F),
         isDynamic = true,
     ),
-    Amethyst(
-        displayName = "Amethyst",
-        primaryLight = Color(0xFF794F81),
-        primaryDark = Color(0xFFE8B5EF),
-        secondaryLight = Color(0xFF6A596C),
-        secondaryDark = Color(0xFFD6C0D6),
-        tertiaryLight = Color(0xFF82524D),
-        tertiaryDark = Color(0xFFF5B7B0),
-        backgroundLight = Color(0xFFF7F5F8),
-        backgroundDark = Color(0xFF161217),
+    TokyoNight(
+        displayName = "Tokyo Night",
+        primaryLight = Color(0xFF3D5A80),
+        primaryDark = Color(0xFF7D9BC1),
+        secondaryLight = Color(0xFF6B5B95),
+        secondaryDark = Color(0xFFA89DC9),
+        tertiaryLight = Color(0xFF4A6B5C),
+        tertiaryDark = Color(0xFF8AB4A3),
+        backgroundLight = Color(0xFFF0F1F5),
+        backgroundDark = Color(0xFF1A1B26),
     ),
-    Aurora(
-        displayName = "Aurora",
-        primaryLight = Color(0xFF0B3FA0),
-        primaryDark = Color(0xFF5B93FF),
-        secondaryLight = Color(0xFF5C6B8C),
-        secondaryDark = Color(0xFF9FAEC9),
-        tertiaryLight = Color(0xFF3648A6),
-        tertiaryDark = Color(0xFF97A8FF),
-        backgroundLight = Color(0xFFF3F6FF),
-        backgroundDark = Color(0xFF04070F),
+    Gruvbox(
+        displayName = "Gruvbox",
+        primaryLight = Color(0xFF9D5B3F),
+        primaryDark = Color(0xFFD89B6A),
+        secondaryLight = Color(0xFF7A7556),
+        secondaryDark = Color(0xFFB0AE8A),
+        tertiaryLight = Color(0xFF4A7B7C),
+        tertiaryDark = Color(0xFF8AAFA8),
+        backgroundLight = Color(0xFFFBF1C7),
+        backgroundDark = Color(0xFF282828),
     ),
     Catppuccin(
         displayName = "Catppuccin",
@@ -83,60 +72,16 @@ enum class AppTheme(
         backgroundLight = Color(0xFFEFF1F5),
         backgroundDark = Color(0xFF1E1E2E),
     ),
-    Cloudflare(
-        displayName = "Cloudflare",
-        primaryLight = Color(0xFFF6821F),
-        primaryDark = Color(0xFFFFB77C),
-        secondaryLight = Color(0xFF6B5E4C),
-        secondaryDark = Color(0xFFD6C5AC),
-        tertiaryLight = Color(0xFF855316),
-        tertiaryDark = Color(0xFFFABD71),
-        backgroundLight = Color(0xFFFFFBF7),
-        backgroundDark = Color(0xFF1A1612),
-    ),
-    CottonCandy(
-        displayName = "Cotton Candy",
-        primaryLight = Color(0xFFE993C1),
-        primaryDark = Color(0xFFFFB1D5),
-        secondaryLight = Color(0xFF70A2C2),
-        secondaryDark = Color(0xFF9ED0EF),
-        tertiaryLight = Color(0xFF9C68AC),
-        tertiaryDark = Color(0xFFDEB0E9),
-        backgroundLight = Color(0xFFFFF8FA),
-        backgroundDark = Color(0xFF1A1418),
-    ),
-    Doom(
-        displayName = "Doom",
-        primaryLight = Color(0xFFBB2929),
-        primaryDark = Color(0xFFFF6B6B),
-        secondaryLight = Color(0xFF6B5353),
-        secondaryDark = Color(0xFFD6BABA),
-        tertiaryLight = Color(0xFF8C4A4A),
-        tertiaryDark = Color(0xFFFFB4AB),
-        backgroundLight = Color(0xFFFFF8F7),
-        backgroundDark = Color(0xFF1A1010),
-    ),
-    Lavender(
-        displayName = "Lavender",
-        primaryLight = Color(0xFF7C5AB8),
-        primaryDark = Color(0xFFCFBCFF),
-        secondaryLight = Color(0xFF635B70),
-        secondaryDark = Color(0xFFCBC3DA),
-        tertiaryLight = Color(0xFF7E525A),
-        tertiaryDark = Color(0xFFF2B8C1),
-        backgroundLight = Color(0xFFFCF8FF),
-        backgroundDark = Color(0xFF16121A),
-    ),
-    Midnight(
-        displayName = "Midnight",
-        primaryLight = Color(0xFF0D47A1),
-        primaryDark = Color(0xFF90CAF9),
-        secondaryLight = Color(0xFF455A64),
-        secondaryDark = Color(0xFFB0BEC5),
-        tertiaryLight = Color(0xFF1565C0),
-        tertiaryDark = Color(0xFF64B5F6),
-        backgroundLight = Color(0xFFF5F9FF),
-        backgroundDark = Color(0xFF0D1117),
+    EReader(
+        displayName = "E-Reader",
+        primaryLight = Color(0xFF000000),
+        primaryDark = Color(0xFFFFFFFF),
+        secondaryLight = Color(0xFF2B2B2B),
+        secondaryDark = Color(0xFFD4D4D4),
+        tertiaryLight = Color(0xFF4B4B4B),
+        tertiaryDark = Color(0xFFA8A8A8),
+        backgroundLight = Color(0xFFFFFFFF),
+        backgroundDark = Color(0xFF000000),
     ),
     Nord(
         displayName = "Nord",
@@ -153,15 +98,87 @@ enum class AppTheme(
         displayName = "Rosé Pine",
         primaryLight = Color(0xFF907AA9),
         primaryDark = Color(0xFFC4A7E7),
-        secondaryLight = Color(0xFF56949F),
-        secondaryDark = Color(0xFF9CCFD8),
-        tertiaryLight = Color(0xFFD7827E),
-        tertiaryDark = Color(0xFFEB6F92),
+        secondaryLight = Color(0xFFB4637A),
+        secondaryDark = Color(0xFFEBBCBA),
+        tertiaryLight = Color(0xFF7A9A8A),
+        tertiaryDark = Color(0xFF9CCFD8),
         backgroundLight = Color(0xFFFAF4ED),
-        backgroundDark = Color(0xFF191724),
+        backgroundDark = Color(0xFF232136),
+    ),
+    Aurora(
+        displayName = "Aurora",
+        primaryLight = Color(0xFF0B3FA0),
+        primaryDark = Color(0xFF5B93FF),
+        secondaryLight = Color(0xFF5C6B8C),
+        secondaryDark = Color(0xFF9FAEC9),
+        tertiaryLight = Color(0xFF3648A6),
+        tertiaryDark = Color(0xFF97A8FF),
+        backgroundLight = Color(0xFFF3F6FF),
+        backgroundDark = Color(0xFF04070F),
+    ),
+    Cloudflare(
+        displayName = "Cloudflare",
+        primaryLight = Color(0xFFF6821F),
+        primaryDark = Color(0xFFFFB77C),
+        secondaryLight = Color(0xFF6B5E4C),
+        secondaryDark = Color(0xFFD6C5AC),
+        tertiaryLight = Color(0xFF855316),
+        tertiaryDark = Color(0xFFFABD71),
+        backgroundLight = Color(0xFFFFFBF7),
+        backgroundDark = Color(0xFF1A1612),
+    ),
+    Doom(
+        displayName = "Doom",
+        primaryLight = Color(0xFFBB2929),
+        primaryDark = Color(0xFFFF6B6B),
+        secondaryLight = Color(0xFF6B5353),
+        secondaryDark = Color(0xFFD6BABA),
+        tertiaryLight = Color(0xFF8C4A4A),
+        tertiaryDark = Color(0xFFFFB4AB),
+        backgroundLight = Color(0xFFFFF8F7),
+        backgroundDark = Color(0xFF1A1010),
     );
 
     fun getLightColorScheme(): ColorScheme {
+        if (this == EReader) {
+            return lightColorScheme(
+                primary = Color.Black,
+                onPrimary = Color.White,
+                primaryContainer = Color(0xFFE0E0E0),
+                onPrimaryContainer = Color.Black,
+                secondary = Color(0xFF2E2E2E),
+                onSecondary = Color.White,
+                secondaryContainer = Color(0xFFEBEBEB),
+                onSecondaryContainer = Color.Black,
+                tertiary = Color(0xFF4A4A4A),
+                onTertiary = Color.White,
+                tertiaryContainer = Color(0xFFE5E5E5),
+                onTertiaryContainer = Color.Black,
+                error = Color(0xFF600000),
+                onError = Color.White,
+                errorContainer = Color(0xFFE0E0E0),
+                onErrorContainer = Color.Black,
+                background = Color.White,
+                onBackground = Color.Black,
+                surface = Color.White,
+                onSurface = Color.Black,
+                surfaceVariant = Color(0xFFEEEEEE),
+                onSurfaceVariant = Color.Black,
+                outline = Color(0xFF444444),
+                outlineVariant = Color(0xFF888888),
+                inverseSurface = Color.Black,
+                inverseOnSurface = Color.White,
+                inversePrimary = Color.White,
+                surfaceDim = Color(0xFFF0F0F0),
+                surfaceBright = Color.White,
+                surfaceContainerLowest = Color.White,
+                surfaceContainerLow = Color(0xFFF8F8F8),
+                surfaceContainer = Color(0xFFF0F0F0),
+                surfaceContainerHigh = Color(0xFFE8E8E8),
+                surfaceContainerHighest = Color(0xFFE0E0E0),
+            )
+        }
+
         val primaryContainer = primaryLight.lighten(0.35f)
         val secondaryContainer = secondaryLight.lighten(0.35f)
         val tertiaryContainer = tertiaryLight.lighten(0.35f)
@@ -201,7 +218,7 @@ enum class AppTheme(
             outlineVariant = primaryLight.copy(alpha = 0.20f).compositeOver(Color(0xFFCAC4D0)),
             inverseSurface = backgroundDark,
             inverseOnSurface = Color(0xFFF4EFF4),
-            inversePrimary = primaryDark,
+            inversePrimary = primaryDark.withMinimumContrastAgainst(backgroundDark),
             surfaceDim = surfaceDim,
             surfaceBright = surfaceBright,
             surfaceContainerLowest = surfaceContainerLowest,
@@ -213,6 +230,43 @@ enum class AppTheme(
     }
 
     fun getDarkColorScheme(): ColorScheme {
+        if (this == EReader) {
+            return darkColorScheme(
+                primary = Color.White,
+                onPrimary = Color.Black,
+                primaryContainer = Color(0xFF2E2E2E),
+                onPrimaryContainer = Color.White,
+                secondary = Color(0xFFE0E0E0),
+                onSecondary = Color.Black,
+                secondaryContainer = Color(0xFF242424),
+                onSecondaryContainer = Color.White,
+                tertiary = Color(0xFFCCCCCC),
+                onTertiary = Color.Black,
+                tertiaryContainer = Color(0xFF1E1E1E),
+                onTertiaryContainer = Color.White,
+                error = Color.White,
+                onError = Color.Black,
+                errorContainer = Color(0xFF330000),
+                onErrorContainer = Color.White,
+                background = Color.Black,
+                onBackground = Color.White,
+                surface = Color.Black,
+                onSurface = Color.White,
+                surfaceVariant = Color(0xFF1C1C1C),
+                onSurfaceVariant = Color.White,
+                outline = Color(0xFFCCCCCC),
+                outlineVariant = Color(0xFF777777),
+                inverseSurface = Color.White,
+                inverseOnSurface = Color.Black,
+                inversePrimary = Color.Black,
+                surfaceContainerLowest = Color.Black,
+                surfaceContainerLow = Color(0xFF0A0A0A),
+                surfaceContainer = Color(0xFF141414),
+                surfaceContainerHigh = Color(0xFF1E1E1E),
+                surfaceContainerHighest = Color(0xFF282828),
+            )
+        }
+
         val primaryContainer = primaryLight.darken(0.2f)
         val secondaryContainer = secondaryLight.darken(0.2f)
         val tertiaryContainer = tertiaryLight.darken(0.2f)
@@ -307,10 +361,35 @@ fun resolveBunkoColorScheme(
     }
 }
 
+private const val MinimumTextContrast = 4.5f
+
 fun Color.accessibleContentColor(): Color {
     val blackContrast = contrastRatio(Color.Black)
     val whiteContrast = contrastRatio(Color.White)
     return if (blackContrast >= whiteContrast) Color.Black else Color.White
+}
+
+fun Color.withMinimumContrastAgainst(background: Color): Color =
+    withMinimumContrastAgainst(listOf(background))
+
+fun Color.withMinimumContrastAgainst(backgrounds: List<Color>): Color {
+    if (backgrounds.minOf { background -> contrastRatio(background) } >= MinimumTextContrast) return this
+
+    val blackContrast = backgrounds.minOf { background -> Color.Black.contrastRatio(background) }
+    val whiteContrast = backgrounds.minOf { background -> Color.White.contrastRatio(background) }
+    val target = if (blackContrast >= whiteContrast) Color.Black else Color.White
+    var insufficientFraction = 0f
+    var sufficientFraction = 1f
+    repeat(12) {
+        val fraction = (insufficientFraction + sufficientFraction) / 2f
+        val candidate = blendToward(target, fraction)
+        if (backgrounds.minOf { background -> candidate.contrastRatio(background) } >= MinimumTextContrast) {
+            sufficientFraction = fraction
+        } else {
+            insufficientFraction = fraction
+        }
+    }
+    return blendToward(target, sufficientFraction)
 }
 
 fun Color.contrastRatio(other: Color): Float {
@@ -320,6 +399,14 @@ fun Color.contrastRatio(other: Color): Float {
     val darker = minOf(relativeLuminance, otherRelativeLuminance)
     return (lighter + 0.05f) / (darker + 0.05f)
 }
+
+private fun Color.blendToward(target: Color, fraction: Float): Color =
+    Color(
+        red = red + (target.red - red) * fraction,
+        green = green + (target.green - green) * fraction,
+        blue = blue + (target.blue - blue) * fraction,
+        alpha = alpha + (target.alpha - alpha) * fraction,
+    )
 
 private fun Color.darken(factor: Float): Color =
     Color(
@@ -352,3 +439,4 @@ private fun Color.compositeOver(background: Color): Color {
         )
     }
 }
+

@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.bunko.reader.CollectionDto
 import com.bunko.reader.offline.LocalBook
 import com.bunko.reader.offline.LocalBookRepository
 
@@ -173,6 +174,9 @@ fun LibraryScreen(
     onOpenBookmarks: () -> Unit,
     onOpenCollections: () -> Unit,
     onOpenDownloaded: () -> Unit,
+    onOpenBookmark: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, page: Int) -> Unit = { _, _, _, _, _ -> },
+    onOpenCollection: (CollectionDto) -> Unit = {},
+    onPickIssue: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, incognito: Boolean) -> Unit = { _, _, _, _, _ -> },
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onSelectLibrary: (LibraryDto) -> Unit,
     onSelectSeries: (SeriesDto) -> Unit,
@@ -188,6 +192,7 @@ fun LibraryScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var isOffline by rememberSaveable(initialIsOffline) { mutableStateOf(initialIsOffline) }
+    val offlineFolders by localRepository.foldersFlow.collectAsState(initial = emptyList())
     val folderInfo by localRepository.folderFlow.collectAsState(initial = Pair(null, null))
     val offlineBooks by localRepository.booksFlow.collectAsState(initial = emptyList())
     val isOfflineScanning by localRepository.isScanning.collectAsState()
@@ -204,7 +209,7 @@ fun LibraryScreen(
             val displayName = DocumentsContract.getTreeDocumentId(uri).substringAfterLast('/')
                 .ifBlank { "eBooks & Comics" }
             scope.launch {
-                localRepository.setDefaultFolder(uri, displayName)
+                localRepository.addFolder(uri, displayName)
             }
         }
     }
@@ -494,6 +499,7 @@ fun LibraryScreen(
             onRefresh = ::refreshHome,
             error = error,
             session = session,
+            sessionStore = sessionStore,
             onDeck = onDeck,
             recentlyUpdated = recentlyUpdated,
             newlyAdded = newlyAdded,
@@ -511,6 +517,9 @@ fun LibraryScreen(
             onOpenBookmarks = onOpenBookmarks,
             onOpenCollections = onOpenCollections,
             onOpenDownloaded = onOpenDownloaded,
+            onOpenBookmark = onOpenBookmark,
+            onOpenCollection = onOpenCollection,
+            onPickIssue = onPickIssue,
             onOpenFilteredSeries = onOpenFilteredSeries,
             onSelectLibrary = onSelectLibrary,
             onScanLibrary = ::scanLibrary,
@@ -521,10 +530,12 @@ fun LibraryScreen(
             onSwitchToOffline = onSwitchToOffline,
             isOffline = isOffline,
             offlineBooks = offlineBooks,
+            offlineFolders = offlineFolders,
             offlineFolderName = folderInfo.second,
             isOfflineScanning = isOfflineScanning,
             onOpenOfflineBook = onOpenOfflineBook,
             onChangeOfflineFolder = { folderLauncher.launch(null) },
+            onAddOfflineFolder = { folderLauncher.launch(null) },
             onRescanOffline = ::rescanOffline,
             onToggleLibraryMode = ::toggleLibraryMode,
             onToggleTheme = onToggleTheme

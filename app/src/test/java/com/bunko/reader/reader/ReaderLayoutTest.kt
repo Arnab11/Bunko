@@ -36,4 +36,31 @@ class ReaderLayoutTest {
 
         assertEquals(1, layout.previousStep)
     }
+
+    @Test
+    fun epubLandscapeSpreadStepsAreConsistent() {
+        // Page 0 (spread [0, 1]) -> nextStep = 2, previousStep = 1 (boundary)
+        val p0 = readerPageLayout(page = 0, pageCount = 30, portrait = false, pageDimensions = emptyMap(), isEpub = true)
+        assertEquals(2, p0.nextStep)
+        assertEquals(1, p0.previousStep)
+        assertEquals(false, p0.singlePage)
+
+        // Page 2 (spread [2, 3]) -> nextStep = 2, previousStep = 2
+        val p2 = readerPageLayout(page = 2, pageCount = 30, portrait = false, pageDimensions = emptyMap(), isEpub = true)
+        assertEquals(2, p2.nextStep)
+        assertEquals(2, p2.previousStep)
+        assertEquals(false, p2.singlePage)
+
+        // Page 11 (spread [11, 12]) -> nextStep = 2, previousStep = 2
+        val p11 = readerPageLayout(page = 11, pageCount = 30, portrait = false, pageDimensions = emptyMap(), isEpub = true)
+        assertEquals(2, p11.nextStep)
+        assertEquals(2, p11.previousStep)
+        assertEquals(false, p11.singlePage)
+
+        // Last page single spread (page 29 of 30) -> nextStep = 1, previousStep = 2
+        val p29 = readerPageLayout(page = 29, pageCount = 30, portrait = false, pageDimensions = emptyMap(), isEpub = true)
+        assertEquals(1, p29.nextStep)
+        assertEquals(2, p29.previousStep)
+        assertEquals(true, p29.singlePage)
+    }
 }

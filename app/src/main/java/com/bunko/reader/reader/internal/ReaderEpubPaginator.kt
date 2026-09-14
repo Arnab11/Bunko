@@ -179,6 +179,7 @@ object ReaderEpubPaginator {
         availableHeightPx: Int,
         fontSizePx: Float,
         lineHeightMultiplier: Float = 1.45f,
+        fontFamily: String = "Serif",
         density: Density
     ): List<EpubSubpage> {
         if (blocks.isEmpty() || availableWidthPx <= 0 || availableHeightPx <= 0) {
@@ -197,11 +198,18 @@ object ReaderEpubPaginator {
         var currentSubpageBlocks = mutableListOf<EpubBlock>()
         var remainingHeightPx = availableHeightPx
 
+        val activeTypeface = when (fontFamily.lowercase()) {
+            "sans", "sansserif", "sans-serif" -> Typeface.SANS_SERIF
+            "mono", "monospace" -> Typeface.MONOSPACE
+            "cursive" -> Typeface.create("cursive", Typeface.NORMAL)
+            else -> Typeface.SERIF
+        }
+
         val basePaint = runCatching {
             TextPaint().apply {
                 isAntiAlias = true
                 textSize = fontSizePx
-                typeface = Typeface.SERIF
+                typeface = activeTypeface
             }
         }.getOrNull()
 
@@ -209,7 +217,7 @@ object ReaderEpubPaginator {
             runCatching {
                 TextPaint(basePaint).apply {
                     textSize = fontSizePx
-                    typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+                    typeface = Typeface.create(activeTypeface, Typeface.ITALIC)
                 }
             }.getOrNull()
         } else null
@@ -225,17 +233,19 @@ object ReaderEpubPaginator {
                 runCatching {
                     TextPaint(basePaint).apply {
                         textSize = fontSizePx * headingMultiplier
-                        typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+                        typeface = Typeface.create(activeTypeface, Typeface.BOLD)
                     }
                 }.getOrNull()
             }
         } else emptyMap()
 
-        val blockSpacingPx = with(density) { 12.dp.roundToPx() }
+        val blockSpacingPx = with(density) { 10.dp.roundToPx() }
         val headingSpacingPx = with(density) { 18.dp.roundToPx() }
         val dividerHeightPx = with(density) { 24.dp.roundToPx() }
         val minImageHeightPx = with(density) { 160.dp.roundToPx() }
         val defaultImageHeightPx = (availableHeightPx * 0.55f).toInt().coerceAtLeast(minImageHeightPx)
+        // Safety buffer to prevent rounding and subpixel wrapping discrepancies from causing the last line to overflow
+        val bottomSafetyBufferPx = (fontSizePx * 0.35f).toInt().coerceAtLeast(6)
 
         fun startNewPage() {
             if (currentSubpageBlocks.isNotEmpty()) {
@@ -294,8 +304,9 @@ object ReaderEpubPaginator {
 
                         val totalHeight = layout.height
 
-                        // If the whole text block fits on the current page
-                        if (totalHeight + extraSpacing <= remainingHeightPx) {
+                        // If the whole text block fits on the current page with safety margin
+                        val effectiveRemaining = if (currentSubpageBlocks.isEmpty()) remainingHeightPx else remainingHeightPx - bottomSafetyBufferPx
+                        if (totalHeight + extraSpacing <= effectiveRemaining) {
                             currentSubpageBlocks.add(
                                 block.copy(text = remainingAnnotated)
                             )
@@ -307,7 +318,7 @@ object ReaderEpubPaginator {
                         var fittingLine = -1
                         for (line in 0 until totalLines) {
                             val lineBottom = layout.getLineBottom(line)
-                            if (lineBottom + extraSpacing <= remainingHeightPx) {
+                            if (lineBottom + extraSpacing <= (remainingHeightPx - bottomSafetyBufferPx)) {
                                 fittingLine = line
                             } else {
                                 break
@@ -321,9 +332,12 @@ object ReaderEpubPaginator {
                                 currentSubpageBlocks.add(
                                     block.copy(text = fittingChunk)
                                 )
-                                val remainingStart = splitIndex
-                                remainingAnnotated = if (remainingStart < textStr.length) {
-                                    remainingAnnotated.subSequence(remainingStart, textStr.length)
+                                var nextStart = splitIndex
+                                while (nextStart < textStr.length && textStr[nextStart].isWhitespace() && textStr[nextStart] != '\n') {
+                                    nextStart++
+                                }
+                                remainingAnnotated = if (nextStart < textStr.length) {
+                                    remainingAnnotated.subSequence(nextStart, textStr.length)
                                 } else {
                                     AnnotatedString("")
                                 }
@@ -340,8 +354,12 @@ object ReaderEpubPaginator {
                                 currentSubpageBlocks.add(
                                     block.copy(text = fittingChunk)
                                 )
-                                remainingAnnotated = if (splitIndex < textStr.length) {
-                                    remainingAnnotated.subSequence(splitIndex, textStr.length)
+                                var nextStart = splitIndex
+                                while (nextStart < textStr.length && textStr[nextStart].isWhitespace() && textStr[nextStart] != '\n') {
+                                    nextStart++
+                                }
+                                remainingAnnotated = if (nextStart < textStr.length) {
+                                    remainingAnnotated.subSequence(nextStart, textStr.length)
                                 } else {
                                     AnnotatedString("")
                                 }
@@ -426,7 +444,7 @@ object ReaderEpubPaginator {
             StaticLayout.Builder.obtain(text, 0, text.length, paint, safeWidth)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setLineSpacing(0f, lineSpacingMultiplier)
-                .setIncludePad(false)
+                .setIncludePad(true)
                 .build()
         } else {
             @Suppress("DEPRECATION")
@@ -437,7 +455,7 @@ object ReaderEpubPaginator {
                 Layout.Alignment.ALIGN_NORMAL,
                 lineSpacingMultiplier,
                 0f,
-                false
+                true
             )
         }
     }

@@ -2,6 +2,7 @@ package com.bunko.reader.library.internal
 
 import android.net.Uri
 import com.bunko.reader.offline.LocalBook
+import com.bunko.reader.offline.LocalFolder
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -9,22 +10,35 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.TextButton
+import com.bunko.reader.CollectionDto
+import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.library.BookmarksScreen
+import com.bunko.reader.library.CollectionsScreen
+import com.bunko.reader.library.DownloadedScreen
+import com.bunko.reader.library.SeriesShelfScreen
+import com.bunko.reader.series.SeriesScreen
+import com.bunko.reader.ui.browse.UnifiedPosterCard
+import com.bunko.reader.ui.browse.UnifiedListItem
+import com.bunko.reader.ui.browse.toUnifiedMediaItem
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
@@ -117,6 +131,7 @@ private val PaginationHeaderJson = Json { ignoreUnknownKeys = true }
 @Composable
 private fun LibraryHub(
     libraries: List<LibraryDto>,
+    selectedLibrary: LibraryDto? = null,
     seriesCounts: Map<Int, Int>,
     isAdmin: Boolean,
     scanningLibraryIds: Set<Int>,
@@ -126,7 +141,7 @@ private fun LibraryHub(
     listState: LazyListState,
     modifier: Modifier = Modifier
 ) {
-    BrowsePageScaffold(title = "Libraries", modifier = modifier) {
+    BrowsePageScaffold(title = "Libraries", modifier = modifier, statusBarPadding = false) {
         if (libraries.isEmpty()) {
             DarkMessageState(title = "Libraries", body = "No libraries")
         } else {
@@ -137,9 +152,10 @@ private fun LibraryHub(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(libraries, key = { it.id }) { library ->
+                    val isSelected = selectedLibrary?.id == library.id
                     Surface(
-                        color = BunkoSurface,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else BunkoSurface,
+                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                         shape = MaterialTheme.shapes.small,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -154,9 +170,9 @@ private fun LibraryHub(
                             Column(Modifier.weight(1f)) {
                                 Text(
                                     library.name,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -164,7 +180,7 @@ private fun LibraryHub(
                                 seriesCounts[library.id]?.let { count ->
                                     Text(
                                         "$count series",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = MaterialTheme.typography.bodySmall,
                                         maxLines = 1
                                     )
@@ -177,7 +193,8 @@ private fun LibraryHub(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Refresh,
-                                        contentDescription = "Scan ${library.name}"
+                                        contentDescription = "Scan ${library.name}",
+                                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -308,6 +325,7 @@ internal fun HomeContent(
     onRefresh: () -> Unit,
     error: String?,
     session: KavitaSession,
+    sessionStore: KavitaSessionStore,
     onDeck: List<SeriesDto>,
     recentlyUpdated: List<SeriesDto>,
     newlyAdded: List<SeriesDto>,
@@ -320,6 +338,12 @@ internal fun HomeContent(
     api: KavitaApi?,
     searchHistoryStore: SearchHistoryStore,
     initialSearchQuery: String = "",
+    selectedLibrary: LibraryDto? = null,
+    onSelectLibraryChange: (LibraryDto?) -> Unit = {},
+    selectedShelf: HomeShelfKind? = null,
+    onSelectShelfChange: (HomeShelfKind?) -> Unit = {},
+    browseDrilldown: BrowseDrilldown? = null,
+    onBrowseDrilldownChange: (BrowseDrilldown?) -> Unit = {},
     onSelectLibrary: (LibraryDto) -> Unit,
     onScanLibrary: (LibraryDto) -> Unit,
     onSelectSeries: (SeriesDto) -> Unit,
@@ -330,13 +354,18 @@ internal fun HomeContent(
     onOpenBookmarks: () -> Unit,
     onOpenCollections: () -> Unit,
     onOpenDownloaded: () -> Unit,
+    onOpenBookmark: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, page: Int) -> Unit = { _, _, _, _, _ -> },
+    onOpenCollection: (CollectionDto) -> Unit = {},
+    onPickIssue: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, incognito: Boolean) -> Unit = { _, _, _, _, _ -> },
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     isOffline: Boolean = false,
     offlineBooks: List<LocalBook> = emptyList(),
+    offlineFolders: List<LocalFolder> = emptyList(),
     offlineFolderName: String? = null,
     isOfflineScanning: Boolean = false,
     onOpenOfflineBook: (LocalBook) -> Unit = {},
     onChangeOfflineFolder: () -> Unit = {},
+    onAddOfflineFolder: () -> Unit = onChangeOfflineFolder,
     onRescanOffline: () -> Unit = {},
     selectedSort: LocalBookSort = LocalBookSort.Title,
     kavitaSort: SeriesLibrarySort = SeriesLibrarySort.Title,
@@ -348,13 +377,12 @@ internal fun HomeContent(
     val librariesListState = rememberLazyListState()
     val wantToReadGridState = rememberLazyGridState()
     val searchListState = rememberLazyListState()
-    var browseDrilldown by rememberSaveable { mutableStateOf<BrowseDrilldown?>(null) }
     var searchQuery by rememberSaveable(initialSearchQuery) { mutableStateOf(initialSearchQuery) }
 
     LaunchedEffect(scrollToTopSignal) {
         if (scrollToTopSignal <= 0) return@LaunchedEffect
         when (destination) {
-            HomeDestination.Home -> homeListState.animateScrollToItem(0)
+            HomeDestination.Home, HomeDestination.History -> homeListState.animateScrollToItem(0)
             HomeDestination.Libraries -> librariesListState.animateScrollToItem(0)
             HomeDestination.WantToRead -> wantToReadGridState.animateScrollToItem(0)
             HomeDestination.Search -> searchListState.animateScrollToItem(0)
@@ -379,18 +407,30 @@ internal fun HomeContent(
                             isGridView = isGridView,
                             onOpenBook = onOpenOfflineBook,
                             onSeeAll = { onSelectDestination(HomeDestination.Browse) },
+                            onOpenContinueReading = { onSelectDestination(HomeDestination.History) },
                             onChangeFolder = onChangeOfflineFolder,
                             onRescan = onRescanOffline,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    HomeDestination.History -> {
+                        OfflineHistoryPane(
+                            books = offlineBooks,
+                            sort = selectedSort,
+                            isGridView = isGridView,
+                            onOpenBook = onOpenOfflineBook,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
                     HomeDestination.Libraries -> {
                         OfflineLibrariesPane(
                             folderName = offlineFolderName,
+                            folders = offlineFolders,
                             books = offlineBooks,
                             isScanning = isOfflineScanning,
                             isGridView = isGridView,
                             onChangeFolder = onChangeOfflineFolder,
+                            onAddFolder = onAddOfflineFolder,
                             onRescan = onRescanOffline,
                             onOpenBook = onOpenOfflineBook,
                             modifier = Modifier.fillMaxSize()
@@ -430,11 +470,11 @@ internal fun HomeContent(
             return@Column
         }
 
-        if (destination != HomeDestination.Browse && loading) {
+        if (destination != HomeDestination.Browse && destination != HomeDestination.Libraries && loading) {
             DarkLoadingState()
             return@Column
         }
-        if (destination != HomeDestination.Browse && error != null) {
+        if (destination != HomeDestination.Browse && destination != HomeDestination.Libraries && error != null) {
             DarkMessageState(
                 title = "Could not load home",
                 body = error,
@@ -451,58 +491,150 @@ internal fun HomeContent(
 
         when (destination) {
             HomeDestination.Home -> {
-                val pullState = rememberPullToRefreshState()
-                PullToRefreshBox(
-                    isRefreshing = refreshing,
-                    onRefresh = onRefresh,
-                    modifier = Modifier.fillMaxSize(),
-                    state = pullState,
-                    indicator = { BunkoPullToRefreshIndicator(pullState, refreshing) }
-                ) {
-                    if (displayOnDeck.isEmpty() && displayRecentlyUpdated.isEmpty() && displayNewlyAdded.isEmpty()) {
-                        DarkMessageState(
-                            title = "No series",
-                            body = "This server did not return visible home shelves."
-                        )
-                    } else {
-                        LazyColumn(
-                            state = homeListState,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(22.dp)
-                        ) {
-                            item {
-                                HomeShelf(HomeShelfKind.OnDeck, displayOnDeck, session, isGridView, onOpenShelf, onSelectSeries)
-                            }
-                            item {
-                                HomeShelf(
-                                    HomeShelfKind.RecentlyUpdated,
-                                    displayRecentlyUpdated,
-                                    session,
-                                    isGridView,
-                                    onOpenShelf,
-                                    onSelectSeries
-                                )
-                            }
-                            item {
-                                HomeShelf(HomeShelfKind.NewlyAdded, displayNewlyAdded, session, isGridView, onOpenShelf, onSelectSeries)
+                if (selectedShelf != null) {
+                    SeriesShelfScreen(
+                        sessionStore = sessionStore,
+                        shelfKind = selectedShelf,
+                        onBack = { onSelectShelfChange(null) },
+                        statusBarPadding = false,
+                        navigationBarPadding = false,
+                        onSelectSeries = onSelectSeries
+                    )
+                } else {
+                    val pullState = rememberPullToRefreshState()
+                    PullToRefreshBox(
+                        isRefreshing = refreshing,
+                        onRefresh = onRefresh,
+                        modifier = Modifier.fillMaxSize(),
+                        state = pullState,
+                        indicator = { BunkoPullToRefreshIndicator(pullState, refreshing) }
+                    ) {
+                        if (displayOnDeck.isEmpty() && displayNewlyAdded.isEmpty()) {
+                            DarkMessageState(
+                                title = "No series",
+                                body = "This server did not return visible home shelves."
+                            )
+                        } else {
+                            LazyColumn(
+                                state = homeListState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(22.dp)
+                            ) {
+                                item {
+                                    HomeShelf(HomeShelfKind.OnDeck, displayOnDeck, session, isGridView, onOpenShelf, onSelectSeries)
+                                }
+                                item {
+                                    HomeShelf(HomeShelfKind.NewlyAdded, displayNewlyAdded, session, isGridView, onOpenShelf, onSelectSeries)
+                                }
                             }
                         }
                     }
                 }
             }
-            HomeDestination.Libraries -> {
-                LibraryHub(
-                    libraries = libraries,
-                    seriesCounts = librarySeriesCounts,
-                    isAdmin = isAdmin,
-                    scanningLibraryIds = scanningLibraryIds,
-                    session = session,
-                    onSelectLibrary = onSelectLibrary,
-                    onScanLibrary = onScanLibrary,
-                    listState = librariesListState,
-                    modifier = Modifier.fillMaxSize()
+            HomeDestination.History -> {
+                SeriesShelfScreen(
+                    sessionStore = sessionStore,
+                    shelfKind = HomeShelfKind.OnDeck,
+                    onBack = { onSelectDestination(HomeDestination.Home) },
+                    statusBarPadding = false,
+                    navigationBarPadding = false,
+                    onSelectSeries = onSelectSeries
                 )
+            }
+            HomeDestination.Libraries -> {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val isTablet = maxWidth >= 720.dp
+                    if (isTablet) {
+                        val activeLibrary = selectedLibrary ?: libraries.firstOrNull()
+                        Row(
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            LibraryHub(
+                                libraries = libraries,
+                                selectedLibrary = activeLibrary,
+                                seriesCounts = librarySeriesCounts,
+                                isAdmin = isAdmin,
+                                scanningLibraryIds = scanningLibraryIds,
+                                session = session,
+                                onSelectLibrary = { lib -> onSelectLibraryChange(lib) },
+                                onScanLibrary = onScanLibrary,
+                                listState = librariesListState,
+                                modifier = Modifier
+                                    .width(320.dp)
+                                    .fillMaxHeight()
+                            )
+                            VerticalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                            ) {
+                                if (activeLibrary != null) {
+                                    SeriesScreen(
+                                        sessionStore = sessionStore,
+                                        libraryId = activeLibrary.id,
+                                        libraryName = activeLibrary.name,
+                                        onBack = null,
+                                        onSearchHome = { q ->
+                                            searchQuery = q
+                                            onSelectDestination(HomeDestination.Search)
+                                        },
+                                        statusBarPadding = false,
+                                        navigationBarPadding = false,
+                                        showTopBar = false,
+                                        externalSort = kavitaSort,
+                                        isGridView = isGridView,
+                                        onSelect = { s ->
+                                            val sWithLib = if (s.libraryId == null || s.libraryId == 0) s.copy(libraryId = activeLibrary.id) else s
+                                            onSelectSeries(sWithLib)
+                                        }
+                                    )
+                                } else {
+                                    DarkMessageState(title = "Libraries", body = "No library selected")
+                                }
+                            }
+                        }
+                    } else {
+                        if (selectedLibrary != null) {
+                            SeriesScreen(
+                                sessionStore = sessionStore,
+                                libraryId = selectedLibrary.id,
+                                libraryName = selectedLibrary.name,
+                                onBack = { onSelectLibraryChange(null) },
+                                onSearchHome = { q ->
+                                    onSelectLibraryChange(null)
+                                    searchQuery = q
+                                    onSelectDestination(HomeDestination.Search)
+                                },
+                                statusBarPadding = false,
+                                navigationBarPadding = false,
+                                showTopBar = false,
+                                externalSort = kavitaSort,
+                                isGridView = isGridView,
+                                onSelect = { s ->
+                                    val sWithLib = if (s.libraryId == null || s.libraryId == 0) s.copy(libraryId = selectedLibrary.id) else s
+                                    onSelectSeries(sWithLib)
+                                }
+                            )
+                        } else {
+                            LibraryHub(
+                                libraries = libraries,
+                                selectedLibrary = null,
+                                seriesCounts = librarySeriesCounts,
+                                isAdmin = isAdmin,
+                                scanningLibraryIds = scanningLibraryIds,
+                                session = session,
+                                onSelectLibrary = { lib -> onSelectLibraryChange(lib) },
+                                onScanLibrary = onScanLibrary,
+                                listState = librariesListState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
             }
             HomeDestination.WantToRead -> {
                 if (wantToReadError != null) {
@@ -533,11 +665,27 @@ internal fun HomeContent(
             }
             HomeDestination.Browse -> {
                 when (browseDrilldown) {
+                    BrowseDrilldown.Bookmarks -> {
+                        BookmarksScreen(
+                            sessionStore = sessionStore,
+                            onBack = { onBrowseDrilldownChange(null) },
+                            statusBarPadding = false,
+                            onOpenBookmark = onOpenBookmark
+                        )
+                    }
+                    BrowseDrilldown.Collections -> {
+                        CollectionsScreen(
+                            sessionStore = sessionStore,
+                            onBack = { onBrowseDrilldownChange(null) },
+                            statusBarPadding = false,
+                            onOpenCollection = onOpenCollection
+                        )
+                    }
                     BrowseDrilldown.ReadingLists -> {
                         ReadingListsPane(
                             api = api,
                             apiError = if (api == null) error else null,
-                            onBack = { browseDrilldown = null },
+                            onBack = { onBrowseDrilldownChange(null) },
                             onOpenReadingList = { readingList ->
                                 onOpenFilteredSeries(
                                     SearchSeriesTarget.ReadingList,
@@ -549,12 +697,21 @@ internal fun HomeContent(
                             statusBarPadding = false
                         )
                     }
+                    BrowseDrilldown.Downloaded -> {
+                        DownloadedScreen(
+                            sessionStore = sessionStore,
+                            onBack = { onBrowseDrilldownChange(null) },
+                            statusBarPadding = false,
+                            navigationBarPadding = false,
+                            onPickIssue = onPickIssue
+                        )
+                    }
                     null -> {
                         BrowseHub(
                             downloadedCount = downloaded.size,
                             onOpenBookmarks = onOpenBookmarks,
                             onOpenCollections = onOpenCollections,
-                            onOpenReadingLists = { browseDrilldown = BrowseDrilldown.ReadingLists },
+                            onOpenReadingLists = { onBrowseDrilldownChange(BrowseDrilldown.ReadingLists) },
                             onOpenDownloaded = onOpenDownloaded,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -587,7 +744,7 @@ private fun BrowseHub(
     onOpenDownloaded: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    BrowsePageScaffold(title = "Browse", modifier = modifier) {
+    BrowsePageScaffold(title = "Browse", modifier = modifier, statusBarPadding = false) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -626,8 +783,11 @@ private fun BrowseHub(
     }
 }
 
-private enum class BrowseDrilldown {
-    ReadingLists
+internal enum class BrowseDrilldown {
+    Bookmarks,
+    Collections,
+    ReadingLists,
+    Downloaded
 }
 
 @Composable
@@ -740,6 +900,7 @@ private fun WantToReadGrid(
         modifier = modifier,
         onBack = if (selectionMode) ::exitSelectionMode else null,
         statusBarPadding = false,
+        showTopBar = selectionMode,
         navigationIcon = Icons.Filled.Close,
         navigationContentDescription = "Cancel selection",
         actions = {
@@ -930,62 +1091,93 @@ private fun HomeShelf(
     onOpenShelf: (HomeShelfKind) -> Unit,
     onSelectSeries: (SeriesDto) -> Unit
 ) {
-    Column {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onOpenShelf(kind) },
+                .clickable { onOpenShelf(kind) }
+                .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 kind.title,
                 color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
+            )
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = MaterialTheme.shapes.small
+            ) {
+                Text(
+                    text = series.size.toString(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
+            Text(
+                text = "See all",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
             )
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "Open ${kind.title}",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
             )
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         if (series.isEmpty()) {
-            Text("Nothing here yet", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "Nothing here yet",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
         } else if (isGridView) {
-            val cardShape = MaterialTheme.shapes.small
-            val shelfHeight = seriesShelfHeight()
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(SeriesShelfItemSpacing)
-            ) {
-                items(series, key = { it.id }) { item ->
-                    SeriesPosterCard(
-                        series = item,
-                        session = session,
-                        shape = cardShape,
-                        coverFillsHeight = true,
-                        modifier = Modifier
-                            .width(SeriesShelfItemWidth)
-                            .height(shelfHeight)
-                            .clickable { onSelectSeries(item) }
-                    )
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val minCardWidth = 130.dp
+                val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
+                val maxItems = columns * 2
+                val previewItems = series.take(maxItems)
+                val chunked = previewItems.chunked(columns)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    chunked.forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            rowItems.forEach { item ->
+                                Box(modifier = Modifier.weight(1f)) {
+                                    UnifiedPosterCard(
+                                        item = item.toUnifiedMediaItem(session),
+                                        onClick = { onSelectSeries(item) }
+                                    )
+                                }
+                            }
+                            repeat(columns - rowItems.size) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
                 }
             }
         } else {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                series.take(6).forEach { item ->
-                    SeriesListItem(
-                        series = item,
-                        session = session,
+                series.take(5).forEach { item ->
+                    UnifiedListItem(
+                        item = item.toUnifiedMediaItem(session),
                         onClick = { onSelectSeries(item) }
                     )
                 }

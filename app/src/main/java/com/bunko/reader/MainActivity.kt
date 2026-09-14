@@ -59,6 +59,7 @@ import coil.ImageLoader
 import com.bunko.reader.ui.theme.BunkoTheme
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import com.bunko.reader.CollectionDto
 import com.bunko.reader.library.BookmarksScreen
 import com.bunko.reader.library.CollectionsScreen
 import com.bunko.reader.library.DownloadedScreen
@@ -391,13 +392,25 @@ fun AppRoot(
                     onOpenBookmarks = { nav.navigate("bookmarks") },
                     onOpenCollections = { nav.navigate("collections") },
                     onOpenDownloaded = { nav.navigate("downloaded") },
+                    onOpenBookmark = { libraryId, seriesId, volumeId, chapterId, page ->
+                        nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=false&page=$page")
+                    },
+                    onOpenCollection = { collection ->
+                        nav.navigate(
+                            "search-series/${SearchSeriesTarget.Collection.routeValue}/" +
+                                "${collection.id}/${Uri.encode(collection.title)}"
+                        )
+                    },
+                    onPickIssue = { libraryId, seriesId, volumeId, chapterId, incognito ->
+                        nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=$incognito")
+                    },
                     onOpenFilteredSeries = { target, id, label ->
                         nav.navigate("search-series/${target.routeValue}/$id/${Uri.encode(label)}")
                     },
-                    onSelectLibrary = { lib -> nav.navigate("series/${lib.id}/${lib.name}") },
+                    onSelectLibrary = { lib -> nav.navigate("series/${lib.id}/${Uri.encode(lib.name)}") },
                     onSelectSeries = { series ->
                         val libraryId = series.libraryId ?: 0
-                        nav.navigate("chapters/$libraryId/${series.id}/${series.name}")
+                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}")
                     },
                     onOpenOfflineBook = { book ->
                         nav.navigate("local-reader/${book.id}?page=${book.lastReadPage}")
@@ -459,7 +472,7 @@ fun AppRoot(
                     onBack = { nav.popBackStack() },
                     onSelectSeries = { series ->
                         val libraryId = series.libraryId ?: 0
-                        nav.navigate("chapters/$libraryId/${series.id}/${series.name}")
+                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}")
                     }
                 )
             }
@@ -485,7 +498,7 @@ fun AppRoot(
                     onBack = { nav.popBackStack() },
                     onSelectSeries = { series ->
                         val libraryId = series.libraryId ?: 0
-                        nav.navigate("chapters/$libraryId/${series.id}/${series.name}")
+                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}")
                     }
                 )
             }
@@ -508,7 +521,8 @@ fun AppRoot(
                         nav.navigate("libraries?search=${Uri.encode(query)}")
                     },
                     onSelect = { s ->
-                        nav.navigate("chapters/$libraryId/${s.id}/${s.name}")
+                        val resolvedLib = s.libraryId?.takeIf { it > 0 } ?: libraryId
+                        nav.navigate("chapters/$resolvedLib/${s.id}/${Uri.encode(s.name)}")
                     }
                 )
             }
