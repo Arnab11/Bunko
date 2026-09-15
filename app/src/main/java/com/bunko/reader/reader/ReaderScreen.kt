@@ -95,6 +95,9 @@ import com.bunko.reader.ProgressDto
 import com.bunko.reader.ReaderReadingDirection
 import com.bunko.reader.download.OfflineChapter
 import com.bunko.reader.download.OfflineIssueRepository
+import com.bunko.reader.MangaFormat
+import com.bunko.reader.reader.internal.ReaderLoadingScreen
+import com.bunko.reader.reader.internal.readerLoadErrorMessage
 import com.bunko.reader.reader.internal.ReaderInvertCacheKey
 import com.bunko.reader.reader.internal.ReaderPrefetchTarget
 import com.bunko.reader.reader.internal.ReaderFullscreenEffect
@@ -351,6 +354,7 @@ fun ReaderScreen(
     val progressRevisionClocks = remember { mutableMapOf<Int, AtomicLong>() }
 
     var isEpub by remember { mutableStateOf(false) }
+    var isPdf by remember { mutableStateOf(false) }
     var epubSpineBlocks by remember { mutableStateOf<List<List<EpubBlock>>>(emptyList()) }
     var epubSubpages by remember { mutableStateOf<List<EpubSubpage>>(emptyList()) }
     val epubFontSizeSp = settings.reader.epubFontSizeSp
@@ -606,13 +610,28 @@ fun ReaderScreen(
                 }.onFailure {
                     BunkoLog.w("Could not load local offline chapter ${target.chapterId}.", it)
                 }.getOrNull()
+                var isEpubTarget = false
+                var isPdfTarget = false
+                val chDto = runCatching { loadedApi.seriesChapter(target.chapterId) }.getOrNull()
+                if (chDto?.format == MangaFormat.Epub) {
+                    isEpubTarget = true
+                } else if (chDto?.format == MangaFormat.Pdf) {
+                    isPdfTarget = true
+                } else if (chDto?.format == null) {
+                    val seriesDto = runCatching { loadedApi.series(seriesId) }.getOrNull()
+                    isEpubTarget = seriesDto?.format == MangaFormat.Epub
+                    isPdfTarget = seriesDto?.format == MangaFormat.Pdf
+                }
+                isEpub = isEpubTarget
+                isPdf = isPdfTarget
+
                 val loadedPageCount: Int
                 val loadedDimensions: Map<Int, FileDimensionDto>
                 if (local != null) {
                     loadedPageCount = local.pages.size
                     loadedDimensions = local.dimensions
                 } else {
-                    val info = loadedApi.chapterInfo(target.chapterId, includeDimensions = true)
+                    val info = loadedApi.chapterInfo(target.chapterId, includeDimensions = true, extractPdf = isPdfTarget)
                     loadedPageCount = info.pages ?: 0
                     loadedDimensions = info.pageDimensions.toPageDimensionMap()
                 }
@@ -622,15 +641,6 @@ fun ReaderScreen(
                 }
                 val landingPage = if (openAtLastPage) loadedPageCount - 1 else 0
 
-                var isEpubTarget = false
-                val chDto = runCatching { loadedApi.seriesChapter(target.chapterId) }.getOrNull()
-                if (chDto?.format == 3) {
-                    isEpubTarget = true
-                } else if (chDto?.format == null) {
-                    val seriesDto = runCatching { loadedApi.series(seriesId) }.getOrNull()
-                    isEpubTarget = seriesDto?.format == 3
-                }
-                isEpub = isEpubTarget
                 if (isEpubTarget) {
                     val spineCount = loadedPageCount.coerceAtLeast(1)
                     val clientHelper = KavitaClient(ctx, sessionStore)
@@ -675,7 +685,7 @@ fun ReaderScreen(
                 throw cancelled
             } catch (t: Throwable) {
                 BunkoLog.w("Could not switch Reader to chapter ${target.chapterId}.", t)
-                error = t.message ?: t.toString()
+                error = readerLoadErrorMessage(t)
             } finally {
                 chapterSwitching = false
             }
@@ -906,19 +916,25 @@ fun ReaderScreen(
                 ePaperMode = it.ePaperMode
             }
             var isEpubChapter = false
+            var isPdfChapter = false
             val chDto = runCatching { loadedApi.seriesChapter(currentChapterId) }.getOrNull()
-            if (chDto?.format == 3) {
+            if (chDto?.format == MangaFormat.Epub) {
                 isEpubChapter = true
+            } else if (chDto?.format == MangaFormat.Pdf) {
+                isPdfChapter = true
             } else if (chDto?.format == null) {
                 val seriesDto = runCatching { loadedApi.series(seriesId) }.getOrNull()
-                if (seriesDto?.format == 3) {
+                if (seriesDto?.format == MangaFormat.Epub) {
                     isEpubChapter = true
+                } else if (seriesDto?.format == MangaFormat.Pdf) {
+                    isPdfChapter = true
                 }
             }
             isEpub = isEpubChapter
+            isPdf = isPdfChapter
 
             if (local == null) {
-                val info = loadedApi.chapterInfo(currentChapterId, includeDimensions = true)
+                val info = loadedApi.chapterInfo(currentChapterId, includeDimensions = true, extractPdf = isPdfChapter)
                 val pageCount = info.pages ?: 0
                 pages = pageCount
                 pageDimensions = info.pageDimensions.toPageDimensionMap()
@@ -963,7 +979,7 @@ fun ReaderScreen(
         } catch (t: Throwable) {
             BunkoLog.w("Could not initialize Reader for chapter $currentChapterId.", t)
             if (local == null) {
-                error = t.message ?: t.toString()
+                error = readerLoadErrorMessage(t)
             }
         }
     }
@@ -1051,6 +1067,15 @@ fun ReaderScreen(
         return
     }
 
+    if (!readerReady) {
+        ReaderLoadingScreen(
+            preparingPdf = isPdf,
+            error = error,
+            onBack = handleBack
+        )
+        return
+    }
+
     val client = remember { KavitaClient(ctx, sessionStore) }
     val activeImageLoader = readerImageLoader ?: fallbackImageLoader
     fun pageModel(index: Int): Any? = if (isEpub) {
@@ -1058,7 +1083,13 @@ fun ReaderScreen(
     } else {
         offlineChapter?.pages?.getOrNull(index)
             ?: if (s != null && index in 0 until pages) {
-                client.pageImageUrl(s.baseUrl, s.apiKey, currentChapterId, index)
+                client.pageImageUrl(
+                    s.baseUrl,
+                    s.apiKey,
+                    currentChapterId,
+                    index,
+                    extractPdf = isPdf
+                )
             } else {
                 null
             }

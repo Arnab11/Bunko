@@ -109,7 +109,7 @@ class KavitaClient(
 
         val retrofit = Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(apiOkHttp)
+            .callFactory(pdfExtractionCallFactory(apiOkHttp))
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
 
@@ -174,7 +174,7 @@ class KavitaClient(
         val budget = imageCacheBudget(context)
         val cacheScope = imageCacheScope(session, store.activeProfile()?.id)
         return ImageLoader.Builder(context)
-            .okHttpClient(okHttp)
+            .callFactory(pdfExtractionCallFactory(okHttp))
             .memoryCache {
                 MemoryCache.Builder(context)
                     .maxSizePercent(budget.readerMemoryPercent)
@@ -193,9 +193,18 @@ class KavitaClient(
             .build()
     }
 
-    fun pageImageUrl(baseUrl: String, apiKey: String, chapterId: Int, page: Int): String {
+    fun pageImageUrl(
+        baseUrl: String,
+        apiKey: String,
+        chapterId: Int,
+        page: Int,
+        extractPdf: Boolean = false
+    ): String {
         val root = normalizeBaseUrl(baseUrl)
-        return "$root/api/Reader/image?chapterId=$chapterId${apiKeyQuery(apiKey)}&page=$page"
+        return withPdfExtraction(
+            "$root/api/Reader/image?chapterId=$chapterId${apiKeyQuery(apiKey)}&page=$page",
+            extractPdf
+        )
     }
 
     fun bookResourceUrl(baseUrl: String, apiKey: String, chapterId: Int, resourcePath: String): String {
