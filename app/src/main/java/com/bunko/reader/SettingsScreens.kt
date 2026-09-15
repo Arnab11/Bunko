@@ -36,9 +36,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Login
-import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -50,6 +48,7 @@ import com.bunko.reader.settings.ExperimentalBadge
 import com.bunko.reader.settings.RadioSettingRow
 import com.bunko.reader.settings.SettingsSectionCard
 import com.bunko.reader.settings.SwitchSettingRow
+import com.bunko.reader.ui.theme.themeToggleModifier
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
@@ -113,7 +112,8 @@ internal fun SettingsTopAppBar(title: String, onBack: () -> Unit) {
                     text = title,
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.then(themeToggleModifier())
                 )
             },
             navigationIcon = {
@@ -202,12 +202,7 @@ fun ServerSettingsScreen(
     var selectedProfileId by remember { mutableStateOf<String?>(null) }
     var page by remember { mutableStateOf(ServerSettingsPage.Servers) }
     var openByDefault by remember { mutableStateOf(false) }
-    var serverStatus by remember { mutableStateOf("(unknown)") }
-    var jwtStatus by remember { mutableStateOf("(unknown)") }
-    var authStatus by remember { mutableStateOf("(unknown)") }
-    var storageStatus by remember { mutableStateOf("(unknown)") }
     var status by remember { mutableStateOf<StatusMessage?>(null) }
-    var isTestingConnection by remember { mutableStateOf(false) }
     var isLoggingIn by remember { mutableStateOf(false) }
 
     suspend fun refreshSessionState(
@@ -221,22 +216,12 @@ fun ServerSettingsScreen(
         page = if (selected != null) ServerSettingsPage.ServerSelected else ServerSettingsPage.Servers
 
         val s = selected?.session ?: KavitaSession()
-        val state = sessionStore.storageState(selected?.id)
         baseUrl = s.baseUrl
         username = s.username
         apiKey = s.apiKey
         if (clearPassword) password = ""
         passwordVisible = false
         openByDefault = selected?.openByDefault ?: false
-        serverStatus = if (s.baseUrl.isBlank()) "Not configured" else s.baseUrl
-        jwtStatus = if (s.jwt.isBlank()) "Logged out" else "Logged in"
-        authStatus = if (state.hasSavedAuth) "Saved" else "Not saved"
-        storageStatus = when {
-            !state.hasSavedAuth -> "No saved auth"
-            state.secretsEncrypted -> "Encrypted"
-            state.hasLegacyPlaintextSecrets -> "Legacy plaintext"
-            else -> "(unknown)"
-        }
     }
 
     suspend fun restoreDefaultProfile() {
@@ -305,6 +290,33 @@ fun ServerSettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 if (page == ServerSettingsPage.Servers) {
+                    if (status != null) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (status!!.isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (status!!.isError) Icons.Filled.ErrorOutline else Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    tint = if (status!!.isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = status!!.text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (status!!.isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = "Configured Servers",
@@ -421,6 +433,35 @@ fun ServerSettingsScreen(
                                                 tint = MaterialTheme.colorScheme.primary
                                             )
                                         }
+
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    status = null
+                                                    try {
+                                                        val wasDefault = profile.openByDefault
+                                                        sessionStore.deleteProfile(profile.id)
+                                                        val remainingProfiles = sessionStore.profiles()
+                                                        if (wasDefault && remainingProfiles.none { it.openByDefault }) {
+                                                            remainingProfiles.firstOrNull()?.let {
+                                                                sessionStore.setOpenByDefault(it.id, true)
+                                                            }
+                                                        }
+                                                        restoreDefaultProfile()
+                                                        onActiveServerChanged()
+                                                        status = StatusMessage("Server deleted", isError = false)
+                                                    } catch (t: Throwable) {
+                                                        status = StatusMessage("Delete failed: ${t.message ?: t.toString()}", isError = true)
+                                                    }
+                                                }
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.DeleteOutline,
+                                                contentDescription = "Delete server",
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -442,10 +483,6 @@ fun ServerSettingsScreen(
                                     passwordVisible = false
                                     apiKey = ""
                                     openByDefault = profiles.none { it.openByDefault }
-                                    serverStatus = "Not configured"
-                                    jwtStatus = "Logged out"
-                                    authStatus = "Not saved"
-                                    storageStatus = "No saved auth"
                                     status = null
                                 }
                             )
@@ -656,6 +693,7 @@ fun ServerSettingsScreen(
                                                     openByDefault = openByDefault
                                                 )
                                                 refreshSessionState(saved.id, clearPassword = false)
+                                                page = ServerSettingsPage.Servers
                                                 status = StatusMessage("Successfully logged in and saved", isError = false)
                                             } catch (t: HttpException) {
                                                 val body = t.response()?.errorBody()?.string()?.takeIf { it.isNotBlank() }
@@ -687,239 +725,6 @@ fun ServerSettingsScreen(
                         }
                     }
 
-                    // Section 3: Configuration & Diagnostics
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "Connection & Status",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-                        )
-
-                        SettingsSectionCard {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Server Endpoint", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(serverStatus, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Saved Auth", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(authStatus, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Session Status", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(jwtStatus, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Keystore Storage", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(storageStatus, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                }
-                            }
-                            CategoryRowGap()
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        scope.launch {
-                                            status = null
-                                            isTestingConnection = true
-                                            try {
-                                                val prev = profiles.firstOrNull { it.id == selectedProfileId }?.session
-                                                    ?: KavitaSession()
-                                                val saved = sessionStore.saveProfile(
-                                                    selectedProfileId,
-                                                    prev.copy(baseUrl = baseUrl, username = username, apiKey = apiKey),
-                                                    rememberAuth = true,
-                                                    openByDefault = openByDefault
-                                                )
-                                                refreshSessionState(saved.id, clearPassword = false)
-                                                val client = KavitaClient(ctx, sessionStore)
-                                                val (api, _) = client.buildApi()
-                                                api.health()
-                                                status = StatusMessage("Connection healthy (/api/Health OK)", isError = false)
-                                            } catch (t: Throwable) {
-                                                status = StatusMessage("Health check failed: ${t.message ?: t.toString()}", isError = true)
-                                            } finally {
-                                                isTestingConnection = false
-                                                restoreDefaultProfile()
-                                                onActiveServerChanged()
-                                            }
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(46.dp),
-                                    enabled = !isTestingConnection
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.NetworkCheck,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(Modifier.size(8.dp))
-                                    Text(if (isTestingConnection) "Testing..." else "Test")
-                                }
-
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            status = null
-                                            try {
-                                                val prev = profiles.firstOrNull { it.id == selectedProfileId }?.session
-                                                    ?: KavitaSession()
-                                                val saved = sessionStore.saveProfile(
-                                                    selectedProfileId,
-                                                    prev.copy(baseUrl = baseUrl, username = username, apiKey = apiKey),
-                                                    rememberAuth = true,
-                                                    openByDefault = openByDefault
-                                                )
-                                                refreshSessionState(saved.id, clearPassword = false)
-                                                status = StatusMessage("Configuration saved", isError = false)
-                                            } catch (t: Throwable) {
-                                                status = StatusMessage("Save failed: ${t.message ?: t.toString()}", isError = true)
-                                            } finally {
-                                                restoreDefaultProfile()
-                                                onActiveServerChanged()
-                                            }
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(46.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Save,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(Modifier.size(8.dp))
-                                    Text("Save")
-                                }
-                            }
-                        }
-                    }
-
-                    // Section 4: Danger Zone
-                    if (selectedProfileId != null) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "Danger Zone",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-                            )
-
-                            SettingsSectionCard {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            scope.launch {
-                                                status = null
-                                                try {
-                                                    sessionStore.clearCredentials(selectedProfileId)
-                                                    username = ""
-                                                    password = ""
-                                                    apiKey = ""
-                                                    refreshSessionState(selectedProfileId)
-                                                    restoreDefaultProfile()
-                                                    onActiveServerChanged()
-                                                    status = StatusMessage("Saved credentials cleared", isError = false)
-                                                } catch (t: Throwable) {
-                                                    status = StatusMessage("Clear auth failed: ${t.message ?: t.toString()}", isError = true)
-                                                }
-                                            }
-                                        },
-                                        colors = ButtonDefaults.outlinedButtonColors(
-                                            contentColor = MaterialTheme.colorScheme.error
-                                        ),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(46.dp)
-                                    ) {
-                                        Text("Clear Auth")
-                                    }
-
-                                    Button(
-                                        onClick = {
-                                            scope.launch {
-                                                val forgottenId = selectedProfileId
-                                                val wasDefault = profiles.firstOrNull { it.id == forgottenId }?.openByDefault == true
-                                                sessionStore.deleteProfile(forgottenId)
-                                                val remainingProfiles = sessionStore.profiles()
-                                                if (wasDefault && remainingProfiles.none { it.openByDefault }) {
-                                                    remainingProfiles.firstOrNull()?.let {
-                                                        sessionStore.setOpenByDefault(it.id, true)
-                                                    }
-                                                }
-                                                baseUrl = ""
-                                                username = ""
-                                                password = ""
-                                                apiKey = ""
-                                                selectedProfileId = null
-                                                page = ServerSettingsPage.Servers
-                                                restoreDefaultProfile()
-                                                selectedProfileId = profiles.firstOrNull { it.openByDefault }?.id
-                                                onActiveServerChanged()
-                                                status = StatusMessage("Server deleted", isError = false)
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.error,
-                                            contentColor = MaterialTheme.colorScheme.onError
-                                        ),
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(46.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.DeleteOutline,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(Modifier.size(8.dp))
-                                        Text("Forget")
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }

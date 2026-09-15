@@ -151,6 +151,11 @@ class KavitaClient(
         val cacheScope = imageCacheScope(session, store.activeProfile()?.id)
         return ImageLoader.Builder(context)
             .okHttpClient(okHttp)
+            // Software bitmaps: the theme-reveal captures the window with
+            // View.drawToBitmap(), which throws on hardware bitmaps
+            // ("Software rendering doesn't support hardware bitmaps") and
+            // silently kills the animation on every image-heavy screen.
+            .allowHardware(false)
             .memoryCache {
                 MemoryCache.Builder(context)
                     .maxSizePercent(budget.coverMemoryPercent)

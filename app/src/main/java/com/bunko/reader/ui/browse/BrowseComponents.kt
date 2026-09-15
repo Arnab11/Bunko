@@ -74,6 +74,7 @@ import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.seriesCoverUrl
 import com.bunko.reader.ui.seriesInitial
 import com.bunko.reader.ui.theme.BunkoBackground
+import com.bunko.reader.ui.theme.themeToggleModifier
 import com.bunko.reader.ui.theme.BunkoSurface
 import com.bunko.reader.ui.theme.ReadingProgressInProgress
 import com.bunko.reader.ui.theme.ReadingProgressRead
@@ -136,6 +137,7 @@ internal fun BrowsePageScaffold(
                     modifier = Modifier
                         .weight(1f)
                         .padding(start = if (onBack == null) 0.dp else 4.dp)
+                        .then(themeToggleModifier())
                 )
                 actions()
             }

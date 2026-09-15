@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -227,13 +228,18 @@ fun OfflineStartupScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter
+        ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxHeight()
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -263,8 +269,8 @@ fun OfflineStartupScreen(
                         userSelectedTarget = StartupTarget.Offline
                     },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .widthIn(max = 520.dp),
+                        .widthIn(max = 520.dp)
+                        .fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
                     border = if (canContinue && effectiveTarget == StartupTarget.Offline) {
                         BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
@@ -556,8 +562,8 @@ fun OfflineStartupScreen(
                         userSelectedTarget = StartupTarget.Kavita
                     },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .widthIn(max = 520.dp),
+                        .widthIn(max = 520.dp)
+                        .fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
                     border = if (canContinue && effectiveTarget == StartupTarget.Kavita) {
                         BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
@@ -738,8 +744,8 @@ fun OfflineStartupScreen(
                 // CONTINUE ACTION SECTION
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
                         .widthIn(max = 520.dp)
+                        .fillMaxWidth()
                         .padding(top = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp)

@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.drawToBitmap
+import com.bunko.reader.BunkoLog
 import kotlinx.coroutines.delay
 import kotlin.math.hypot
 
@@ -63,6 +64,7 @@ class ThemeTransitionState {
                 clickPosition = position
                 isAnimating = true
             } catch (e: Exception) {
+                BunkoLog.w("Theme screenshot capture failed; falling back to instant switch.", e)
                 screenshotBitmap = null
                 isAnimating = false
             }
@@ -99,6 +101,7 @@ private val THEME_REVEAL_FEATHER = 30.dp
 @Composable
 fun ThemeTransitionOverlay(
     state: ThemeTransitionState,
+    themeKey: Any? = null,
     content: @Composable () -> Unit,
 ) {
     val view = LocalView.current

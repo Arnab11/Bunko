@@ -48,6 +48,7 @@ import com.bunko.reader.CacheSettingsScreen
 import com.bunko.reader.KavitaSessionStore
 import com.bunko.reader.ReaderSettingsScreen
 import com.bunko.reader.offline.LocalBookRepository
+import com.bunko.reader.ui.theme.themeToggleModifier
 import kotlinx.coroutines.launch
 
 enum class SettingsCategory(
@@ -125,7 +126,8 @@ fun SettingsAdaptiveScreen(
                                 text = "Settings",
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.ExtraBold
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.then(themeToggleModifier())
                             )
                         },
                         navigationIcon = {
@@ -179,7 +181,8 @@ fun SettingsAdaptiveScreen(
                                 text = selectedCategory.title,
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.ExtraBold
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.then(themeToggleModifier())
                             )
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -229,7 +232,8 @@ fun SettingsAdaptiveScreen(
                             text = activeCategory?.title ?: "Settings",
                             color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.ExtraBold
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.then(themeToggleModifier())
                         )
                     },
                     navigationIcon = {

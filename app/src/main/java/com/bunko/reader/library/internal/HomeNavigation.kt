@@ -13,24 +13,14 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
-import com.bunko.reader.ui.theme.LocalThemeTransitionState
+import com.bunko.reader.ui.theme.themeToggleModifier
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
@@ -595,8 +585,6 @@ internal fun HomeTopBar(
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     var modeMenuExpanded by remember { mutableStateOf(false) }
-    var titleBounds by remember { mutableStateOf(Rect.Zero) }
-    val themeTransition = LocalThemeTransitionState.current
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -633,23 +621,7 @@ internal fun HomeTopBar(
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = if (onBack == null && onToggleTheme != null) {
-                        Modifier
-                            .onGloballyPositioned { coordinates ->
-                                titleBounds = coordinates.boundsInRoot()
-                            }
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                val transition = themeTransition
-                                if (transition?.isAnimating != true) {
-                                    val clickPos = if (titleBounds != Rect.Zero) titleBounds.center else Offset.Zero
-                                    transition?.startTransition(clickPos)
-                                    onToggleTheme()
-                                }
-                            }
-                    } else Modifier
+                    modifier = Modifier.then(themeToggleModifier(explicitToggle = onToggleTheme))
                 )
 
                 if (showModeSwitch) {

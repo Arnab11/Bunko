@@ -86,6 +86,7 @@ import com.bunko.reader.ui.browse.SeriesPosterCard
 import com.bunko.reader.ui.theme.BunkoBackground
 import com.bunko.reader.ui.theme.BunkoChrome
 import com.bunko.reader.ui.theme.BunkoSurface
+import com.bunko.reader.ui.theme.themeToggleModifier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -247,7 +248,8 @@ internal fun SeriesScreen(
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.then(themeToggleModifier())
                         )
                     }
                 },

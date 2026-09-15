@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import com.bunko.reader.ui.theme.BunkoBackground
@@ -52,6 +53,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.bunko.reader.settings.SettingsAdaptiveScreen
+import com.bunko.reader.ui.theme.LocalToggleTheme
 import com.bunko.reader.ui.theme.rememberThemeTransitionState
 import androidx.navigation.compose.rememberNavController
 import coil.Coil
@@ -131,8 +133,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             val appSettings by settingsStore.flow.collectAsState(initial = AppSettings())
             val themeTransitionState = rememberThemeTransitionState()
+            val scope = rememberCoroutineScope()
+            // Apply header-tap theme toggles instantly in memory so heavy tabs
+            // (History / Want to Read) recompose with the new colors immediately
+            // instead of waiting for the DataStore disk write + flow emission,
+            // which previously made the reveal miss and the switch feel laggy.
+            var immediateDark by remember { mutableStateOf<Boolean?>(null) }
+            LaunchedEffect(appSettings.isDarkMode) {
+                if (immediateDark == appSettings.isDarkMode) immediateDark = null
+            }
+            val effectiveDark = immediateDark ?: appSettings.isDarkMode
 
-            LaunchedEffect(appSettings.isDarkMode, appSettings.appTheme, appSettings.isAmoledMode) {
+            LaunchedEffect(effectiveDark, appSettings.appTheme, appSettings.isAmoledMode) {
                 if (themeTransitionState.isAnimating) {
                     snapshotFlow {
                         themeTransitionState.animationProgress.value to themeTransitionState.isAnimating
@@ -141,7 +153,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 applyEdgeToEdge(
-                    isDarkMode = appSettings.isDarkMode,
+                    isDarkMode = effectiveDark,
                     appTheme = appSettings.appTheme,
                     isAmoled = appSettings.isAmoledMode,
                 )
@@ -149,11 +161,25 @@ class MainActivity : ComponentActivity() {
 
             BunkoTheme(
                 theme = appSettings.appTheme,
-                isDarkMode = appSettings.isDarkMode,
+                isDarkMode = effectiveDark,
                 isAmoledMode = appSettings.isAmoledMode,
                 transitionState = themeTransitionState
             ) {
-                AppRoot(sessionStore, settingsStore, loginDefaults)
+                // Single app-wide toggle: every header reads LocalToggleTheme,
+                // so all pages share identical tap-title + reveal behavior.
+                val toggleTheme: () -> Unit = {
+                    val next = !effectiveDark
+                    immediateDark = next
+                    scope.launch { settingsStore.setDarkMode(next) }
+                }
+                CompositionLocalProvider(LocalToggleTheme provides toggleTheme) {
+                    AppRoot(
+                        sessionStore = sessionStore,
+                        settingsStore = settingsStore,
+                        loginDefaults = loginDefaults,
+                        onToggleTheme = toggleTheme
+                    )
+                }
             }
         }
     }
@@ -167,7 +193,8 @@ class MainActivity : ComponentActivity() {
 fun AppRoot(
     sessionStore: KavitaSessionStore,
     settingsStore: AppSettingsStore,
-    loginDefaults: LoginDefaults = LoginDefaults()
+    loginDefaults: LoginDefaults = LoginDefaults(),
+    onToggleTheme: () -> Unit = {},
 ) {
     val nav = rememberNavController()
     val ctx = LocalContext.current
@@ -180,7 +207,10 @@ fun AppRoot(
     var installedImageLoader by remember { mutableStateOf<ImageLoader?>(null) }
 
     fun installImageLoader(loader: ImageLoader?) {
-        val next = loader ?: ImageLoader(ctx)
+        // Same software-bitmap requirement as the Kavita cover loader:
+        // keeps View.drawToBitmap() (theme-reveal screenshot) working on
+        // image-heavy screens.
+        val next = loader ?: ImageLoader.Builder(ctx).allowHardware(false).build()
         val previous = installedImageLoader
         if (previous !== next) {
             // A Coil DiskCache directory must have a single active owner.
@@ -418,9 +448,7 @@ fun AppRoot(
                     onRequireLogin = {
                         nav.navigate("login")
                     },
-                    onToggleTheme = {
-                        scope.launch { settingsStore.toggleDarkMode() }
-                    }
+                    onToggleTheme = onToggleTheme
                 )
             }
 
