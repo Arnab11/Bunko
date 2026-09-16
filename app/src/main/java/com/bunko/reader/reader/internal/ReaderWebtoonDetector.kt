@@ -2,10 +2,11 @@ package com.bunko.reader.reader.internal
 
 import com.bunko.reader.FileDimensionDto
 import com.bunko.reader.ReaderReadingDirection
+import com.bunko.reader.SeriesMetadataDto
 
 /**
- * Intelligent detector for Webtoon / Long Strip formats.
- * Inspects page aspect ratios and series metadata tags/genres.
+ * Intelligent detector for Webtoon / Manhwa / Long Strip formats.
+ * Inspects page aspect ratios, series titles, tags, genres, publishers, and metadata.
  */
 internal object ReaderWebtoonDetector {
 
@@ -13,20 +14,113 @@ internal object ReaderWebtoonDetector {
         "webtoon",
         "webtoons",
         "manhwa",
+        "manhua",
         "long strip",
         "longstrip",
-        "vertical scroll",
-        "scroll"
+        "vertical scroll"
     )
 
-    fun isWebtoonMetadata(genres: List<String>?, tags: List<String>?): Boolean {
-        if (genres != null && genres.any { g -> WEBTOON_KEYWORDS.any { kw -> g.contains(kw, ignoreCase = true) } }) {
+    private val WEBTOON_PLATFORMS = listOf(
+        "kakaopage",
+        "kakao",
+        "tapas",
+        "tappytoon",
+        "webtoon",
+        "naver webtoon",
+        "lezhin",
+        "toomics",
+        "redice studio",
+        "line webtoon"
+    )
+
+    private val KNOWN_WEBTOON_TITLES = listOf(
+        "solo leveling",
+        "tower of god",
+        "noblesse",
+        "the beginning after the end",
+        "omniscient reader",
+        "lookism",
+        "god of high school",
+        "wind breaker",
+        "nano machine",
+        "return of the blossoming blade",
+        "magic emperor",
+        "eleceed",
+        "legend of the northern blade",
+        "mercenary enrollment",
+        "viral hit",
+        "how to fight",
+        "sweet home",
+        "bastard",
+        "unordinary",
+        "lore olympus"
+    )
+
+    private val WEBTOON_WORD_REGEX = Regex(
+        "\\b(webtoon|webtoons|manhwa|manhua|long strip|longstrip|vertical scroll)\\b",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun isWebtoonMetadata(
+        genres: List<String>? = null,
+        tags: List<String>? = null,
+        publishers: List<String>? = null,
+        summary: String? = null,
+        language: String? = null,
+        seriesName: String? = null
+    ): Boolean {
+        // 1. Check Genres (Strict keywords)
+        if (genres != null && genres.any { g -> WEBTOON_KEYWORDS.any { kw -> g.trim().equals(kw, ignoreCase = true) || g.contains(kw, ignoreCase = true) } }) {
             return true
         }
-        if (tags != null && tags.any { t -> WEBTOON_KEYWORDS.any { kw -> t.contains(kw, ignoreCase = true) } }) {
+
+        // 2. Check Tags (Strict keywords)
+        if (tags != null && tags.any { t -> WEBTOON_KEYWORDS.any { kw -> t.trim().equals(kw, ignoreCase = true) || t.contains(kw, ignoreCase = true) } }) {
             return true
         }
+
+        // 3. Check Dedicated Webtoon Publishers / Studios
+        if (publishers != null && publishers.any { p -> WEBTOON_PLATFORMS.any { pub -> p.contains(pub, ignoreCase = true) } }) {
+            return true
+        }
+
+        // 4. Check Series Summary with word boundaries to avoid false matches
+        if (!summary.isNullOrBlank()) {
+            if (WEBTOON_WORD_REGEX.containsMatchIn(summary)) {
+                return true
+            }
+        }
+
+        // 5. Check Series Name
+        if (!seriesName.isNullOrBlank()) {
+            val lowerName = seriesName.lowercase()
+            if (KNOWN_WEBTOON_TITLES.any { title -> lowerName.contains(title) }) {
+                return true
+            }
+            if (lowerName.contains("[webtoon]") || lowerName.contains("(webtoon)") ||
+                lowerName.contains("[manhwa]") || lowerName.contains("(manhwa)") ||
+                lowerName.contains("[manhua]") || lowerName.contains("(manhua)")
+            ) {
+                return true
+            }
+        }
+
         return false
+    }
+
+    fun isWebtoonMetadata(metadata: SeriesMetadataDto?, seriesName: String? = null): Boolean {
+        if (metadata == null && seriesName == null) return false
+        val genres = metadata?.genres?.mapNotNull { it.title }
+        val tags = metadata?.tags?.mapNotNull { it.title }
+        val publishers = (metadata?.publishers.orEmpty() + metadata?.imprints.orEmpty()).mapNotNull { it.name }
+        return isWebtoonMetadata(
+            genres = genres,
+            tags = tags,
+            publishers = publishers,
+            summary = metadata?.summary,
+            language = metadata?.language,
+            seriesName = seriesName
+        )
     }
 
     fun isWebtoonDimensions(pageDimensions: Map<Int, FileDimensionDto>?): Boolean {
@@ -34,28 +128,33 @@ internal object ReaderWebtoonDetector {
         val validDims = pageDimensions.values.filter { (it.width ?: 0) > 0 && (it.height ?: 0) > 0 }
         if (validDims.isEmpty()) return false
 
-        var tallSliceCount = 0
         var extremeTallSliceCount = 0
         var totalAspect = 0f
+        var minAspect = Float.MAX_VALUE
+        var maxAspect = Float.MIN_VALUE
 
         for (dim in validDims) {
             val aspect = dim.width!!.toFloat() / dim.height!!.toFloat()
             totalAspect += aspect
-            if (aspect < 0.65f) {
-                tallSliceCount++
-            }
-            if (aspect < 0.45f) {
+            if (aspect < minAspect) minAspect = aspect
+            if (aspect > maxAspect) maxAspect = aspect
+            // Slices narrower than 0.48 are definitely webtoon continuous strips
+            if (aspect <= 0.48f) {
                 extremeTallSliceCount++
             }
         }
 
         val avgAspect = totalAspect / validDims.size
-        // 1. If any extreme tall slice (< 0.45), webtoon strip format
+
+        // 1. Definite extreme vertical strip slices (aspect <= 0.48)
         if (extremeTallSliceCount >= 1) return true
-        // 2. If majority of pages have aspect < 0.65
-        if (tallSliceCount >= (validDims.size + 1) / 2) return true
-        // 3. If average aspect ratio is significantly tall
-        if (avgAspect < 0.62f) return true
+
+        // 2. High variance in slice heights with tall segments (spliced webtoon panels)
+        // Standard comics (0.64-0.66) and manga (0.70-0.72) have uniform page dimensions.
+        if ((maxAspect - minAspect) > 0.25f && minAspect < 0.52f) return true
+
+        // 3. Dense slice episodes: very high slice count (>= 35) with slim vertical slices (avgAspect < 0.58)
+        if (validDims.size >= 35 && avgAspect < 0.58f) return true
 
         return false
     }
@@ -65,7 +164,12 @@ internal object ReaderWebtoonDetector {
         autoWebtoonMode: Boolean,
         pageDimensions: Map<Int, FileDimensionDto>?,
         genres: List<String>? = null,
-        tags: List<String>? = null
+        tags: List<String>? = null,
+        publishers: List<String>? = null,
+        summary: String? = null,
+        language: String? = null,
+        seriesName: String? = null,
+        seriesMetadata: SeriesMetadataDto? = null
     ): ReaderReadingDirection {
         // If explicitly set to Webtoon or Vertical, respect user choice
         if (preferredDirection == ReaderReadingDirection.Webtoon) {
@@ -77,7 +181,15 @@ internal object ReaderWebtoonDetector {
 
         // If Auto Webtoon mode is on, check if content is webtoon
         if (autoWebtoonMode) {
-            if (isWebtoonMetadata(genres, tags) || isWebtoonDimensions(pageDimensions)) {
+            val metadataMatch = isWebtoonMetadata(
+                genres = genres ?: seriesMetadata?.genres?.mapNotNull { it.title },
+                tags = tags ?: seriesMetadata?.tags?.mapNotNull { it.title },
+                publishers = publishers ?: (seriesMetadata?.publishers.orEmpty() + seriesMetadata?.imprints.orEmpty()).mapNotNull { it.name },
+                summary = summary ?: seriesMetadata?.summary,
+                language = language ?: seriesMetadata?.language,
+                seriesName = seriesName
+            )
+            if (metadataMatch || isWebtoonDimensions(pageDimensions)) {
                 return ReaderReadingDirection.Webtoon
             }
         }

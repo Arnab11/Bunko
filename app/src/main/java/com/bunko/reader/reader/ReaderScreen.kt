@@ -96,6 +96,7 @@ import com.bunko.reader.ReaderReadingDirection
 import com.bunko.reader.download.OfflineChapter
 import com.bunko.reader.download.OfflineIssueRepository
 import com.bunko.reader.MangaFormat
+import com.bunko.reader.SeriesMetadataDto
 import com.bunko.reader.reader.internal.ReaderLoadingScreen
 import com.bunko.reader.reader.internal.readerLoadErrorMessage
 import com.bunko.reader.reader.internal.ReaderInvertCacheKey
@@ -673,6 +674,15 @@ fun ReaderScreen(
                 offlineChapter = local
                 pages = loadedPageCount
                 pageDimensions = loadedDimensions
+                if (settings.reader.autoWebtoonMode && !isEpubTarget && !isPdfTarget) {
+                    val nextDirection = ReaderWebtoonDetector.resolveEffectiveReadingDirection(
+                        preferredDirection = readingDirection,
+                        autoWebtoonMode = true,
+                        pageDimensions = loadedDimensions,
+                        seriesName = seriesName
+                    )
+                    readingDirection = nextDirection
+                }
                 page = landingPage
                 verticalRestoreNonce++
                 completingRead = false
@@ -882,10 +892,14 @@ fun ReaderScreen(
             readerImageLoader = client.buildReaderImageLoader(okHttp, loadedSession)
             runCatching { offlineRepository.syncPending(loadedSession, loadedApi) }
                 .onFailure { BunkoLog.w("Could not sync pending offline progress from Reader.", it) }
+            var seriesMetadata: SeriesMetadataDto? = null
             val chapterMetadataJob = launch {
                 seriesName = runCatching { loadedApi.series(seriesId).name }
                     .onFailure { BunkoLog.w("Could not load reader series name for $seriesId.", it) }
                     .getOrDefault(seriesName)
+                seriesMetadata = runCatching { loadedApi.seriesMetadata(seriesId) }
+                    .onFailure { BunkoLog.w("Could not load reader series metadata for $seriesId.", it) }
+                    .getOrNull()
                 val loadedVolumes = runCatching { loadedApi.volumes(seriesId) }
                     .onFailure { BunkoLog.w("Could not load reader chapter sequence for $seriesId.", it) }
                     .getOrDefault(emptyList())
@@ -895,20 +909,31 @@ fun ReaderScreen(
                     currentVolumeId = it.volumeId
                 }
             }
-            val resolvedDirection = try {
+            val (resolvedDirection, hasExplicitProfile) = try {
                 // A series-specific direction on the server (User/Implicit profile)
                 // wins. When only the global Default profile applies, the series has
                 // no direction of its own, so fall back to the app setting.
                 val profile = loadedApi.readingProfile(libraryId, seriesId)
-                resolveReaderReadingDirection(
-                    globalDirection = persistedReaderSettings.readingDirection,
-                    cachedDirection = cachedPreferences?.readingDirection,
-                    profileKind = profile.kind,
-                    profileDirection = profile.readingDirection
-                )
+                if (cachedPreferences?.readingDirection != null) {
+                    Pair(cachedPreferences.readingDirection, true)
+                } else if (profile.kind != KavitaReadingProfileKindDefault && profile.readingDirection != null) {
+                    val dir = when (profile.readingDirection) {
+                        KavitaReadingDirectionRtl -> ReaderReadingDirection.RightToLeft
+                        KavitaReadingDirectionLtr -> ReaderReadingDirection.LeftToRight
+                        KavitaReadingDirectionVertical -> ReaderReadingDirection.Webtoon
+                        else -> persistedReaderSettings.readingDirection
+                    }
+                    Pair(dir, true)
+                } else {
+                    Pair(persistedReaderSettings.readingDirection, false)
+                }
             } catch (t: Throwable) {
                 BunkoLog.w("Could not load reading direction for series $seriesId.", t)
-                cachedPreferences?.readingDirection ?: persistedReaderSettings.readingDirection
+                if (cachedPreferences?.readingDirection != null) {
+                    Pair(cachedPreferences.readingDirection, true)
+                } else {
+                    Pair(persistedReaderSettings.readingDirection, false)
+                }
             }
             readingDirection = resolvedDirection
             cachedPreferences?.let {
@@ -968,11 +993,19 @@ fun ReaderScreen(
                 }
             }
             chapterMetadataJob.join()
-            val effectiveDirection = ReaderWebtoonDetector.resolveEffectiveReadingDirection(
-                preferredDirection = resolvedDirection,
-                autoWebtoonMode = persistedReaderSettings.autoWebtoonMode,
-                pageDimensions = pageDimensions
-            )
+            val effectiveDirection = if (isEpubChapter) {
+                ReaderReadingDirection.LeftToRight
+            } else if (hasExplicitProfile) {
+                resolvedDirection
+            } else {
+                ReaderWebtoonDetector.resolveEffectiveReadingDirection(
+                    preferredDirection = resolvedDirection,
+                    autoWebtoonMode = persistedReaderSettings.autoWebtoonMode,
+                    pageDimensions = pageDimensions,
+                    seriesName = seriesName,
+                    seriesMetadata = seriesMetadata
+                )
+            }
             readingDirection = effectiveDirection
             readerReady = true
             verticalRestoreNonce++

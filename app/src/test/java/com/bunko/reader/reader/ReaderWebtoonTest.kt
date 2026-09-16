@@ -12,26 +12,40 @@ import org.junit.Test
 class ReaderWebtoonTest {
 
     @Test
-    fun isWebtoonMetadataMatchesKeywords() {
-        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(listOf("Action", "Webtoon"), null))
-        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(null, listOf("Manhwa", "Fantasy")))
-        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(listOf("long strip"), null))
-        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(null, listOf("vertical scroll")))
+    fun isWebtoonMetadataMatchesKeywordsWithoutFalsePositives() {
+        // Legitimate webtoons
+        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(genres = listOf("Action", "Webtoon")))
+        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(tags = listOf("Manhwa", "Fantasy")))
+        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(genres = listOf("long strip")))
+        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(tags = listOf("vertical scroll")))
+        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(seriesName = "Solo Leveling"))
+        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(publishers = listOf("KakaoPage")))
+        assertTrue(ReaderWebtoonDetector.isWebtoonMetadata(summary = "This is a popular webtoon adapted from the web novel."))
 
-        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(listOf("Action", "Manga"), listOf("Shounen")))
-        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(null, null))
-        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(emptyList(), emptyList()))
+        // False positive prevention
+        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(genres = listOf("Action", "Manga"), tags = listOf("Shounen"), seriesName = "One Piece"))
+        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(tags = listOf("Full Color", "Colored", "Action")))
+        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(summary = "Naruto searches for the ancient scroll of sealing."))
+        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(seriesName = "Spider-Man"))
+        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(genres = null, tags = null, seriesName = null))
+        assertFalse(ReaderWebtoonDetector.isWebtoonMetadata(genres = emptyList(), tags = emptyList()))
     }
 
     @Test
-    fun isWebtoonDimensionsDetectsTallStrips() {
-        // Typical manga page (e.g. 800 x 1200 -> aspect ratio 0.667)
+    fun isWebtoonDimensionsDetectsTallStripsWithoutFalsePositives() {
+        // Typical Japanese tankobon manga page (e.g. 800 x 1130 -> aspect ratio 0.708)
         val mangaPages = mapOf(
-            1 to FileDimensionDto(width = 800, height = 1200),
-            2 to FileDimensionDto(width = 800, height = 1200),
-            3 to FileDimensionDto(width = 800, height = 1200)
+            1 to FileDimensionDto(width = 800, height = 1130),
+            2 to FileDimensionDto(width = 800, height = 1130),
+            3 to FileDimensionDto(width = 800, height = 1130)
         )
         assertFalse(ReaderWebtoonDetector.isWebtoonDimensions(mangaPages))
+
+        // Standard US Comic page (e.g. 1988 x 3056 -> aspect ratio 0.650)
+        val usComicPages = (1..24).associateWith {
+            FileDimensionDto(width = 1988, height = 3056)
+        }
+        assertFalse(ReaderWebtoonDetector.isWebtoonDimensions(usComicPages))
 
         // Webtoon slices with extreme vertical ratio (e.g. 800 x 2400 -> aspect ratio 0.333)
         val webtoonPages = mapOf(
@@ -55,21 +69,32 @@ class ReaderWebtoonTest {
 
     @Test
     fun resolveEffectiveReadingDirectionWithAutoWebtoonMode() {
-        val mangaPages = mapOf(
-            1 to FileDimensionDto(width = 800, height = 1200)
-        )
+        val usComicPages = (1..24).associateWith {
+            FileDimensionDto(width = 1988, height = 3056)
+        }
         val webtoonPages = mapOf(
             1 to FileDimensionDto(width = 800, height = 2400)
         )
 
-        // Manga with autoWebtoonMode = true -> stays RightToLeft
+        // US Comic with autoWebtoonMode = true -> stays LeftToRight (not falsely converted to Webtoon)
         assertEquals(
-            ReaderReadingDirection.RightToLeft,
+            ReaderReadingDirection.LeftToRight,
+            ReaderWebtoonDetector.resolveEffectiveReadingDirection(
+                preferredDirection = ReaderReadingDirection.LeftToRight,
+                autoWebtoonMode = true,
+                pageDimensions = usComicPages,
+                seriesName = "Batman"
+            )
+        )
+
+        // Solo Leveling series name with autoWebtoonMode = true -> resolves to Webtoon
+        assertEquals(
+            ReaderReadingDirection.Webtoon,
             ReaderWebtoonDetector.resolveEffectiveReadingDirection(
                 preferredDirection = ReaderReadingDirection.RightToLeft,
                 autoWebtoonMode = true,
-                pageDimensions = mangaPages,
-                genres = listOf("Action", "Shounen")
+                pageDimensions = usComicPages,
+                seriesName = "Solo Leveling"
             )
         )
 
@@ -90,7 +115,7 @@ class ReaderWebtoonTest {
             ReaderWebtoonDetector.resolveEffectiveReadingDirection(
                 preferredDirection = ReaderReadingDirection.RightToLeft,
                 autoWebtoonMode = true,
-                pageDimensions = mangaPages,
+                pageDimensions = usComicPages,
                 tags = listOf("Webtoon")
             )
         )
@@ -112,7 +137,7 @@ class ReaderWebtoonTest {
             ReaderWebtoonDetector.resolveEffectiveReadingDirection(
                 preferredDirection = ReaderReadingDirection.Webtoon,
                 autoWebtoonMode = false,
-                pageDimensions = mangaPages
+                pageDimensions = usComicPages
             )
         )
 
