@@ -311,6 +311,7 @@ private fun SettingsCategoryContent(
                 currentTheme = appSettings.appTheme,
                 isDarkMode = appSettings.isDarkMode,
                 isAmoledMode = appSettings.isAmoledMode,
+                navigationBarStyle = appSettings.navigationBarStyle,
                 onThemeSelected = { theme ->
                     scope.launch { settingsStore.setAppTheme(theme) }
                 },
@@ -319,6 +320,9 @@ private fun SettingsCategoryContent(
                 },
                 onAmoledModeChanged = { amoled ->
                     scope.launch { settingsStore.setAmoledMode(amoled) }
+                },
+                onNavigationBarStyleChanged = { style ->
+                    scope.launch { settingsStore.setNavigationBarStyle(style) }
                 }
             )
         }

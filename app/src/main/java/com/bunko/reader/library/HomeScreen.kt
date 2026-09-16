@@ -123,8 +123,10 @@ import com.bunko.reader.VolumeDto
 import com.bunko.reader.MarkChapterReadDto
 import com.bunko.reader.MarkVolumesReadDto
 import com.bunko.reader.SearchHistoryStore
+import com.bunko.reader.download.OfflineChapter
 import com.bunko.reader.download.OfflineIssueRecord
 import com.bunko.reader.download.OfflineIssueRepository
+import com.bunko.reader.NavigationBarStyle
 import com.bunko.reader.download.localCoverFile
 import com.bunko.reader.normalizeKavitaBaseUrl
 import com.bunko.reader.series.IssueDetailSideSheet
@@ -138,6 +140,7 @@ import com.bunko.reader.ui.browse.PosterGrid
 import com.bunko.reader.ui.browse.SeriesPosterCard
 import com.bunko.reader.update.AvailableUpdate
 import com.bunko.reader.library.internal.HomeShell
+import com.bunko.reader.library.internal.HomeDestination
 import com.bunko.reader.library.internal.loadLibrarySeriesCounts
 
 private val PaginationHeaderJson = Json { ignoreUnknownKeys = true }
@@ -179,11 +182,13 @@ fun LibraryScreen(
     onPickIssue: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, incognito: Boolean) -> Unit = { _, _, _, _, _ -> },
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onSelectLibrary: (LibraryDto) -> Unit,
-    onSelectSeries: (SeriesDto) -> Unit,
+    onSelectSeries: (SeriesDto, HomeDestination) -> Unit,
     onOpenOfflineBook: (LocalBook) -> Unit = {},
     onRequireLogin: () -> Unit = {},
     onSwitchToOffline: (() -> Unit)? = null,
-    onToggleTheme: (() -> Unit)? = null
+    onToggleTheme: (() -> Unit)? = null,
+    navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
+    initialDestination: HomeDestination? = null
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -538,7 +543,9 @@ fun LibraryScreen(
             onAddOfflineFolder = { folderLauncher.launch(null) },
             onRescanOffline = ::rescanOffline,
             onToggleLibraryMode = ::toggleLibraryMode,
-            onToggleTheme = onToggleTheme
+            onToggleTheme = onToggleTheme,
+            navigationBarStyle = navigationBarStyle,
+            initialDestination = initialDestination
         )
         SnackbarHost(
             hostState = snackbarHostState,

@@ -86,6 +86,14 @@ enum class ReaderImageScaleType {
     SmartFit
 }
 
+enum class NavigationBarStyle(
+    val label: String,
+    val description: String
+) {
+    Standard("Standard", "Full-width Material navigation bar"),
+    FloatingPill("Floating Pill", "mpvRx-style expressive floating capsule")
+}
+
 internal const val DefaultReaderPrefetchTurns = 4
 internal const val MaxReaderPrefetchTurns = 8
 
@@ -127,9 +135,11 @@ data class AppSettings(
     val appTheme: com.bunko.reader.ui.theme.AppTheme = com.bunko.reader.ui.theme.AppTheme.Default,
     val isDarkMode: Boolean = true,
     val isAmoledMode: Boolean = false,
+    val navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
 )
 
 class AppSettingsStore(private val context: Context) {
+    private val KEY_NAVIGATION_BAR_STYLE = stringPreferencesKey("navigation_bar_style")
     private val KEY_APP_THEME = stringPreferencesKey("app_theme")
     private val KEY_DARK_MODE = booleanPreferencesKey("dark_mode")
     private val KEY_AMOLED_MODE = booleanPreferencesKey("amoled_mode")
@@ -169,6 +179,9 @@ class AppSettingsStore(private val context: Context) {
                 ?: com.bunko.reader.ui.theme.AppTheme.Default,
             isDarkMode = prefs[KEY_DARK_MODE] ?: true,
             isAmoledMode = prefs[KEY_AMOLED_MODE] ?: false,
+            navigationBarStyle = prefs[KEY_NAVIGATION_BAR_STYLE]?.let {
+                runCatching { NavigationBarStyle.valueOf(it) }.getOrNull()
+            } ?: NavigationBarStyle.Standard,
             reader = ReaderSettings(
                 readingDirection = readerReadingDirection(
                     storedName = prefs[KEY_READING_DIRECTION],
@@ -341,6 +354,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setAmoledMode(value: Boolean) {
         context.settingsDataStore.edit { it[KEY_AMOLED_MODE] = value }
+    }
+
+    suspend fun setNavigationBarStyle(value: NavigationBarStyle) {
+        context.settingsDataStore.edit { it[KEY_NAVIGATION_BAR_STYLE] = value.name }
     }
 
     suspend fun toggleDarkMode() {

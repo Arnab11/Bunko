@@ -100,9 +100,15 @@ import com.bunko.reader.SeriesDto
 import com.bunko.reader.download.OfflineIssueRecord
 import com.bunko.reader.library.HomeShelfKind
 import com.bunko.reader.library.SearchSeriesTarget
-import com.bunko.reader.ui.theme.BunkoBackground
+import com.bunko.reader.ui.theme.LocalThemeTransitionState
+import com.bunko.reader.NavigationBarStyle
 import com.bunko.reader.ui.theme.BunkoChrome
-internal enum class HomeDestination(
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+enum class HomeDestination(
     val label: String,
     val icon: ImageVector,
     val expandedLabel: String = label
@@ -152,7 +158,7 @@ internal fun HomeShell(
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onSelectLibrary: (LibraryDto) -> Unit,
     onScanLibrary: (LibraryDto) -> Unit,
-    onSelectSeries: (SeriesDto) -> Unit,
+    onSelectSeries: (SeriesDto, HomeDestination) -> Unit,
     onRemoveWantToRead: (List<SeriesDto>) -> Unit,
     onLoadMoreWantToRead: () -> Unit,
     onLoadAllWantToRead: suspend () -> Result<List<SeriesDto>>,
@@ -167,19 +173,27 @@ internal fun HomeShell(
     onAddOfflineFolder: () -> Unit = onChangeOfflineFolder,
     onRescanOffline: () -> Unit = {},
     onToggleLibraryMode: () -> Unit = {},
-    onToggleTheme: (() -> Unit)? = null
+    onToggleTheme: (() -> Unit)? = null,
+    navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
+    initialDestination: HomeDestination? = null
 ) {
     var destination by rememberSaveable(
         initialSearchQuery,
+        initialDestination,
         stateSaver = Saver(
             save = { it.ordinal },
             restore = { HomeDestination.entries[it] }
         )
     ) {
         mutableStateOf(
-            if (initialSearchQuery.isNotBlank()) HomeDestination.Search else HomeDestination.Home
+            when {
+                initialDestination != null -> initialDestination
+                initialSearchQuery.isNotBlank() -> HomeDestination.Search
+                else -> HomeDestination.Home
+            }
         )
     }
+
     var reselectionCount by remember { mutableIntStateOf(0) }
     var isGridView by rememberSaveable { mutableStateOf(true) }
     var selectedSort by rememberSaveable { mutableStateOf(LocalBookSort.Title) }
@@ -189,6 +203,17 @@ internal fun HomeShell(
     var browseDrilldown by rememberSaveable { mutableStateOf<BrowseDrilldown?>(null) }
     var selectedLibrary by remember { mutableStateOf<LibraryDto?>(null) }
     var selectedShelf by remember { mutableStateOf<HomeShelfKind?>(null) }
+
+    LaunchedEffect(initialDestination) {
+        if (initialDestination != null && initialDestination != destination) {
+            destination = initialDestination
+            browseDrilldown = null
+            selectedShelf = null
+            if (initialDestination != HomeDestination.Libraries) {
+                selectedLibrary = null
+            }
+        }
+    }
 
     fun selectDestination(next: HomeDestination) {
         if (next == destination) {
@@ -324,6 +349,7 @@ internal fun HomeShell(
             .background(MaterialTheme.colorScheme.background)
     ) {
         val isWide = maxWidth >= 720.dp
+        val showNavigationRail = isWide && navigationBarStyle == NavigationBarStyle.Standard
 
         val topBarBackAction: (() -> Unit)? = when {
             destination == HomeDestination.Browse && browseDrilldown != null -> {
@@ -358,7 +384,7 @@ internal fun HomeShell(
             }
         }
 
-        if (isWide) {
+        if (showNavigationRail) {
             Column(Modifier.fillMaxSize()) {
                 HomeTopBar(
                     title = topBarTitle,
@@ -427,7 +453,7 @@ internal fun HomeShell(
                             }
                         },
                         onRemoveWantToRead = onRemoveWantToRead,
-                        onLoadMoreWantToRead = onLoadMoreWantToRead,
+                        onLoadMoreWantToRead = { onLoadMoreWantToRead() },
                         onLoadAllWantToRead = onLoadAllWantToRead,
                         onOpenBookmarks = {
                             selectDestination(HomeDestination.Browse)
@@ -467,6 +493,108 @@ internal fun HomeShell(
                 ) {
                     Spacer(Modifier.navigationBarsPadding())
                 }
+            }
+        } else if (navigationBarStyle == NavigationBarStyle.FloatingPill) {
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize()) {
+                    HomeTopBar(
+                        title = topBarTitle,
+                        onBack = topBarBackAction,
+                        showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
+                        isOffline = isOffline,
+                        onOpenSettings = onOpenSettings,
+                        onSearch = { selectDestination(HomeDestination.Search) },
+                        isSearchActive = destination == HomeDestination.Search,
+                        onSwitchMode = onToggleLibraryMode,
+                        onToggleTheme = onToggleTheme,
+                        actions = topBarActions
+                    )
+                    HomeContent(
+                        destination = destination,
+                        scrollToTopSignal = reselectionCount,
+                        libraries = libraries,
+                        librarySeriesCounts = librarySeriesCounts,
+                        isAdmin = isAdmin,
+                        scanningLibraryIds = scanningLibraryIds,
+                        loading = loading,
+                        refreshing = refreshing,
+                        onRefresh = onRefresh,
+                        error = error,
+                        session = session,
+                        sessionStore = sessionStore,
+                        onDeck = onDeck,
+                        recentlyUpdated = recentlyUpdated,
+                        newlyAdded = newlyAdded,
+                        wantToRead = wantToRead,
+                        wantToReadError = wantToReadError,
+                        wantToReadHasMore = wantToReadHasMore,
+                        wantToReadLoadingMore = wantToReadLoadingMore,
+                        wantToReadLoadMoreError = wantToReadLoadMoreError,
+                        downloaded = downloaded,
+                        api = api,
+                        searchHistoryStore = searchHistoryStore,
+                        initialSearchQuery = initialSearchQuery,
+                        selectedLibrary = selectedLibrary,
+                        onSelectLibraryChange = { selectedLibrary = it },
+                        selectedShelf = selectedShelf,
+                        onSelectShelfChange = { selectedShelf = it },
+                        browseDrilldown = browseDrilldown,
+                        onBrowseDrilldownChange = { browseDrilldown = it },
+                        onSelectLibrary = { lib ->
+                            selectedLibrary = lib
+                            destination = HomeDestination.Libraries
+                        },
+                        onScanLibrary = onScanLibrary,
+                        onSelectSeries = onSelectSeries,
+                        onOpenShelf = { shelfKind ->
+                            if (shelfKind == HomeShelfKind.OnDeck) {
+                                selectDestination(HomeDestination.History)
+                            } else {
+                                selectedShelf = shelfKind
+                                destination = HomeDestination.Home
+                            }
+                        },
+                        onRemoveWantToRead = onRemoveWantToRead,
+                        onLoadMoreWantToRead = { onLoadMoreWantToRead() },
+                        onLoadAllWantToRead = onLoadAllWantToRead,
+                        onOpenBookmarks = {
+                            selectDestination(HomeDestination.Browse)
+                            browseDrilldown = BrowseDrilldown.Bookmarks
+                        },
+                        onOpenCollections = {
+                            selectDestination(HomeDestination.Browse)
+                            browseDrilldown = BrowseDrilldown.Collections
+                        },
+                        onOpenDownloaded = {
+                            selectDestination(HomeDestination.Browse)
+                            browseDrilldown = BrowseDrilldown.Downloaded
+                        },
+                        onOpenBookmark = onOpenBookmark,
+                        onOpenCollection = onOpenCollection,
+                        onPickIssue = onPickIssue,
+                        onOpenFilteredSeries = onOpenFilteredSeries,
+                        isOffline = isOffline,
+                        offlineBooks = offlineBooks,
+                        offlineFolders = offlineFolders,
+                        offlineFolderName = offlineFolderName,
+                        isOfflineScanning = isOfflineScanning,
+                        onOpenOfflineBook = onOpenOfflineBook,
+                        onChangeOfflineFolder = onChangeOfflineFolder,
+                        onAddOfflineFolder = onAddOfflineFolder,
+                        onRescanOffline = onRescanOffline,
+                        selectedSort = selectedSort,
+                        kavitaSort = kavitaSort,
+                        isGridView = isGridView,
+                        onSelectDestination = ::selectDestination,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                HomeBottomNavigation(
+                    selected = destination,
+                    onSelect = ::selectDestination,
+                    navigationBarStyle = navigationBarStyle,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
         } else {
             Column(Modifier.fillMaxSize()) {
@@ -563,7 +691,8 @@ internal fun HomeShell(
                 )
                 HomeBottomNavigation(
                     selected = destination,
-                    onSelect = ::selectDestination
+                    onSelect = ::selectDestination,
+                    navigationBarStyle = navigationBarStyle
                 )
             }
         }
@@ -798,24 +927,68 @@ internal fun HomeNavigationRail(
 @Composable
 internal fun HomeBottomNavigation(
     selected: HomeDestination,
-    onSelect: (HomeDestination) -> Unit
+    onSelect: (HomeDestination) -> Unit,
+    navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
+    modifier: Modifier = Modifier
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Box(Modifier.navigationBarsPadding()) {
-            ShortNavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                contentColor = MaterialTheme.colorScheme.onSurface
+    when (navigationBarStyle) {
+        NavigationBarStyle.FloatingPill -> {
+            val haptics = LocalHapticFeedback.current
+            var bottomDragOffset by remember { mutableFloatStateOf(0f) }
+            Box(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
+                    .pointerInput(selected) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { bottomDragOffset = 0f },
+                            onDragEnd = {
+                                val currentIndex = MainNavDestinations.indexOf(selected)
+                                if (bottomDragOffset < -40f && currentIndex < MainNavDestinations.lastIndex) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    onSelect(MainNavDestinations[currentIndex + 1])
+                                } else if (bottomDragOffset > 40f && currentIndex > 0) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    onSelect(MainNavDestinations[currentIndex - 1])
+                                }
+                                bottomDragOffset = 0f
+                            },
+                            onDragCancel = { bottomDragOffset = 0f },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                bottomDragOffset += dragAmount
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                MainNavDestinations.forEach { destination ->
-                    ShortNavigationBarItem(
-                        selected = selected == destination,
-                        onClick = { onSelect(destination) },
-                        icon = { NavDestinationIcon(destination, selected == destination) },
-                        label = { Text(destination.label) }
-                    )
+                FloatingPillNavigationBar(
+                    destinations = MainNavDestinations,
+                    selected = selected,
+                    onSelect = onSelect
+                )
+            }
+        }
+        NavigationBarStyle.Standard -> {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(Modifier.navigationBarsPadding()) {
+                    ShortNavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ) {
+                        MainNavDestinations.forEach { destination ->
+                            ShortNavigationBarItem(
+                                selected = selected == destination,
+                                onClick = { onSelect(destination) },
+                                icon = { NavDestinationIcon(destination, selected == destination) },
+                                label = { Text(destination.label) }
+                            )
+                        }
+                    }
                 }
             }
         }

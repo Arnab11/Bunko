@@ -59,6 +59,9 @@ import com.bunko.reader.ui.theme.ReadingProgressInProgress
 import com.bunko.reader.ui.theme.ReadingProgressRead
 import com.bunko.reader.ui.theme.ReadingProgressTrack
 
+import com.bunko.reader.NavigationBarStyle
+import androidx.compose.ui.platform.LocalContext
+import coil.request.ImageRequest
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -78,12 +81,19 @@ internal fun ChapterIssueGrid(
     onRemoveDownload: ((ChapterCardItem) -> Unit)? = null,
     downloadedChapterIds: Set<Int> = emptySet(),
     downloadingChapterIds: Set<Int> = emptySet(),
+    navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
     modifier: Modifier = Modifier
 ) {
+    val bottomPadding = if (navigationBarStyle == NavigationBarStyle.FloatingPill) 96.dp else 16.dp
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 130.dp),
         modifier = modifier.fillMaxHeight(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 16.dp,
+            end = 16.dp,
+            bottom = bottomPadding
+        ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -181,6 +191,7 @@ internal fun ChapterGridCard(
     ).joinToString(" • ")
     val progress = chapter.readingProgress()
     var menuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Card(
         modifier = Modifier
@@ -199,8 +210,14 @@ internal fun ChapterGridCard(
                 contentAlignment = Alignment.Center
             ) {
                 if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+                    val request = remember(context, session.baseUrl, session.apiKey, chapter.id) {
+                        ImageRequest.Builder(context)
+                            .data(chapterCoverUrl(session, chapter.id))
+                            .crossfade(180)
+                            .build()
+                    }
                     AsyncImage(
-                        model = chapterCoverUrl(session, chapter.id),
+                        model = request,
                         contentDescription = title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -210,7 +227,7 @@ internal fun ChapterGridCard(
                         "CH",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
 

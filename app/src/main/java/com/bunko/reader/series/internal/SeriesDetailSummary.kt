@@ -65,7 +65,11 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.bunko.reader.ChapterDto
@@ -694,21 +698,34 @@ private fun SeriesDetailHero(
 
 @Composable
 private fun SeriesCover(series: SeriesDto, session: KavitaSession, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     Box(
         modifier = modifier
             .aspectRatio(KavitaCoverAspectRatio)
+            .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLowest),
         contentAlignment = Alignment.Center
     ) {
         if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+            val request = remember(context, session.baseUrl, session.apiKey, series.id) {
+                ImageRequest.Builder(context)
+                    .data(seriesCoverUrl(session, series.id))
+                    .crossfade(180)
+                    .build()
+            }
             AsyncImage(
-                model = seriesCoverUrl(session, series.id),
+                model = request,
                 contentDescription = series.name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
         } else {
-            Text(seriesInitial(series.name), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.headlineMedium)
+            Text(
+                seriesInitial(series.name),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }

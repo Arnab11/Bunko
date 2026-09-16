@@ -346,7 +346,7 @@ internal fun HomeContent(
     onBrowseDrilldownChange: (BrowseDrilldown?) -> Unit = {},
     onSelectLibrary: (LibraryDto) -> Unit,
     onScanLibrary: (LibraryDto) -> Unit,
-    onSelectSeries: (SeriesDto) -> Unit,
+    onSelectSeries: (SeriesDto, HomeDestination) -> Unit,
     onOpenShelf: (HomeShelfKind) -> Unit,
     onRemoveWantToRead: (List<SeriesDto>) -> Unit,
     onLoadMoreWantToRead: () -> Unit,
@@ -498,7 +498,7 @@ internal fun HomeContent(
                         onBack = { onSelectShelfChange(null) },
                         statusBarPadding = false,
                         navigationBarPadding = false,
-                        onSelectSeries = onSelectSeries
+                        onSelectSeries = { s -> onSelectSeries(s, destination) }
                     )
                 } else {
                     val pullState = rememberPullToRefreshState()
@@ -522,10 +522,10 @@ internal fun HomeContent(
                                 verticalArrangement = Arrangement.spacedBy(22.dp)
                             ) {
                                 item {
-                                    HomeShelf(HomeShelfKind.OnDeck, displayOnDeck, session, isGridView, onOpenShelf, onSelectSeries)
+                                    HomeShelf(HomeShelfKind.OnDeck, displayOnDeck, session, isGridView, onOpenShelf, onSelectSeries = { s -> onSelectSeries(s, destination) })
                                 }
                                 item {
-                                    HomeShelf(HomeShelfKind.NewlyAdded, displayNewlyAdded, session, isGridView, onOpenShelf, onSelectSeries)
+                                    HomeShelf(HomeShelfKind.NewlyAdded, displayNewlyAdded, session, isGridView, onOpenShelf, onSelectSeries = { s -> onSelectSeries(s, destination) })
                                 }
                             }
                         }
@@ -539,7 +539,7 @@ internal fun HomeContent(
                     onBack = { onSelectDestination(HomeDestination.Home) },
                     statusBarPadding = false,
                     navigationBarPadding = false,
-                    onSelectSeries = onSelectSeries
+                    onSelectSeries = { s -> onSelectSeries(s, destination) }
                 )
             }
             HomeDestination.Libraries -> {
@@ -589,7 +589,7 @@ internal fun HomeContent(
                                         isGridView = isGridView,
                                         onSelect = { s ->
                                             val sWithLib = if (s.libraryId == null || s.libraryId == 0) s.copy(libraryId = activeLibrary.id) else s
-                                            onSelectSeries(sWithLib)
+                                            onSelectSeries(sWithLib, destination)
                                         }
                                     )
                                 } else {
@@ -616,7 +616,7 @@ internal fun HomeContent(
                                 isGridView = isGridView,
                                 onSelect = { s ->
                                     val sWithLib = if (s.libraryId == null || s.libraryId == 0) s.copy(libraryId = selectedLibrary.id) else s
-                                    onSelectSeries(sWithLib)
+                                    onSelectSeries(sWithLib, destination)
                                 }
                             )
                         } else {
@@ -651,7 +651,7 @@ internal fun HomeContent(
                         isGridView = isGridView,
                         refreshing = refreshing,
                         onRefresh = onRefresh,
-                        onSelectSeries = onSelectSeries,
+                        onSelectSeries = { s -> onSelectSeries(s, destination) },
                         onRemove = onRemoveWantToRead,
                         hasMore = wantToReadHasMore,
                         loadingMore = wantToReadLoadingMore,
@@ -726,7 +726,7 @@ internal fun HomeContent(
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
                     listState = searchListState,
-                    onSelectSeries = onSelectSeries,
+                    onSelectSeries = { s -> onSelectSeries(s, destination) },
                     onOpenFilteredSeries = onOpenFilteredSeries,
                     modifier = Modifier.fillMaxSize()
                 )

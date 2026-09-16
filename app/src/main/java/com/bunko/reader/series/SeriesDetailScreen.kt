@@ -144,6 +144,8 @@ import androidx.compose.material3.VerticalDivider
 import com.bunko.reader.library.internal.HomeBottomNavigation
 import com.bunko.reader.library.internal.HomeNavigationRail
 import com.bunko.reader.library.internal.HomeDestination
+import com.bunko.reader.NavigationBarStyle
+import com.bunko.reader.ui.theme.themeToggleModifier
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -154,7 +156,9 @@ internal fun ChapterPickScreen(
     seriesName: String,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onOpenSettings: () -> Unit = {},
+    currentDestination: HomeDestination = HomeDestination.Libraries,
     onSelectDestination: (HomeDestination) -> Unit = {},
+    navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
     onBack: () -> Unit = {},
     onPick: (chapterId: Int, volumeId: Int, incognito: Boolean) -> Unit
 ) {
@@ -383,43 +387,38 @@ internal fun ChapterPickScreen(
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
+                    .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp)
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    Text(
-                        text = displaySeries.name,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 4.dp)
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                }
+                Text(
+                    text = displaySeries.name,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 4.dp)
+                        .then(themeToggleModifier())
+                )
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
@@ -431,8 +430,9 @@ internal fun ChapterPickScreen(
             .background(BunkoBackground)
     ) {
         val isTablet = maxWidth >= 720.dp
+        val showRail = isTablet && navigationBarStyle == NavigationBarStyle.Standard
 
-        if (isTablet) {
+        if (showRail) {
             Column(Modifier.fillMaxSize()) {
                 topHeader()
 
@@ -442,7 +442,7 @@ internal fun ChapterPickScreen(
                         .fillMaxWidth()
                 ) {
                     HomeNavigationRail(
-                        selected = HomeDestination.Libraries,
+                        selected = currentDestination,
                         onSelect = onSelectDestination
                     )
 
@@ -494,7 +494,8 @@ internal fun ChapterPickScreen(
                                     onMarkUnread = ::markIssueUnread,
                                     onDownload = ::downloadIssue,
                                     onRemoveDownload = ::removeIssueDownload,
-                                    onMessage = ::showMessage
+                                    onMessage = ::showMessage,
+                                    navigationBarStyle = navigationBarStyle
                                 )
                             }
                         }
@@ -514,6 +515,82 @@ internal fun ChapterPickScreen(
                 ) {
                     Spacer(Modifier.navigationBarsPadding())
                 }
+            }
+        } else if (navigationBarStyle == NavigationBarStyle.FloatingPill) {
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize()) {
+                    topHeader()
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        when {
+                            loading -> DarkLoadingState()
+                            error != null -> DarkMessageState(
+                                title = "Could not load series details",
+                                body = error ?: "Unknown error",
+                                actionLabel = "Retry",
+                                onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                            )
+                            loadedApi == null -> DarkMessageState(
+                                title = "Could not load series details",
+                                body = "API unavailable",
+                                actionLabel = "Retry",
+                                onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                            )
+                            else -> PullToRefreshBox(
+                                isRefreshing = refreshing,
+                                onRefresh = {
+                                    if (!refreshing) {
+                                        scope.launch { loadSeriesDetails(initialLoad = false) }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                state = pullRefreshState,
+                                indicator = { BunkoPullToRefreshIndicator(pullRefreshState, refreshing) }
+                            ) {
+                                SeriesDetailContent(
+                                    series = displaySeries,
+                                    metadata = metadata,
+                                    continueChapter = continueChapter,
+                                    chapterCards = chapterCards,
+                                    volumeCount = volumes.size,
+                                    session = session,
+                                    api = loadedApi,
+                                    isAdmin = isAdmin,
+                                    downloadedChapterIds = downloadedChapterIds,
+                                    downloadingChapterIds = downloadingChapterIds,
+                                    onOpenFilteredSeries = onOpenFilteredSeries,
+                                    onPick = { chapterId, volumeId -> onPick(chapterId, volumeId, false) },
+                                    onReadIncognito = { item -> onPick(item.chapter.id, item.volume.id, true) },
+                                    onMarkRead = ::markIssueRead,
+                                    onMarkUnread = ::markIssueUnread,
+                                    onDownload = ::downloadIssue,
+                                    onRemoveDownload = ::removeIssueDownload,
+                                    onMessage = ::showMessage,
+                                    navigationBarStyle = navigationBarStyle
+                                )
+                            }
+                        }
+
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
+                                .padding(bottom = 80.dp, start = 16.dp, end = 16.dp)
+                        )
+                    }
+                }
+
+                HomeBottomNavigation(
+                    selected = currentDestination,
+                    onSelect = onSelectDestination,
+                    navigationBarStyle = navigationBarStyle,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
         } else {
             Column(Modifier.fillMaxSize()) {
@@ -567,7 +644,8 @@ internal fun ChapterPickScreen(
                                 onMarkUnread = ::markIssueUnread,
                                 onDownload = ::downloadIssue,
                                 onRemoveDownload = ::removeIssueDownload,
-                                onMessage = ::showMessage
+                                onMessage = ::showMessage,
+                                navigationBarStyle = navigationBarStyle
                             )
                         }
                     }
@@ -581,8 +659,9 @@ internal fun ChapterPickScreen(
                 }
 
                 HomeBottomNavigation(
-                    selected = HomeDestination.Libraries,
-                    onSelect = onSelectDestination
+                    selected = currentDestination,
+                    onSelect = onSelectDestination,
+                    navigationBarStyle = navigationBarStyle
                 )
             }
         }
@@ -608,10 +687,12 @@ private fun SeriesDetailContent(
     onMarkUnread: (ChapterCardItem) -> Unit,
     onDownload: (ChapterCardItem) -> Unit,
     onRemoveDownload: (ChapterCardItem) -> Unit,
-    onMessage: (String) -> Unit
+    onMessage: (String) -> Unit,
+    navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard
 ) {
     val specialCards = chapterCards.filter { it.chapter.isSpecial }
     val issueCards = chapterCards.filterNot { it.chapter.isSpecial }
+    val bottomPadding = if (navigationBarStyle == NavigationBarStyle.FloatingPill) 96.dp else 16.dp
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val isTablet = maxWidth >= 720.dp
         if (isTablet) {
@@ -627,7 +708,7 @@ private fun SeriesDetailContent(
                         .width(summaryWidth)
                         .fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
+                    contentPadding = PaddingValues(bottom = if (navigationBarStyle == NavigationBarStyle.FloatingPill) 96.dp else 24.dp)
                 ) {
                     item {
                         SeriesDetailSummary(
@@ -660,6 +741,7 @@ private fun SeriesDetailContent(
                     onRemoveDownload = onRemoveDownload,
                     downloadedChapterIds = downloadedChapterIds,
                     downloadingChapterIds = downloadingChapterIds,
+                    navigationBarStyle = navigationBarStyle,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -667,7 +749,12 @@ private fun SeriesDetailContent(
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 130.dp),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 16.dp,
+                    end = 16.dp,
+                    bottom = bottomPadding
+                ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {

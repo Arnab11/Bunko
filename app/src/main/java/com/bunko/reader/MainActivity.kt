@@ -76,6 +76,7 @@ import com.bunko.reader.series.ChapterPickScreen
 import com.bunko.reader.series.SeriesScreen
 import com.bunko.reader.update.AvailableUpdate
 import com.bunko.reader.update.GitHubUpdateChecker
+import com.bunko.reader.library.internal.HomeDestination
 import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.OfflineStartupScreen
 
@@ -198,6 +199,7 @@ fun AppRoot(
 ) {
     val nav = rememberNavController()
     val ctx = LocalContext.current
+    val appSettings by settingsStore.flow.collectAsState(initial = AppSettings())
 
     var sessionRevision by remember { mutableIntStateOf(0) }
     var availableUpdate by remember { mutableStateOf<AvailableUpdate?>(null) }
@@ -394,20 +396,27 @@ fun AppRoot(
             }
 
             composable(
-                route = "libraries?search={search}",
+                route = "libraries?search={search}&tab={tab}",
                 arguments = listOf(
                     navArgument("search") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                    navArgument("tab") {
                         type = NavType.StringType
                         defaultValue = ""
                     }
                 )
             ) { backStack ->
+                val tabArg = backStack.arguments!!.getString("tab").orEmpty()
+                val initialDestination = HomeDestination.entries.firstOrNull { it.name.equals(tabArg, ignoreCase = true) }
                 LibraryScreen(
                     sessionStore = sessionStore,
                     sessionRevision = sessionRevision,
                     localRepository = localRepository,
                     initialIsOffline = (activeMode == "offline"),
                     initialSearchQuery = backStack.arguments!!.getString("search").orEmpty(),
+                    initialDestination = initialDestination,
                     availableUpdate = availableUpdate?.takeUnless { updateNoticeShown },
                     onOpenUpdate = { releaseUrl ->
                         runCatching {
@@ -438,9 +447,9 @@ fun AppRoot(
                         nav.navigate("search-series/${target.routeValue}/$id/${Uri.encode(label)}")
                     },
                     onSelectLibrary = { lib -> nav.navigate("series/${lib.id}/${Uri.encode(lib.name)}") },
-                    onSelectSeries = { series ->
+                    onSelectSeries = { series, tab ->
                         val libraryId = series.libraryId ?: 0
-                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}")
+                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}?fromTab=${tab.name}")
                     },
                     onOpenOfflineBook = { book ->
                         nav.navigate("local-reader/${book.id}?page=${book.lastReadPage}")
@@ -448,7 +457,8 @@ fun AppRoot(
                     onRequireLogin = {
                         nav.navigate("login")
                     },
-                    onToggleTheme = onToggleTheme
+                    onToggleTheme = onToggleTheme,
+                    navigationBarStyle = appSettings.navigationBarStyle
                 )
             }
 
@@ -500,7 +510,8 @@ fun AppRoot(
                     onBack = { nav.popBackStack() },
                     onSelectSeries = { series ->
                         val libraryId = series.libraryId ?: 0
-                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}")
+                        val tab = if (shelfKind == HomeShelfKind.OnDeck) "History" else "Home"
+                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}?fromTab=$tab")
                     }
                 )
             }
@@ -526,7 +537,7 @@ fun AppRoot(
                     onBack = { nav.popBackStack() },
                     onSelectSeries = { series ->
                         val libraryId = series.libraryId ?: 0
-                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}")
+                        nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}?fromTab=Browse")
                     }
                 )
             }
@@ -550,35 +561,50 @@ fun AppRoot(
                     },
                     onSelect = { s ->
                         val resolvedLib = s.libraryId?.takeIf { it > 0 } ?: libraryId
-                        nav.navigate("chapters/$resolvedLib/${s.id}/${Uri.encode(s.name)}")
+                        nav.navigate("chapters/$resolvedLib/${s.id}/${Uri.encode(s.name)}?fromTab=Libraries")
                     }
                 )
             }
 
             composable(
-                route = "chapters/{libraryId}/{seriesId}/{seriesName}",
+                route = "chapters/{libraryId}/{seriesId}/{seriesName}?fromTab={fromTab}",
                 arguments = listOf(
                     navArgument("libraryId") { type = NavType.IntType },
                     navArgument("seriesId") { type = NavType.IntType },
-                    navArgument("seriesName") { type = NavType.StringType }
+                    navArgument("seriesName") { type = NavType.StringType },
+                    navArgument("fromTab") {
+                        type = NavType.StringType
+                        defaultValue = "Libraries"
+                    }
                 )
             ) { backStack ->
                 val libraryId = backStack.arguments!!.getInt("libraryId")
                 val seriesId = backStack.arguments!!.getInt("seriesId")
                 val seriesName = backStack.arguments!!.getString("seriesName") ?: ""
+                val fromTab = backStack.arguments!!.getString("fromTab").orEmpty()
+                val currentDestination = HomeDestination.entries.firstOrNull { it.name.equals(fromTab, ignoreCase = true) }
+                    ?: HomeDestination.Libraries
                 ChapterPickScreen(
                     sessionStore = sessionStore,
                     libraryId = libraryId,
                     seriesId = seriesId,
                     seriesName = seriesName,
+                    currentDestination = currentDestination,
                     onOpenSettings = { nav.navigate("settings") },
                     onOpenFilteredSeries = { target, id, label ->
                         nav.navigate("search-series/${target.routeValue}/$id/${Uri.encode(label)}")
                     },
                     onBack = { nav.popBackStack() },
                     onSelectDestination = { dest ->
-                        nav.popBackStack()
-                    }
+                        if (dest == currentDestination) {
+                            nav.popBackStack()
+                        } else {
+                            nav.navigate("libraries?tab=${dest.name}") {
+                                popUpTo("libraries") { inclusive = true }
+                            }
+                        }
+                    },
+                    navigationBarStyle = appSettings.navigationBarStyle
                 ) { chapterId, volumeId, incognito ->
                     nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=$incognito")
                 }

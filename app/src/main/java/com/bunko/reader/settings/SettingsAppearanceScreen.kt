@@ -28,15 +28,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bunko.reader.ui.theme.AppTheme
 import com.bunko.reader.ui.theme.LocalThemeTransitionState
+import com.bunko.reader.NavigationBarStyle
 
 @Composable
 fun SettingsAppearanceScreen(
     currentTheme: AppTheme,
     isDarkMode: Boolean,
     isAmoledMode: Boolean,
+    navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
     onThemeSelected: (AppTheme) -> Unit,
     onDarkModeChanged: (Boolean) -> Unit,
     onAmoledModeChanged: (Boolean) -> Unit,
+    onNavigationBarStyleChanged: (NavigationBarStyle) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val themeTransition = LocalThemeTransitionState.current
@@ -107,6 +110,35 @@ fun SettingsAppearanceScreen(
                         themeTransition?.startTransition(amoledRowBounds.center)
                         onAmoledModeChanged(amoled)
                     }
+                )
+            }
+        }
+
+        // Navigation Bar Style Section
+        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+            Text(
+                text = "Navigation Bar Style",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+
+            SettingsSectionCard {
+                RadioSettingRow(
+                    title = NavigationBarStyle.Standard.label,
+                    subtitle = NavigationBarStyle.Standard.description,
+                    selected = navigationBarStyle == NavigationBarStyle.Standard,
+                    onClick = { onNavigationBarStyleChanged(NavigationBarStyle.Standard) }
+                )
+
+                SettingsDivider()
+
+                RadioSettingRow(
+                    title = NavigationBarStyle.FloatingPill.label,
+                    subtitle = NavigationBarStyle.FloatingPill.description,
+                    selected = navigationBarStyle == NavigationBarStyle.FloatingPill,
+                    onClick = { onNavigationBarStyleChanged(NavigationBarStyle.FloatingPill) }
                 )
             }
         }
