@@ -27,13 +27,12 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -121,7 +120,9 @@ internal fun ReaderOverviewGallery(
     cursors: List<Int>,
     currentCursor: Int,
     reverseLayout: Boolean,
-    progress: Float = 1f,
+    // Passed as State so per-frame zoom values are read in draw phase only —
+    // the cards below never recompose during the animation.
+    progressState: State<Float>,
     onSelect: (Int) -> Unit,
     onCenterTap: () -> Unit,
     // Pinch-to-dismiss callbacks: 2-finger gestures are intercepted at
@@ -297,14 +298,12 @@ internal fun ReaderOverviewGallery(
             ) { index ->
                 val cursor = cursors.getOrNull(index) ?: return@HorizontalPager
                 val isCenter = index == pagerState.currentPage
-                val currentElevation = (8.dp * progress).coerceAtLeast(0.dp)
-                val currentCornerRadius = (4.dp * progress).coerceAtLeast(0.dp)
-                val cardShape = remember(currentCornerRadius) { RoundedCornerShape(currentCornerRadius) }
 
                 Box(
                     modifier = Modifier
                         .zIndex(if (isCenter) 2f else 1f)
                         .graphicsLayer {
+                            val progress = progressState.value
                             if (isCenter) {
                                 val targetScale = 1f + (1f - progress) * (1f / scale - 1f)
                                 scaleX = targetScale
@@ -319,11 +318,14 @@ internal fun ReaderOverviewGallery(
                                 }
                                 translationX = slideDir * (1f - progress) * sideSlidePx
                             }
+                            // Elevation + corners ride the same draw-phase value
+                            // instead of the shadow/clip modifiers (composition).
+                            shadowElevation = 8f * progress * density.density
+                            shape = RoundedCornerShape(4.dp * progress)
+                            clip = true
                         }
                         .width(cardWidth)
                         .height(cardHeight)
-                        .shadow(elevation = currentElevation, shape = cardShape)
-                        .clip(cardShape)
                         .pointerInput(index) {
                             detectTapGestures(
                                 onTap = {

@@ -85,6 +85,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -134,7 +135,9 @@ private enum class MenuOptionTab {
 @Composable
 internal fun ReaderMenuOverlay(
     visible: Boolean = true,
-    menuFraction: Float = 1f,
+    // Passed as State so per-frame zoom values are read in draw phase only —
+    // every use below lives inside a graphicsLayer lambda and never recomposes.
+    menuFraction: State<Float>,
     dismissOnBackgroundTap: Boolean = false,
     seriesName: String,
     chapterName: String,
@@ -292,8 +295,9 @@ internal fun ReaderMenuOverlay(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .graphicsLayer {
-                    translationY = -(1f - menuFraction) * size.height
-                    alpha = menuFraction
+                    val fraction = menuFraction.value
+                    translationY = -(1f - fraction) * size.height
+                    alpha = fraction
                 }
         ) {
             Row(
@@ -372,7 +376,7 @@ internal fun ReaderMenuOverlay(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .graphicsLayer {
-                    alpha = menuFraction
+                    alpha = menuFraction.value
                 }
         ) {
             Surface(
@@ -1402,8 +1406,9 @@ internal fun ReaderMenuOverlay(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .graphicsLayer {
-                    translationY = (1f - menuFraction) * size.height
-                    alpha = menuFraction
+                    val fraction = menuFraction.value
+                    translationY = (1f - fraction) * size.height
+                    alpha = fraction
                 }
         ) {
             val batteryState = rememberBatteryState()

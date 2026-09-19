@@ -40,7 +40,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,6 +51,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -1161,8 +1164,23 @@ fun ReaderScreen(
     // pinch gesture (snapTo during drag) and by a settling animation (animateTo
     // after release or a menu-button tap).
     val overviewProgressAnim = remember { Animatable(0f) }
-    val overviewProgress = overviewProgressAnim.value
-    val isOverviewActive = !isOverviewDisabled && (overviewProgress > 0.001f || isOverviewMenuOpen)
+    // Progress is read ONLY inside graphicsLayer lambdas (draw phase) via this
+    // state, so the zoom animation invalidates drawing without recomposing the
+    // reader tree every frame — that per-frame recomposition was the stutter.
+    val overviewProgressState: State<Float> = remember {
+        derivedStateOf { overviewProgressAnim.value }
+    }
+    // Threshold boolean for mount/unmount decisions; the guarded write means
+    // recomposition happens only when crossing the threshold, not per frame.
+    var overviewEngaged by remember { mutableStateOf(false) }
+    LaunchedEffect(overviewProgressAnim) {
+        snapshotFlow { overviewProgressAnim.value }
+            .collect { value ->
+                val engaged = value > 0.001f
+                if (engaged != overviewEngaged) overviewEngaged = engaged
+            }
+    }
+    val isOverviewActive = !isOverviewDisabled && (overviewEngaged || isOverviewMenuOpen)
     // When NOT in a live drag, let isOverviewMenuOpen settle the animation.
     LaunchedEffect(isOverviewMenuOpen, isDraggingOverview) {
         if (!isDraggingOverview) {
@@ -1197,7 +1215,7 @@ fun ReaderScreen(
     // the overview IS active/exiting, effectiveMenuAlpha delegates to
     // overviewProgress so both layers animate in perfect lock-step.
     val menuContentVisible = showReaderMenu && chapterBoundary == null
-    val menuAlpha by animateFloatAsState(
+    val menuAlphaState = animateFloatAsState(
         targetValue = if (menuContentVisible) 1f else 0f,
         animationSpec = tween(durationMillis = 160, easing = LinearEasing),
         label = "menuAlpha"
@@ -1205,13 +1223,16 @@ fun ReaderScreen(
     // In horizontal mode, overview controls slide and fade out over the first 25% of the zoom-in
     // gesture (overviewProgress 1.0 → 0.75) so they retreat off-screen immediately as the user
     // zooms into the page, rather than lingering until the page has completely zoomed in.
-    val overviewMenuFraction = if (isOverviewMenuOpen || isDraggingOverview) {
-        ((overviewProgress - 0.75f) / 0.25f).coerceIn(0f, 1f)
-    } else {
-        0f
+    // Kept as State and read only in draw phase (see overviewProgressState).
+    val overviewMenuFractionState: State<Float> = remember {
+        derivedStateOf {
+            if (isOverviewDisabled) {
+                1f
+            } else {
+                ((overviewProgressAnim.value - 0.75f) / 0.25f).coerceIn(0f, 1f)
+            }
+        }
     }
-    val effectiveMenuFraction = if (isOverviewDisabled) 1f else overviewMenuFraction
-    val effectiveMenuAlpha = if (isOverviewDisabled) menuAlpha else overviewMenuFraction
 
     // Always use the reader's own background colour for the root container so the
     // status-bar and nav-bar inset strips (which the gallery card never covers) are
@@ -2518,18 +2539,19 @@ fun ReaderScreen(
                                 // The bar strips above/below the card are filled by the reader page
                                 // (same content as card) instead of the black background, eliminating
                                 // the "black bar" flash without any alpha cross-fade ghost.
-                                val readerScale = galleryScale + (1f - galleryScale) * (1f - overviewProgress)
+                                val progress = overviewProgressState.value
+                                val readerScale = galleryScale + (1f - galleryScale) * (1f - progress)
                                 scaleX = readerScale
                                 scaleY = readerScale
                                 // galleryCenterShiftYPx is the pager-centre offset from screen centre.
                                 // At overview: shift reader to pager centre (same as card).
                                 // At reader: no shift.
-                                translationY = overviewProgress * galleryCenterShiftYPx
+                                translationY = progress * galleryCenterShiftYPx
                                 // When overview is fully open (progress >= 0.98f), hide the stationary
                                 // reader viewport so it never shows through page gaps when scrolling
                                 // the horizontal carousel. During zoom transitions (< 0.98f), alpha is 1f
                                 // with exact transform mirroring, keeping the transition seamless with no black bars.
-                                alpha = if (overviewProgress >= 0.98f) 0f else 1f
+                                alpha = if (progress >= 0.98f) 0f else 1f
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -2547,7 +2569,9 @@ fun ReaderScreen(
             // surface and show the identical Compose page instead; the deck rebuilds
             // warm from the Coil cache when the overview closes.
             if (usePortraitPlayCurl || useSpreadPlayCurl) {
-                val overviewTakingOver = overviewProgress > 0.02f
+                // Engaged for the whole zoom (mounts/unmounts at the ends only),
+                // so the GL surface never churns mid-animation.
+                val overviewTakingOver = overviewEngaged
                 // Settle in-flight turn state before unmounting the surface for the
                 // overview (dispose cancels the GL settlement without committing).
                 // Tap-turns have no live drag pointer, so commit their target — the
@@ -2963,7 +2987,7 @@ fun ReaderScreen(
                     cursors = overviewCursors,
                     currentCursor = page,
                     reverseLayout = rtl,
-                    progress = overviewProgress,
+                    progressState = overviewProgressState,
                     tapZoneOverlayVisible = tapZoneOverlayVisible,
                     tapZoneNavigationMode = settings.reader.navigationMode,
                     tapZoneTappingInvertMode = settings.reader.tappingInvertMode,
@@ -3282,17 +3306,37 @@ fun ReaderScreen(
         )
 
         // Mount the menu overlay layer whenever any portion of its alpha is still
-        // positive — either during the overview exit (overviewProgress > 0) or
-        // during the normal menu fade-out (menuAlpha > 0).
-        if (effectiveMenuAlpha > 0f) {
+        // positive — either during the overview exit or the normal menu fade.
+        // Both the mount boolean and the alpha resolve off draw-phase reads, so
+        // menu fading never recomposes the reader.
+        var menuLayerMounted by remember { mutableStateOf(false) }
+        LaunchedEffect(isOverviewDisabled) {
+            snapshotFlow {
+                if (isOverviewDisabled) {
+                    menuAlphaState.value
+                } else {
+                    overviewMenuFractionState.value
+                }
+            }.collect { alpha ->
+                val mounted = alpha > 0f
+                if (mounted != menuLayerMounted) menuLayerMounted = mounted
+            }
+        }
+        if (menuLayerMounted) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = effectiveMenuAlpha }
+                    .graphicsLayer {
+                        alpha = if (isOverviewDisabled) {
+                            menuAlphaState.value
+                        } else {
+                            overviewMenuFractionState.value
+                        }
+                    }
             ) {
             ReaderMenuOverlay(
                 visible = menuContentVisible,
-                menuFraction = effectiveMenuFraction,
+                menuFraction = overviewMenuFractionState,
                 dismissOnBackgroundTap = isOverviewDisabled,
                 seriesName = seriesName,
                 chapterName = currentChapter.displayName,
