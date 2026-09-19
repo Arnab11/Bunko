@@ -2527,37 +2527,66 @@ fun ReaderScreen(
             // off image loads on its first frame. Slide transitions (shift, boundary
             // fallbacks) draw on top of it rather than unmounting it — the remount
             // recomposition is what made the images thrash.
+            //
+            // Exception: the overview zoom. The GL surface lives in a separate window
+            // and ignores the Compose scale/alpha that shrinks the reader viewport
+            // into the gallery card — it stays full-size on top and flashes black in
+            // the card gaps. So while the overview is opening/open, unmount the
+            // surface and show the identical Compose page instead; the deck rebuilds
+            // warm from the Coil cache when the overview closes.
             if (usePortraitPlayCurl || useSpreadPlayCurl) {
-                PlayCurlPage(
-                    page = page,
-                    pageCount = pages,
-                    portrait = usePortraitPlayCurl,
-                    rightToLeft = rtl,
-                    viewportWidthPx = viewportWidthPx,
-                    viewportHeightPx = viewportHeightPx,
-                    paperColor = curlBackPageColor,
-                    pageModel = ::pageModel,
-                    imageLoader = activeImageLoader,
-                    pageDimensions = pageDimensions,
-                    invertMode = invertMode,
-                    whiteThreshold = settings.reader.invertWhiteThreshold,
-                    invertDecisionCache = invertDecisionCache,
-                    ePaperMode = ePaperMode,
-                    imageScaleType = settings.reader.imageScaleType,
-                    cropBorders = settings.reader.cropBorders,
-                    nightModeEnabled = nightModeEnabled,
-                    nightLightIntensity = nightLightIntensity,
-                    epubFontSizeSp = epubFontSizeSp,
-                    epubFontFamily = settings.reader.epubFontFamily,
-                    epubTextAlign = settings.reader.epubTextAlign,
-                    epubContentPadding = portraitPadding,
-                    density = density,
-                    isEpub = isEpub,
-                    host = playCurlHost,
-                    onPageTurned = ::onPlayCurlSettled,
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (!playCurlHost.ready) {
+                val overviewTakingOver = overviewProgress > 0.02f
+                // Settle in-flight turn state before unmounting the surface for the
+                // overview (dispose cancels the GL settlement without committing).
+                // Tap-turns have no live drag pointer, so commit their target — the
+                // GL animation would have landed there anyway. Live drag-turns are
+                // cancelled instead: the page stays where it was.
+                LaunchedEffect(overviewTakingOver) {
+                    if (overviewTakingOver && activeCurlTargetPage != null) {
+                        if (curlDragStartPointer == null) {
+                            page = activeCurlTargetPage!!.coerceIn(0, (pages - 1).coerceAtLeast(0))
+                        } else {
+                            playCurlHost.cancelDrag()
+                        }
+                        activeCurlDirection = null
+                        activeCurlTargetPage = null
+                        curlDragStartPointer = null
+                        curlDragProgress = 0f
+                        dragBoundaryDirection = null
+                    }
+                }
+                if (!overviewTakingOver) {
+                    PlayCurlPage(
+                        page = page,
+                        pageCount = pages,
+                        portrait = usePortraitPlayCurl,
+                        rightToLeft = rtl,
+                        viewportWidthPx = viewportWidthPx,
+                        viewportHeightPx = viewportHeightPx,
+                        paperColor = curlBackPageColor,
+                        pageModel = ::pageModel,
+                        imageLoader = activeImageLoader,
+                        pageDimensions = pageDimensions,
+                        invertMode = invertMode,
+                        whiteThreshold = settings.reader.invertWhiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        ePaperMode = ePaperMode,
+                        imageScaleType = settings.reader.imageScaleType,
+                        cropBorders = settings.reader.cropBorders,
+                        nightModeEnabled = nightModeEnabled,
+                        nightLightIntensity = nightLightIntensity,
+                        epubFontSizeSp = epubFontSizeSp,
+                        epubFontFamily = settings.reader.epubFontFamily,
+                        epubTextAlign = settings.reader.epubTextAlign,
+                        epubContentPadding = portraitPadding,
+                        density = density,
+                        isEpub = isEpub,
+                        host = playCurlHost,
+                        onPageTurned = ::onPlayCurlSettled,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                if (overviewTakingOver || !playCurlHost.ready) {
                     RenderReaderPage(
                         cursor = page,
                         pageCount = pages,
