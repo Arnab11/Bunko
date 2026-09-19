@@ -838,36 +838,10 @@ internal fun ReaderMenuOverlay(
                                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                                 }
                                             ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                ) {
-                                                    Text(
-                                                        text = option,
-                                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                                                    )
-                                                    if (option == "Book" || option == "Curl") {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(13.dp)
-                                                                .background(
-                                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
-                                                                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                                                    shape = CircleShape
-                                                                ),
-                                                            contentAlignment = Alignment.Center
-                                                        ) {
-                                                            Text(
-                                                                text = "!",
-                                                                fontSize = 9.sp,
-                                                                fontWeight = FontWeight.ExtraBold,
-                                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                                                                        else MaterialTheme.colorScheme.primary,
-                                                                lineHeight = 9.sp
-                                                            )
-                                                        }
-                                                    }
-                                                }
+                                                Text(
+                                                    text = option,
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                                )
                                             }
                                         }
                                     }

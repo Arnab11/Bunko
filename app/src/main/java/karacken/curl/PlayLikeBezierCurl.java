@@ -15,7 +15,7 @@ package karacken.curl;
  *   <li><b>Conical Tilt:</b> Seamlessly integrates dynamic touch $Y$ tilt for realistic corner-lead peeling.</li>
  * </ul>
  */
-public final class PlayBooksBezierCurl {
+public final class PlayLikeBezierCurl {
     /** Peak elevation of the curling page above the book plane in camera units. */
     public static final float MAX_CURL_HEIGHT = 0.35f;
 
@@ -60,7 +60,7 @@ public final class PlayBooksBezierCurl {
 
     private static volatile float currentTouchTilt = DEFAULT_THUMB_TILT;
 
-    private PlayBooksBezierCurl() {}
+    private PlayLikeBezierCurl() {}
 
     /**
      * Sets the active gesture touch tilt in [-1, 1] based on touch $Y$ position.

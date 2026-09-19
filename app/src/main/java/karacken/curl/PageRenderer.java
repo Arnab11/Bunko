@@ -856,7 +856,7 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
         updateMvp(viewportWidth, viewportHeight);
 
         frontMesh.ensureGeometry(frontTex.bitmapWidth, frontTex.bitmapHeight, PageOrientation.PORTRAIT);
-        PlayBooksBezierCurl.updateLandscape(frontMesh.geometry, progress, forward);
+        PlayLikeBezierCurl.updateLandscape(frontMesh.geometry, progress, forward);
         frontMesh.uploadPositions();
 
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);

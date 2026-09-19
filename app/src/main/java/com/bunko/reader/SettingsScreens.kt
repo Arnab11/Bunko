@@ -2,7 +2,10 @@ package com.bunko.reader
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,9 +46,9 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import com.bunko.reader.settings.CategoryRowGap
 import com.bunko.reader.settings.ClickableSettingRow
-import com.bunko.reader.settings.ExperimentalBadge
 import com.bunko.reader.settings.RadioSettingRow
 import com.bunko.reader.settings.SettingsSectionCard
 import com.bunko.reader.settings.SwitchSettingRow
@@ -80,7 +83,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -733,7 +738,7 @@ fun ServerSettingsScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ReaderSettingsScreen(
     settingsStore: AppSettingsStore,
@@ -773,33 +778,46 @@ fun ReaderSettingsScreen(
                     )
 
                     SettingsSectionCard {
-                        RadioSettingRow(
-                            title = "Left to Right (LTR)",
-                            subtitle = "Standard reading mode for western comics and novels",
-                            selected = settings.reader.readingDirection == ReaderReadingDirection.LeftToRight,
-                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.LeftToRight) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Vertical",
-                            subtitle = "Continuous vertical scrolling for webtoons and comics",
-                            selected = settings.reader.readingDirection == ReaderReadingDirection.Vertical,
-                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.Vertical) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Webtoon",
-                            subtitle = "Continuous vertical strip with tap-to-scroll (75% height) and side margins",
-                            selected = settings.reader.readingDirection == ReaderReadingDirection.Webtoon,
-                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.Webtoon) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Right to Left (RTL)",
-                            subtitle = "Standard reading mode for manga and Japanese publications",
-                            selected = settings.reader.readingDirection == ReaderReadingDirection.RightToLeft,
-                            onClick = { scope.launch { settingsStore.setReadingDirection(ReaderReadingDirection.RightToLeft) } }
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                        ) {
+                            val directions = listOf(
+                                ReaderReadingDirection.LeftToRight to "LTR",
+                                ReaderReadingDirection.Vertical to "Vertical",
+                                ReaderReadingDirection.Webtoon to "Webtoon",
+                                ReaderReadingDirection.RightToLeft to "RTL"
+                            )
+                            directions.forEachIndexed { index, (direction, label) ->
+                                val isSelected = settings.reader.readingDirection == direction
+                                ToggleButton(
+                                    checked = isSelected,
+                                    onCheckedChange = { scope.launch { settingsStore.setReadingDirection(direction) } },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .semantics { role = Role.RadioButton },
+                                    shapes = when (index) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        directions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                    },
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
                         CategoryRowGap()
                         SwitchSettingRow(
                             title = "Auto Webtoon Mode",
@@ -892,56 +910,65 @@ fun ReaderSettingsScreen(
                         val transitionsActive = settings.reader.pageTransitionAnimation
                         val currentTurnMode = settings.reader.pageTurnMode
 
-                        RadioSettingRow(
-                            title = "Off",
-                            subtitle = "Instant page changes with no transition",
-                            selected = !transitionsActive,
-                            onClick = {
-                                scope.launch { settingsStore.setPageTransitionAnimation(false) }
-                            }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Slide",
-                            subtitle = "Fast, stable horizontal slide animation",
-                            selected = transitionsActive && currentTurnMode == PageTurnMode.Slide,
-                            onClick = {
-                                scope.launch {
-                                    settingsStore.setPageTransitionAnimation(true)
-                                    settingsStore.setPageTurnMode(PageTurnMode.Slide)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                        ) {
+                            val turnOptions = listOf("Off", "Slide", "Book", "Curl")
+                            turnOptions.forEachIndexed { index, option ->
+                                val isSelected = when (option) {
+                                    "Off" -> !transitionsActive
+                                    "Slide" -> transitionsActive && currentTurnMode == PageTurnMode.Slide
+                                    "Book" -> transitionsActive && currentTurnMode == PageTurnMode.PlayCurl
+                                    "Curl" -> transitionsActive && currentTurnMode == PageTurnMode.Curl
+                                    else -> false
+                                }
+                                ToggleButton(
+                                    checked = isSelected,
+                                    onCheckedChange = {
+                                        scope.launch {
+                                            when (option) {
+                                                "Off" -> settingsStore.setPageTransitionAnimation(false)
+                                                "Slide" -> {
+                                                    settingsStore.setPageTransitionAnimation(true)
+                                                    settingsStore.setPageTurnMode(PageTurnMode.Slide)
+                                                }
+                                                "Book" -> {
+                                                    settingsStore.setPageTransitionAnimation(true)
+                                                    settingsStore.setPageTurnMode(PageTurnMode.PlayCurl)
+                                                }
+                                                "Curl" -> {
+                                                    settingsStore.setPageTransitionAnimation(true)
+                                                    settingsStore.setPageTurnMode(PageTurnMode.Curl)
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .semantics { role = Role.RadioButton },
+                                    shapes = when (index) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        turnOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                    },
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                ) {
+                                    Text(
+                                        text = option,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 1
+                                    )
                                 }
                             }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Book",
-                            subtitle = "Realistic 3D book page curl for portrait and landscape spreads",
-                            selected = transitionsActive && currentTurnMode == PageTurnMode.PlayCurl,
-                            trailingTitleContent = {
-                                ExperimentalBadge()
-                            },
-                            onClick = {
-                                scope.launch {
-                                    settingsStore.setPageTransitionAnimation(true)
-                                    settingsStore.setPageTurnMode(PageTurnMode.PlayCurl)
-                                }
-                            }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Curl",
-                            subtitle = "Interactive 3D page curl with corner crease and physics",
-                            selected = transitionsActive && currentTurnMode == PageTurnMode.Curl,
-                            trailingTitleContent = {
-                                ExperimentalBadge()
-                            },
-                            onClick = {
-                                scope.launch {
-                                    settingsStore.setPageTransitionAnimation(true)
-                                    settingsStore.setPageTurnMode(PageTurnMode.Curl)
-                                }
-                            }
-                        )
+                        }
                         if (transitionsActive && currentTurnMode == PageTurnMode.Curl) {
                             CategoryRowGap()
                             SwitchSettingRow(
@@ -986,47 +1013,60 @@ fun ReaderSettingsScreen(
 
                     SettingsSectionCard {
                         val currentNav = settings.reader.navigationMode
-                        RadioSettingRow(
-                            title = "Default",
-                            subtitle = "Left column back, center menu, right column forward",
-                            selected = currentNav == ReaderNavigationMode.Default,
-                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.Default) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "L-shaped",
-                            subtitle = "Top & left edges back, center menu, right & bottom edges forward",
-                            selected = currentNav == ReaderNavigationMode.LShaped,
-                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.LShaped) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Kindle-ish",
-                            subtitle = "Top third menu, narrow left strip back, remaining forward",
-                            selected = currentNav == ReaderNavigationMode.Kindlish,
-                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.Kindlish) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Edge",
-                            subtitle = "Left & right edges forward, center bottom back, center top menu",
-                            selected = currentNav == ReaderNavigationMode.Edge,
-                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.Edge) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Right & Left",
-                            subtitle = "Left half back, center menu, right half forward",
-                            selected = currentNav == ReaderNavigationMode.RightAndLeft,
-                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.RightAndLeft) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Disabled",
-                            subtitle = "Turn pages using swipe gestures only; tapping opens menu",
-                            selected = currentNav == ReaderNavigationMode.Disabled,
-                            onClick = { scope.launch { settingsStore.setNavigationMode(ReaderNavigationMode.Disabled) } }
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val navRows = listOf(
+                                listOf(
+                                    ReaderNavigationMode.Default to "Default",
+                                    ReaderNavigationMode.LShaped to "L-shaped",
+                                    ReaderNavigationMode.Kindlish to "Kindle-ish"
+                                ),
+                                listOf(
+                                    ReaderNavigationMode.Edge to "Edge",
+                                    ReaderNavigationMode.RightAndLeft to "Right & Left",
+                                    ReaderNavigationMode.Disabled to "Disabled"
+                                )
+                            )
+                            navRows.forEach { rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                ) {
+                                    rowItems.forEachIndexed { index, (mode, label) ->
+                                        val isSelected = currentNav == mode
+                                        ToggleButton(
+                                            checked = isSelected,
+                                            onCheckedChange = { scope.launch { settingsStore.setNavigationMode(mode) } },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .semantics { role = Role.RadioButton },
+                                            shapes = when (index) {
+                                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                rowItems.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                            },
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isSelected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.outlineVariant
+                                            )
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1042,33 +1082,58 @@ fun ReaderSettingsScreen(
 
                         SettingsSectionCard {
                             val currentInvert = settings.reader.tappingInvertMode
-                            RadioSettingRow(
-                                title = "None",
-                                subtitle = "Default tapping orientation",
-                                selected = currentInvert == ReaderTappingInvertMode.None,
-                                onClick = { scope.launch { settingsStore.setTappingInvertMode(ReaderTappingInvertMode.None) } }
-                            )
-                            CategoryRowGap()
-                            RadioSettingRow(
-                                title = "Horizontal",
-                                subtitle = "Invert left and right tap zones",
-                                selected = currentInvert == ReaderTappingInvertMode.Horizontal,
-                                onClick = { scope.launch { settingsStore.setTappingInvertMode(ReaderTappingInvertMode.Horizontal) } }
-                            )
-                            CategoryRowGap()
-                            RadioSettingRow(
-                                title = "Vertical",
-                                subtitle = "Invert top and bottom tap zones",
-                                selected = currentInvert == ReaderTappingInvertMode.Vertical,
-                                onClick = { scope.launch { settingsStore.setTappingInvertMode(ReaderTappingInvertMode.Vertical) } }
-                            )
-                            CategoryRowGap()
-                            RadioSettingRow(
-                                title = "Both",
-                                subtitle = "Invert both horizontal and vertical tap zones",
-                                selected = currentInvert == ReaderTappingInvertMode.Both,
-                                onClick = { scope.launch { settingsStore.setTappingInvertMode(ReaderTappingInvertMode.Both) } }
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val invertRows = listOf(
+                                    listOf(
+                                        ReaderTappingInvertMode.None to "None",
+                                        ReaderTappingInvertMode.Horizontal to "Horizontal"
+                                    ),
+                                    listOf(
+                                        ReaderTappingInvertMode.Vertical to "Vertical",
+                                        ReaderTappingInvertMode.Both to "Both"
+                                    )
+                                )
+                                invertRows.forEach { rowItems ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                    ) {
+                                        rowItems.forEachIndexed { index, (invert, label) ->
+                                            val isSelected = currentInvert == invert
+                                            ToggleButton(
+                                                checked = isSelected,
+                                                onCheckedChange = { scope.launch { settingsStore.setTappingInvertMode(invert) } },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .semantics { role = Role.RadioButton },
+                                                shapes = when (index) {
+                                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                    rowItems.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                },
+                                                border = BorderStroke(
+                                                    1.dp,
+                                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.outlineVariant
+                                                )
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1107,47 +1172,60 @@ fun ReaderSettingsScreen(
 
                     SettingsSectionCard {
                         val currentScale = settings.reader.imageScaleType
-                        RadioSettingRow(
-                            title = "Fit screen",
-                            subtitle = "Scale image to fit screen preserving aspect ratio",
-                            selected = currentScale == ReaderImageScaleType.FitScreen,
-                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.FitScreen) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Stretch",
-                            subtitle = "Stretch image to fill entire screen",
-                            selected = currentScale == ReaderImageScaleType.Stretch,
-                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.Stretch) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Fit width",
-                            subtitle = "Scale image width to fit screen width",
-                            selected = currentScale == ReaderImageScaleType.FitWidth,
-                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.FitWidth) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Fit height",
-                            subtitle = "Scale image height to fit screen height",
-                            selected = currentScale == ReaderImageScaleType.FitHeight,
-                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.FitHeight) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Original size",
-                            subtitle = "Display image at 1:1 original pixel scale",
-                            selected = currentScale == ReaderImageScaleType.OriginalSize,
-                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.OriginalSize) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Smart fit",
-                            subtitle = "Automatically fits width or screen based on image aspect ratio",
-                            selected = currentScale == ReaderImageScaleType.SmartFit,
-                            onClick = { scope.launch { settingsStore.setImageScaleType(ReaderImageScaleType.SmartFit) } }
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val scaleRows = listOf(
+                                listOf(
+                                    ReaderImageScaleType.FitScreen to "Fit screen",
+                                    ReaderImageScaleType.Stretch to "Stretch",
+                                    ReaderImageScaleType.FitWidth to "Fit width"
+                                ),
+                                listOf(
+                                    ReaderImageScaleType.FitHeight to "Fit height",
+                                    ReaderImageScaleType.OriginalSize to "Original",
+                                    ReaderImageScaleType.SmartFit to "Smart fit"
+                                )
+                            )
+                            scaleRows.forEach { rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                ) {
+                                    rowItems.forEachIndexed { index, (type, label) ->
+                                        val isSelected = currentScale == type
+                                        ToggleButton(
+                                            checked = isSelected,
+                                            onCheckedChange = { scope.launch { settingsStore.setImageScaleType(type) } },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .semantics { role = Role.RadioButton },
+                                            shapes = when (index) {
+                                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                rowItems.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                            },
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isSelected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.outlineVariant
+                                            )
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         CategoryRowGap()
                         SwitchSettingRow(
                             title = "Crop Borders",
@@ -1171,28 +1249,102 @@ fun ReaderSettingsScreen(
                     )
 
                     SettingsSectionCard {
-                        RadioSettingRow(
-                            title = "Dark Margins",
-                            subtitle = "Comfortable soft dark margins around pages",
-                            selected = settings.reader.pageBackground == PageBackground.Dark,
-                            onClick = { scope.launch { settingsStore.setPageBackground(PageBackground.Dark) } }
+                        val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+                        val swatches = listOf(
+                            Triple("White", Color.White, Color(0xFF141414)),
+                            Triple(
+                                "Theme",
+                                if (isLightMode) MaterialTheme.colorScheme.background else Color(0xFFFAF7F2),
+                                if (isLightMode) MaterialTheme.colorScheme.onBackground else Color(0xFF2A2218)
+                            ),
+                            Triple("Dark", Color(0xFF181818), Color(0xFFE6E6E6)),
+                            Triple("Black", Color.Black, Color.White)
                         )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Paper Margins",
-                            subtitle = "Warm off-white paper color for margins",
-                            selected = settings.reader.pageBackground == PageBackground.Paper,
-                            onClick = { scope.launch { settingsStore.setPageBackground(PageBackground.Paper) } }
-                        )
-                        CategoryRowGap()
-                        SwitchSettingRow(
-                            title = "Pure AMOLED Margins",
-                            subtitle = "Uses pure #000000 black for Dark and pure #FFFFFF for Paper",
-                            checked = settings.reader.usePurePageBackgroundColors,
-                            onCheckedChange = { enabled ->
-                                scope.launch { settingsStore.setUsePurePageBackgroundColors(enabled) }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            swatches.forEach { (name, bg, fg) ->
+                                val isSelected = when (name) {
+                                    "White" -> settings.reader.pageBackground == PageBackground.Paper &&
+                                        settings.reader.usePurePageBackgroundColors
+                                    "Theme" -> settings.reader.pageBackground == PageBackground.Paper &&
+                                        !settings.reader.usePurePageBackgroundColors
+                                    "Dark" -> settings.reader.pageBackground == PageBackground.Dark &&
+                                        !settings.reader.usePurePageBackgroundColors
+                                    "Black" -> settings.reader.pageBackground == PageBackground.Dark &&
+                                        settings.reader.usePurePageBackgroundColors
+                                    else -> false
+                                }
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.clickable {
+                                        scope.launch {
+                                            when (name) {
+                                                "White" -> {
+                                                    settingsStore.setPageBackground(PageBackground.Paper)
+                                                    settingsStore.setUsePurePageBackgroundColors(true)
+                                                }
+                                                "Theme" -> {
+                                                    settingsStore.setPageBackground(PageBackground.Paper)
+                                                    settingsStore.setUsePurePageBackgroundColors(false)
+                                                }
+                                                "Dark" -> {
+                                                    settingsStore.setPageBackground(PageBackground.Dark)
+                                                    settingsStore.setUsePurePageBackgroundColors(false)
+                                                }
+                                                "Black" -> {
+                                                    settingsStore.setPageBackground(PageBackground.Dark)
+                                                    settingsStore.setUsePurePageBackgroundColors(true)
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(CircleShape)
+                                            .background(bg)
+                                            .border(
+                                                BorderStroke(
+                                                    if (isSelected) 2.dp else 1.dp,
+                                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.outlineVariant
+                                                ),
+                                                CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = "Selected",
+                                                tint = fg,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "Aa",
+                                                color = fg,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
-                        )
+                        }
                     }
                 }
 
@@ -1207,26 +1359,45 @@ fun ReaderSettingsScreen(
                     )
 
                     SettingsSectionCard {
-                        RadioSettingRow(
-                            title = "Off",
-                            subtitle = "Original page colors preserved as authored",
-                            selected = settings.reader.invertMode == InvertMode.Off,
-                            onClick = { scope.launch { settingsStore.setInvertMode(InvertMode.Off) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Smart Invert",
-                            subtitle = "Inverts text pages for night reading while preserving illustrations",
-                            selected = settings.reader.invertMode == InvertMode.Smart,
-                            onClick = { scope.launch { settingsStore.setInvertMode(InvertMode.Smart) } }
-                        )
-                        CategoryRowGap()
-                        RadioSettingRow(
-                            title = "Always Invert",
-                            subtitle = "Inverts all pages unconditionally",
-                            selected = settings.reader.invertMode == InvertMode.Always,
-                            onClick = { scope.launch { settingsStore.setInvertMode(InvertMode.Always) } }
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                        ) {
+                            val modes = InvertMode.entries
+                            modes.forEachIndexed { index, mode ->
+                                val isSelected = settings.reader.invertMode == mode
+                                ToggleButton(
+                                    checked = isSelected,
+                                    onCheckedChange = { scope.launch { settingsStore.setInvertMode(mode) } },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .semantics { role = Role.RadioButton },
+                                    shapes = when (index) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                    },
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                ) {
+                                    Text(
+                                        text = when (mode) {
+                                            InvertMode.Off -> "Off"
+                                            InvertMode.Smart -> "Smart"
+                                            InvertMode.Always -> "Always"
+                                        },
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
 
                         if (settings.reader.invertMode == InvertMode.Smart) {
                             CategoryRowGap()
