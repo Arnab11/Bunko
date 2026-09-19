@@ -52,12 +52,21 @@ public class PageSurfaceView extends GLSurfaceView {
     private OnPageChangeListener onPageChangeListener;
 
     public PageSurfaceView(Context context) {
+        this(context, 0xFFFFFFFF);
+    }
+
+    public PageSurfaceView(Context context, int initialPaperColor) {
         super(context);
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         renderer = new PageRenderer(new PageRenderer.Events() {
             @Override
             public void onCapabilitiesAvailable(RenderCapabilities capabilities) {
                 post(() -> handleCapabilitiesAvailable(capabilities));
+            }
+
+            @Override
+            public void onFirstFrameRendered() {
+                post(() -> handleFirstFrameRendered());
             }
 
             @Override
@@ -77,7 +86,7 @@ public class PageSurfaceView extends GLSurfaceView {
             public void onRenderFailure(RenderFailure failure) {
                 post(() -> handleRenderFailure(failure));
             }
-        });
+        }, initialPaperColor);
 
         setEGLContextClientVersion(2);
         setEGLConfigChooser(8, 8, 8, 8, 16, 0);
@@ -155,11 +164,18 @@ public class PageSurfaceView extends GLSurfaceView {
             return;
         }
         leaseRegistry.acquire(deck.getGenerationId(), pageSurfaceListener);
-        for (PageDeckCoordinator.Release<Bitmap> release : offer.getReleases()) {
-            queueDeckRelease(release);
-        }
         boolean activateWhenPrepared =
                 offer.getPlacement() == PageDeckCoordinator.Placement.ACTIVE;
+        for (PageDeckCoordinator.Release<Bitmap> release : offer.getReleases()) {
+            if (activateWhenPrepared && release.getDeck() != null
+                    && release.getReason() == DeckReleaseReason.REPLACED) {
+                // When activating a new deck, renderer.prepareDeck already retains the active
+                // deck's textures while uploading the new deck and releases the old active deck
+                // atomically after the new deck is prepared and activated.
+                continue;
+            }
+            queueDeckRelease(release);
+        }
         preparedGenerations.remove(deck.getGenerationId());
         queueEvent(() -> renderer.prepareDeck(deck, activateWhenPrepared));
         requestRender();
@@ -173,6 +189,14 @@ public class PageSurfaceView extends GLSurfaceView {
         }
         queueEvent(() -> renderer.setViewport(widthPx, heightPx));
         requestRender();
+    }
+
+    /**
+     * Sets the initial background clear color before GL surface initialization
+     * to eliminate any black flash on startup.
+     */
+    public void setInitialBackgroundColor(int red, int green, int blue) {
+        renderer.setInitialBackgroundColor(red, green, blue);
     }
 
     /**
@@ -544,6 +568,13 @@ public class PageSurfaceView extends GLSurfaceView {
         pageSurfaceListener.onCapabilitiesAvailable(capabilities);
     }
 
+    private void handleFirstFrameRendered() {
+        if (disposed) {
+            return;
+        }
+        pageSurfaceListener.onFirstFrameRendered();
+    }
+
     private void handleDeckReleased(
             long generationId,
             DeckReleaseReason reason) {
@@ -657,12 +688,6 @@ public class PageSurfaceView extends GLSurfaceView {
     }
 
     private void completeSettlement(Settlement settlement, SettlementContext context) {
-        LandscapeSpreadModel spread = landscapeModelOrNull();
-        if (spread != null) {
-            spread.completeSettlement(settlement);
-        } else {
-            interactionModelOrNull().completeSettlement(settlement);
-        }
         settlementRunning = false;
         settlementAnimator = null;
         activeSettlementContext = null;
@@ -672,12 +697,28 @@ public class PageSurfaceView extends GLSurfaceView {
         PageDeckCoordinator.Promotion<Bitmap> promotion =
                 deckCoordinator.completeSettlement();
         PageDeck<Bitmap> promoted = promotion.getActivatedDeck();
+        final Settlement finalSettlement = settlement;
         if (promoted != null) {
             markPromotionRelease(promotion);
             queueEvent(() -> renderer.activateDeck(promoted.getGenerationId()));
-        } else if (settlement.getPageChange() != PageChange.NONE) {
-            preparedGenerations.remove(context.generationId);
-            queueEvent(() -> renderer.commitTurn(settlement.getPageChange()));
+        } else {
+            if (settlement.getPageChange() != PageChange.NONE) {
+                preparedGenerations.remove(context.generationId);
+            }
+            queueEvent(() -> {
+                LandscapeSpreadModel spread = renderer.getLandscapeSpreadModel();
+                if (spread != null) {
+                    spread.completeSettlement(finalSettlement);
+                } else {
+                    PlayLikeCurlModel interaction = renderer.getPortraitModel();
+                    if (interaction != null) {
+                        interaction.completeSettlement(finalSettlement);
+                    }
+                }
+                if (finalSettlement.getPageChange() != PageChange.NONE) {
+                    renderer.commitTurn(finalSettlement.getPageChange());
+                }
+            });
         }
         requestRender();
 

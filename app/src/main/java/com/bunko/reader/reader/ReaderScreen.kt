@@ -2528,30 +2528,6 @@ fun ReaderScreen(
             // fallbacks) draw on top of it rather than unmounting it — the remount
             // recomposition is what made the images thrash.
             if (usePortraitPlayCurl || useSpreadPlayCurl) {
-                if (!playCurlHost.ready) {
-                    RenderReaderPage(
-                        cursor = page,
-                        pageCount = pages,
-                        portrait = portrait,
-                        pageDimensions = pageDimensions,
-                        rightToLeft = rtl,
-                        pageModel = ::pageModel,
-                        imageLoader = activeImageLoader,
-                        invertMode = invertMode,
-                        ePaperMode = ePaperMode,
-                        whiteThreshold = settings.reader.invertWhiteThreshold,
-                        invertDecisionCache = invertDecisionCache,
-                        pageBackground = readerPageBackground,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                translationX = zoomPan.offsetX
-                                translationY = zoomPan.offsetY
-                                scaleX = totalZoomScale
-                                scaleY = totalZoomScale
-                            }
-                    )
-                }
                 PlayCurlPage(
                     page = page,
                     pageCount = pages,
@@ -2579,12 +2555,32 @@ fun ReaderScreen(
                     isEpub = isEpub,
                     host = playCurlHost,
                     onPageTurned = ::onPlayCurlSettled,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            alpha = if (playCurlHost.ready) 1f else 0f
-                        }
+                    modifier = Modifier.fillMaxSize()
                 )
+                if (!playCurlHost.ready) {
+                    RenderReaderPage(
+                        cursor = page,
+                        pageCount = pages,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions,
+                        rightToLeft = rtl,
+                        pageModel = ::pageModel,
+                        imageLoader = activeImageLoader,
+                        invertMode = invertMode,
+                        ePaperMode = ePaperMode,
+                        whiteThreshold = settings.reader.invertWhiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        pageBackground = readerPageBackground,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = zoomPan.offsetX
+                                translationY = zoomPan.offsetY
+                                scaleX = totalZoomScale
+                                scaleY = totalZoomScale
+                            }
+                    )
+                }
             } else if (usePortraitCurl) {
                 val curlMirror = if (rtl) -1f else 1f
                 PageCurl(

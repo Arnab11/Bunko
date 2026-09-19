@@ -260,10 +260,14 @@ internal fun PlayCurlPage(
 
     AndroidView(
         factory = { context ->
-            PageSurfaceView(context).apply {
+            PageSurfaceView(context, paperArgb).apply {
                 setPageSurfaceListener(object : PageSurfaceListener {
                     override fun onCapabilitiesAvailable(capabilities: RenderCapabilities) {
                         capabilitiesAvailable = true
+                    }
+
+                    override fun onFirstFrameRendered() {
+                        host.ready = true
                     }
 
                     override fun onDeckRejected(generationId: Long, reason: DeckRejectionReason) {
@@ -387,7 +391,6 @@ internal fun PlayCurlPage(
                 retainedBitmaps[generationId] = bitmaps
                 try {
                     surface.submitDeck(deck)
-                    host.ready = true
                 } catch (e: Exception) {
                     Log.w(PlayCurlLogTag, "submitDeck failed: ${e.message}")
                     retainedBitmaps.remove(generationId)

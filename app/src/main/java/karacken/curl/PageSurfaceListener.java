@@ -10,6 +10,8 @@ package karacken.curl;
 public interface PageSurfaceListener {
     default void onCapabilitiesAvailable(RenderCapabilities capabilities) {}
 
+    default void onFirstFrameRendered() {}
+
     default void onDeckPrepared(long generationId) {}
 
     default void onDeckRejected(long generationId, DeckRejectionReason reason) {}

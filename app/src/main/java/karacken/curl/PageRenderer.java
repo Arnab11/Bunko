@@ -22,6 +22,8 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
     interface Events {
         void onCapabilitiesAvailable(RenderCapabilities capabilities);
 
+        void onFirstFrameRendered();
+
         void onDeckPrepared(long generationId);
 
         void onDeckReleased(long generationId, DeckReleaseReason reason);
@@ -140,14 +142,29 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
     private long gpuBudgetBytes = DEFAULT_GPU_BUDGET_BYTES;
     private boolean glReady;
     private boolean disposed;
+    private boolean firstFrameDrawn;
     // Bunko: paper background clear color so letterbox margins and any sub-pixel
     // seams between spread halves match the reader paper instead of black.
-    private float clearRed = 0x11 / 255f;
-    private float clearGreen = 0x11 / 255f;
-    private float clearBlue = 0x11 / 255f;
+    private float clearRed = 1f;
+    private float clearGreen = 1f;
+    private float clearBlue = 1f;
 
     PageRenderer(Events events) {
+        this(events, 0xFFFFFFFF);
+    }
+
+    PageRenderer(Events events, int initialPaperColor) {
         this.events = events;
+        setInitialBackgroundColor(
+                (initialPaperColor >> 16) & 0xFF,
+                (initialPaperColor >> 8) & 0xFF,
+                initialPaperColor & 0xFF);
+    }
+
+    void setInitialBackgroundColor(int red, int green, int blue) {
+        clearRed = Math.max(0, Math.min(255, red)) / 255f;
+        clearGreen = Math.max(0, Math.min(255, green)) / 255f;
+        clearBlue = Math.max(0, Math.min(255, blue)) / 255f;
     }
 
     void prepareDeck(PageDeck<Bitmap> deck, boolean activateWhenPrepared) {
@@ -427,6 +444,7 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
                 texture.resetGl();
             }
             glReady = true;
+            firstFrameDrawn = false;
             publishCapabilities();
             rehydrateRetainedDecks();
         } catch (RuntimeException exception) {
@@ -463,6 +481,11 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
                 drawLandscapeSpread();
             } else if (portraitModel != null) {
                 drawPortraitPage();
+            }
+
+            if (!firstFrameDrawn) {
+                firstFrameDrawn = true;
+                events.onFirstFrameRendered();
             }
         } catch (RuntimeException exception) {
             reportFailure(
