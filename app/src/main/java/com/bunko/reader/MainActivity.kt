@@ -1,6 +1,7 @@
 package com.bunko.reader
 
 import android.os.Bundle
+import android.view.KeyEvent
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
@@ -81,6 +82,22 @@ import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.OfflineStartupScreen
 
 class MainActivity : ComponentActivity() {
+    var volumeKeyHandler: ((Int) -> Boolean)? = null
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val handler = volumeKeyHandler
+            if (handler != null) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    handler(keyCode)
+                }
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     private data class EdgeToEdgeState(
         val isDarkMode: Boolean,
         val appTheme: AppTheme,

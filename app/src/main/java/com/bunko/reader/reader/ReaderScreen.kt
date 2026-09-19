@@ -1,7 +1,9 @@
 package com.bunko.reader.reader
 
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.ViewConfiguration
+import com.bunko.reader.MainActivity
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -11,6 +13,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -2063,6 +2066,53 @@ fun ReaderScreen(
         // is no unmount/remount churn (the original cause of the image thrash).
         fun requestSingleStep(direction: ReaderTurnDirection, completeWhenPastEnd: Boolean) {
             requestSlideTurn(direction, 1, completeWhenPastEnd)
+        }
+
+        val activity = ctx as? MainActivity
+        DisposableEffect(
+            activity,
+            settings.reader.volumeKeysNavigation,
+            vertical,
+            nextPageTurnStep,
+            previousPageTurnStep,
+            showingFinalPage,
+            chapterBoundary,
+            viewportHeightPx
+        ) {
+            if (settings.reader.volumeKeysNavigation && activity != null) {
+                activity.volumeKeyHandler = { keyCode ->
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                            if (vertical) {
+                                scope.launch { verticalListState.animateScrollBy(viewportHeightPx * 0.75f) }
+                            } else if (chapterBoundary != null) {
+                                turnChapterBoundary(ReaderTurnDirection.Next)
+                            } else {
+                                showReaderMenu = false
+                                requestTurn(ReaderTurnDirection.Next, nextPageTurnStep, showingFinalPage)
+                            }
+                            true
+                        }
+                        KeyEvent.KEYCODE_VOLUME_UP -> {
+                            if (vertical) {
+                                scope.launch { verticalListState.animateScrollBy(-viewportHeightPx * 0.75f) }
+                            } else if (chapterBoundary != null) {
+                                turnChapterBoundary(ReaderTurnDirection.Previous)
+                            } else {
+                                showReaderMenu = false
+                                requestTurn(ReaderTurnDirection.Previous, previousPageTurnStep, false)
+                            }
+                            true
+                        }
+                        else -> false
+                    }
+                }
+            } else {
+                activity?.volumeKeyHandler = null
+            }
+            onDispose {
+                activity?.volumeKeyHandler = null
+            }
         }
 
         LaunchedEffect(activeTransition, transitionSettling, queuedTurn, page) {

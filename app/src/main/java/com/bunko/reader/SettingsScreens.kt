@@ -1073,7 +1073,29 @@ fun ReaderSettingsScreen(
                     }
                 }
 
-                // Section 3c: Scale Type & Borders
+                // Section 3c: Hardware Keys
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Hardware Keys",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        SwitchSettingRow(
+                            title = "Volume Keys Navigation",
+                            subtitle = "Use volume up and down buttons to turn pages or scroll in the reader",
+                            checked = settings.reader.volumeKeysNavigation,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setVolumeKeysNavigation(enabled) }
+                            }
+                        )
+                    }
+                }
+
+                // Section 3d: Scale Type & Borders
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Image Scale & Borders",
