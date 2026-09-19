@@ -350,8 +350,9 @@ internal fun ReaderOverviewGallery(
                     }
                     // Clipped to the card (rounded corners included); a tap here
                     // dismisses the preview instead of driving the gallery.
-                    if (tapZoneOverlayVisible && isCenter) {
+                    if (isCenter) {
                         ReaderTapZoneOverlay(
+                            visible = tapZoneOverlayVisible,
                             navigationMode = tapZoneNavigationMode,
                             tappingInvertMode = tapZoneTappingInvertMode,
                             rightToLeft = tapZoneRightToLeft,

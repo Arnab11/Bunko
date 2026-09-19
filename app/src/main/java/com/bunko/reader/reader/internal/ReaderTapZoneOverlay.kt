@@ -1,29 +1,59 @@
 package com.bunko.reader.reader.internal
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import com.bunko.reader.ReaderNavigationMode
 import com.bunko.reader.ReaderTappingInvertMode
 
-// Region model ported from Mihon (ViewerNavigation + ReaderNavigationOverlayView):
-// normalized 0..1 rects painted in translucent zone colors with a centered label
-// drawn as white text over a black stroke, exactly like Mihon's overlay.
-internal enum class TapZoneKind(val color: Color, val label: String) {
-    Menu(Color(0xCC95818D), "Menu"),
-    Prev(Color(0xCCFF7733), "Prev"),
-    Next(Color(0xCC84E296), "Next")
+// Region model ported from Mihon's ViewerNavigation region layouts; the look is
+// Bunko's own M3 theme (container roles, rounded zones, animated fade) so the
+// preview reads as one family with the overview cards and dialog controls.
+internal enum class TapZoneKind(val label: String) {
+    Menu("Menu"),
+    Prev("Prev"),
+    Next("Next")
 }
+
+/** Tonal fill per zone, drawn from the app color scheme (light/dark aware). */
+internal val TapZoneKind.container: Color
+    @Composable
+    get() = when (this) {
+        TapZoneKind.Menu -> MaterialTheme.colorScheme.secondaryContainer
+        TapZoneKind.Prev -> MaterialTheme.colorScheme.tertiaryContainer
+        TapZoneKind.Next -> MaterialTheme.colorScheme.primaryContainer
+    }
+
+/** Label/border color matching the fill. */
+internal val TapZoneKind.onContainer: Color
+    @Composable
+    get() = when (this) {
+        TapZoneKind.Menu -> MaterialTheme.colorScheme.onSecondaryContainer
+        TapZoneKind.Prev -> MaterialTheme.colorScheme.onTertiaryContainer
+        TapZoneKind.Next -> MaterialTheme.colorScheme.onPrimaryContainer
+    }
 
 internal data class TapZoneRegion(
     val left: Float,
@@ -96,12 +126,13 @@ internal fun tapZoneRegions(
 }
 
 /**
- * Mihon-style tap-zone overlay: translucent zone fills with centered
- * white-on-black-stroke labels. Dismissed by any tap ([onDismiss]) — callers
- * auto-hide it after a beat, like Mihon's 1s fade.
+ * Tap-zone preview: tonal zone tiles with M3 labels, faded with the same
+ * easing as the overview/menu transitions. Dismissed by any tap ([onDismiss])
+ * — callers auto-hide it after a beat.
  */
 @Composable
 internal fun ReaderTapZoneOverlay(
+    visible: Boolean,
     navigationMode: ReaderNavigationMode,
     tappingInvertMode: ReaderTappingInvertMode,
     rightToLeft: Boolean,
@@ -111,48 +142,49 @@ internal fun ReaderTapZoneOverlay(
     val regions = remember(navigationMode, tappingInvertMode, rightToLeft) {
         tapZoneRegions(navigationMode, tappingInvertMode, rightToLeft)
     }
-    if (regions.isEmpty()) return
-    val density = LocalDensity.current
-    val textPx = remember(density) { with(density) { 20.sp.toPx() } }
-    val fillPaint = remember {
-        android.graphics.Paint().apply {
-            textAlign = android.graphics.Paint.Align.CENTER
-            color = android.graphics.Color.WHITE
-            textSize = textPx
-        }
-    }
-    val borderPaint = remember {
-        android.graphics.Paint().apply {
-            textAlign = android.graphics.Paint.Align.CENTER
-            color = android.graphics.Color.BLACK
-            textSize = textPx
-            style = android.graphics.Paint.Style.STROKE
-            strokeWidth = textPx * 0.125f
-        }
-    }
-
-    Canvas(
+    AnimatedVisibility(
+        visible = visible && regions.isNotEmpty(),
+        enter = fadeIn(tween(durationMillis = 180, easing = FastOutSlowInEasing)),
+        exit = fadeOut(tween(durationMillis = 180, easing = FastOutSlowInEasing)),
         modifier = modifier
-            .fillMaxSize()
-            .pointerInput(onDismiss) {
-                detectTapGestures(onTap = { onDismiss() })
-            }
     ) {
-        val w = size.width
-        val h = size.height
-        regions.forEach { region ->
-            drawRect(
-                color = region.kind.color,
-                topLeft = Offset(region.left * w, region.top * h),
-                size = Size((region.right - region.left) * w, (region.bottom - region.top) * h)
-            )
-        }
-        val native = drawContext.canvas.nativeCanvas
-        regions.forEach { region ->
-            val cx = (region.left + region.right) / 2f * w
-            val cy = (region.top + region.bottom) / 2f * h + textPx * 0.35f
-            native.drawText(region.kind.label, cx, cy, borderPaint)
-            native.drawText(region.kind.label, cx, cy, fillPaint)
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(onDismiss) {
+                    detectTapGestures(onTap = { onDismiss() })
+                }
+        ) {
+            val fullWidth = maxWidth
+            val fullHeight = maxHeight
+            regions.forEach { region ->
+                val fill = region.kind.container
+                val onFill = region.kind.onContainer
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .offset(
+                            x = fullWidth * region.left,
+                            y = fullHeight * region.top
+                        )
+                        .size(
+                            width = fullWidth * (region.right - region.left),
+                            height = fullHeight * (region.bottom - region.top)
+                        )
+                        .background(fill.copy(alpha = 0.82f))
+                        .border(1.dp, onFill.copy(alpha = 0.35f))
+                        .padding(2.dp)
+                ) {
+                    Text(
+                        text = region.kind.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = onFill,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                }
+            }
         }
     }
 }

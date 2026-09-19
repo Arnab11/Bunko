@@ -63,7 +63,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -3270,6 +3269,18 @@ fun ReaderScreen(
             )
         }
 
+        // Tap-zone preview under the menu layer, so the header/footer stay
+        // visible and interactive above the zones. While the overview is open
+        // the preview lives on the current gallery card instead, so this
+        // fullscreen layer stays hidden out of the way.
+        ReaderTapZoneOverlay(
+            visible = tapZoneOverlayVisible && !isOverviewActive,
+            navigationMode = settings.reader.navigationMode,
+            tappingInvertMode = settings.reader.tappingInvertMode,
+            rightToLeft = rtl,
+            onDismiss = { tapZoneOverlayVisible = false }
+        )
+
         // Mount the menu overlay layer whenever any portion of its alpha is still
         // positive — either during the overview exit (overviewProgress > 0) or
         // during the normal menu fade-out (menuAlpha > 0).
@@ -3446,22 +3457,6 @@ fun ReaderScreen(
                 }
             )
             }
-        }
-
-        // Mihon-style tap-zone preview above everything (including the menu).
-        // While the overview is open the preview lives on the current gallery
-        // card instead, so this fullscreen layer stays out of the way.
-        if (tapZoneOverlayVisible &&
-            !isOverviewActive &&
-            settings.reader.navigationMode != ReaderNavigationMode.Disabled
-        ) {
-            ReaderTapZoneOverlay(
-                navigationMode = settings.reader.navigationMode,
-                tappingInvertMode = settings.reader.tappingInvertMode,
-                rightToLeft = rtl,
-                onDismiss = { tapZoneOverlayVisible = false },
-                modifier = Modifier.zIndex(20f)
-            )
         }
 
     }
