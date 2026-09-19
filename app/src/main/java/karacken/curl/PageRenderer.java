@@ -34,9 +34,11 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
                     + "attribute vec3 aPosition;\n"
                     + "attribute vec2 aTextureCoordinate;\n"
                     + "varying vec2 vTextureCoordinate;\n"
+                    + "varying float vDepth;\n"
                     + "void main() {\n"
                     + "  gl_Position = uMvpMatrix * vec4(aPosition, 1.0);\n"
                     + "  vTextureCoordinate = aTextureCoordinate;\n"
+                    + "  vDepth = aPosition.z;\n"
                     + "}\n";
 
     private static final String FRAGMENT_SHADER =
@@ -44,11 +46,25 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
                     + "uniform sampler2D uTexture;\n"
                     + "uniform sampler2D uOverlayTexture;\n"
                     + "uniform float uHasOverlay;\n"
+                    + "uniform sampler2D uBackTexture;\n"
+                    + "uniform float uHasBackTexture;\n"
                     + "varying vec2 vTextureCoordinate;\n"
+                    + "varying float vDepth;\n"
                     + "void main() {\n"
-                    + "  vec4 base = texture2D(uTexture, vTextureCoordinate);\n"
-                    + "  vec4 overlay = texture2D(uOverlayTexture, vTextureCoordinate);\n"
-                    + "  gl_FragColor = mix(base, overlay + base * (1.0 - overlay.a), uHasOverlay);\n"
+                    + "  bool isBack = (!gl_FrontFacing && uHasBackTexture > 0.5);\n"
+                    + "  vec2 texCoord = isBack ? vec2(1.0 - vTextureCoordinate.x, vTextureCoordinate.y) : vTextureCoordinate;\n"
+                    + "  vec4 base = isBack ? texture2D(uBackTexture, texCoord) : texture2D(uTexture, texCoord);\n"
+                    + "  vec4 overlay = texture2D(uOverlayTexture, texCoord);\n"
+                    + "  vec4 color = mix(base, overlay + base * (1.0 - overlay.a), isBack ? 0.0 : uHasOverlay);\n"
+                    + "  if (vDepth > 0.0) {\n"
+                    + "    float lift = clamp(vDepth / 0.28, 0.0, 1.0);\n"
+                    + "    float crest = sin(lift * 3.14159265);\n"
+                    + "    float smoothFactor = smoothstep(0.0, 0.03, vDepth);\n"
+                    + "    float targetLight = gl_FrontFacing ? (0.96 + 0.08 * crest) : (0.92 + 0.06 * crest);\n"
+                    + "    float light = mix(1.0, targetLight, smoothFactor);\n"
+                    + "    color.rgb *= light;\n"
+                    + "  }\n"
+                    + "  gl_FragColor = color;\n"
                     + "}\n";
 
     private static final String SHADOW_VERTEX_SHADER =
@@ -113,6 +129,8 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
     private int textureUniform;
     private int overlayTextureUniform;
     private int hasOverlayUniform;
+    private int backTextureUniform;
+    private int hasBackTextureUniform;
     private int shadowProgram;
     private int shadowPositionAttribute;
     private int shadowGradientAttribute;
@@ -376,6 +394,8 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
             overlayTextureUniform =
                     GLES20.glGetUniformLocation(program, "uOverlayTexture");
             hasOverlayUniform = GLES20.glGetUniformLocation(program, "uHasOverlay");
+            backTextureUniform = GLES20.glGetUniformLocation(program, "uBackTexture");
+            hasBackTextureUniform = GLES20.glGetUniformLocation(program, "uHasBackTexture");
             shadowProgram = createProgram(SHADOW_VERTEX_SHADER, SHADOW_FRAGMENT_SHADER);
             shadowPositionAttribute =
                     GLES20.glGetAttribLocation(shadowProgram, "aPosition");
@@ -437,6 +457,7 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
             GLES20.glUseProgram(program);
             GLES20.glUniform1i(textureUniform, 0);
             GLES20.glUniform1i(overlayTextureUniform, 1);
+            GLES20.glUniform1i(backTextureUniform, 2);
 
             if (landscapeSpreadModel != null && viewportWidth > viewportHeight) {
                 drawLandscapeSpread();
@@ -771,56 +792,80 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
         LandscapeSpreadTransition transition = landscapeSpreadModel.getTransition();
 
         if (transition.getProgress() == 0f) {
-            drawFlatLeaf(0, leftWidth, spreadCurrentLeftResource);
+            drawFlatLeaf(0, leftWidth + 1, spreadCurrentLeftResource);
             drawFlatLeaf(leftWidth, rightWidth, spreadCurrentRightResource);
             return;
         }
 
         float progress = transition.getProgress();
-        // Full native curl sweep, shared by both directions: flat at rest, fully
-        // exited past the edge at full progress.
-        float leafCurl = PlayLikeCurlModel.GRID
-                - progress * (PlayLikeCurlModel.GRID - PlayLikeCurlModel.RIGHT_ENDPOINT_POSITION);
-        turningState.setCurlPosition(leafCurl);
 
         if (transition.isForward()) {
-            // Landing half swaps under the covering leaf; the revealed strip near
-            // the spine reads as the new page emerging behind the passing fold.
-            if (progress < 0.5f) {
-                drawFlatLeaf(0, leftWidth, spreadCurrentLeftResource);
-            } else {
-                drawFlatLeaf(0, leftWidth, spreadNextLeftResource);
-            }
+            drawFlatLeaf(0, leftWidth + 1, spreadCurrentLeftResource);
             drawFlatLeaf(leftWidth, rightWidth, spreadNextRightResource);
-            int slideX = Math.round(leftWidth * (1f - progress));
-            drawLeaf(
-                    slideX,
-                    rightWidth,
+            drawLandscapeTurningLeaf(
                     spreadCurrentRightResource,
-                    frontMesh,
-                    turningState,
+                    spreadNextLeftResource,
+                    progress,
                     true);
         } else {
-            if (progress < 0.5f) {
-                drawFlatLeaf(leftWidth, rightWidth, spreadCurrentRightResource);
-            } else {
-                drawFlatLeaf(leftWidth, rightWidth, spreadPreviousRightResource);
-            }
-            drawFlatLeaf(0, leftWidth, spreadPreviousLeftResource);
-            int slideX = Math.round(leftWidth * progress);
-            // The mirrored mesh sweeps the leaf out to the right (peeling from its
-            // outer edge, like a real page turning back). Mirrored content only
-            // shows mid-turn inside the fold; both ends use the plain mesh so the
-            // start and landing read correctly.
-            GpuMesh leafMesh = progress < 0.06f ? frontMesh : mirroredFrontMesh;
-            drawLeaf(
-                    slideX,
-                    leftWidth,
+            drawFlatLeaf(leftWidth, rightWidth, spreadCurrentRightResource);
+            drawFlatLeaf(0, leftWidth + 1, spreadPreviousLeftResource);
+            drawLandscapeTurningLeaf(
                     spreadCurrentLeftResource,
-                    leafMesh,
-                    turningState,
-                    true);
+                    spreadPreviousRightResource,
+                    progress,
+                    false);
         }
+    }
+
+    private void drawLandscapeTurningLeaf(
+            PageImage<Bitmap> frontResource,
+            PageImage<Bitmap> backResource,
+            float progress,
+            boolean forward) {
+        GpuTexture frontTex = texture(frontResource);
+        GpuTexture backTex = texture(backResource);
+        if (frontTex == null) {
+            return;
+        }
+
+        GLES20.glViewport(0, 0, viewportWidth, viewportHeight);
+        updateMvp(viewportWidth, viewportHeight);
+
+        frontMesh.ensureGeometry(frontTex.bitmapWidth, frontTex.bitmapHeight, PageOrientation.PORTRAIT);
+        PlayBooksBezierCurl.updateLandscape(frontMesh.geometry, progress, forward);
+        frontMesh.uploadPositions();
+
+        GLES20.glEnable(GLES20.GL_DEPTH_TEST);
+        GLES20.glDepthMask(true);
+        GLES20.glDisable(GLES20.GL_BLEND);
+        GLES20.glUseProgram(program);
+        GLES20.glUniform1i(textureUniform, 0);
+        GLES20.glUniform1i(overlayTextureUniform, 1);
+        GLES20.glUniform1i(backTextureUniform, 2);
+        GLES20.glUniformMatrix4fv(matrixUniform, 1, false, mvpMatrix, 0);
+
+        drawPageTextures(frontResource, frontTex, backTex);
+
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, frontMesh.positionBufferId);
+        GLES20.glEnableVertexAttribArray(positionAttribute);
+        GLES20.glVertexAttribPointer(positionAttribute, 3, GLES20.GL_FLOAT, false, 0, 0);
+
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, frontMesh.textureBufferId);
+        GLES20.glEnableVertexAttribArray(textureCoordinateAttribute);
+        GLES20.glVertexAttribPointer(
+                textureCoordinateAttribute, 2, GLES20.GL_FLOAT, false, 0, 0);
+
+        GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, frontMesh.indexBufferId);
+        GLES20.glDrawElements(
+                GLES20.GL_TRIANGLES,
+                frontMesh.geometry.getIndices().length,
+                GLES20.GL_UNSIGNED_SHORT,
+                0);
+
+        GLES20.glDisableVertexAttribArray(positionAttribute);
+        GLES20.glDisableVertexAttribArray(textureCoordinateAttribute);
+        GLES20.glUniform1f(hasBackTextureUniform, 0f);
     }
 
     private void drawFlatLeaf(int x, int width, PageImage<Bitmap> resource) {
@@ -935,6 +980,7 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
         mesh.uploadPositions();
 
         GLES20.glUniformMatrix4fv(matrixUniform, 1, false, mvpMatrix, 0);
+        GLES20.glUniform1f(hasBackTextureUniform, 0f);
         drawPageTextures(resource, texture);
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, mesh.positionBufferId);
         GLES20.glEnableVertexAttribArray(positionAttribute);
@@ -956,6 +1002,13 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
     private void drawPageTextures(
             PageImage<Bitmap> resource,
             GpuTexture baseTexture) {
+        drawPageTextures(resource, baseTexture, null);
+    }
+
+    private void drawPageTextures(
+            PageImage<Bitmap> resource,
+            GpuTexture baseTexture,
+            GpuTexture backTexture) {
         GpuTexture overlayTexture = overlayTexture(resource);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, baseTexture.textureId);
@@ -964,6 +1017,14 @@ public final class PageRenderer implements GLSurfaceView.Renderer {
                 GLES20.GL_TEXTURE_2D,
                 overlayTexture == null ? 0 : overlayTexture.textureId);
         GLES20.glUniform1f(hasOverlayUniform, overlayTexture == null ? 0f : 1f);
+
+        if (backTexture != null) {
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE2);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, backTexture.textureId);
+            GLES20.glUniform1f(hasBackTextureUniform, 1f);
+        } else {
+            GLES20.glUniform1f(hasBackTextureUniform, 0f);
+        }
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
     }
 

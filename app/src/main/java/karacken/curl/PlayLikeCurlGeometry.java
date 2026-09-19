@@ -55,16 +55,13 @@ final class PlayLikeCurlGeometry {
     }
 
     static float projectionAspect(int width, int height) {
-        if (width <= 0 || height <= 0) {
-            throw new IllegalArgumentException("Viewport dimensions must be positive");
-        }
         return width / (float) height;
     }
 
-    static float bitmapRatio(int width, int height, PageOrientation orientation) {
-        if (width <= 0 || height <= 0) {
-            throw new IllegalArgumentException("Bitmap dimensions must be positive");
-        }
+    static float bitmapRatio(
+            int width,
+            int height,
+            PageOrientation orientation) {
         return orientation == PageOrientation.PORTRAIT
                 ? height / (float) width
                 : width / (float) height;

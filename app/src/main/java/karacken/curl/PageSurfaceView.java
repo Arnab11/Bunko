@@ -231,6 +231,7 @@ public class PageSurfaceView extends GLSurfaceView {
         if (interaction != null) {
             interaction.cancelGesture();
         }
+        PlayBooksBezierCurl.resetTouchTilt();
         deckCoordinator.cancelSettlement();
         gestureAccepted = false;
         gestureMoved = false;
@@ -270,6 +271,7 @@ public class PageSurfaceView extends GLSurfaceView {
             activeGestureId = NO_GESTURE_ID;
             return false;
         }
+        PlayBooksBezierCurl.setTouchTilt(PlayBooksBezierCurl.DEFAULT_THUMB_TILT);
         Settlement settlement = interaction.turn(pageChange);
         if (settlement.getPageChange() == PageChange.NONE) {
             interaction.cancelGesture();
@@ -410,6 +412,8 @@ public class PageSurfaceView extends GLSurfaceView {
             case MotionEvent.ACTION_DOWN:
                 gestureDownX = event.getX();
                 gestureDownY = event.getY();
+                float viewHeightDown = getHeight() > 0 ? getHeight() : 1f;
+                PlayBooksBezierCurl.setTouchTilt(((event.getY() / viewHeightDown) - 0.5f) * 2f);
                 obtainVelocityTracker().addMovement(event);
                 interaction.beginGesture(gestureDownX);
                 return true;
@@ -422,6 +426,8 @@ public class PageSurfaceView extends GLSurfaceView {
                     gestureMoved = true;
                 }
                 if (gestureMoved) {
+                    float viewHeightMove = getHeight() > 0 ? getHeight() : 1f;
+                    PlayBooksBezierCurl.setTouchTilt(((event.getY() / viewHeightMove) - 0.5f) * 2f);
                     dragInteraction(event.getX());
                     requestRender();
                 }
@@ -661,6 +667,7 @@ public class PageSurfaceView extends GLSurfaceView {
         settlementAnimator = null;
         activeSettlementContext = null;
         gestureMoved = false;
+        PlayBooksBezierCurl.resetTouchTilt();
 
         PageDeckCoordinator.Promotion<Bitmap> promotion =
                 deckCoordinator.completeSettlement();
