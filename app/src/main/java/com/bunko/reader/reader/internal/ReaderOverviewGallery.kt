@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import com.bunko.reader.FileDimensionDto
+import com.bunko.reader.ReaderNavigationMode
+import com.bunko.reader.ReaderTappingInvertMode
 
 /** Internal to reader, not for external use. */
 internal fun readerOverviewCursors(
@@ -128,6 +130,13 @@ internal fun ReaderOverviewGallery(
     onTransform: ((zoomChange: Float, panChange: Offset, focalPoint: Offset) -> Unit)? = null,
     onTransformEnd: ((velocityScale: Float) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    // Mihon-style tap-zone preview, drawn only over the current card so it
+    // tracks the overview page instead of covering the whole screen.
+    tapZoneOverlayVisible: Boolean = false,
+    tapZoneNavigationMode: ReaderNavigationMode = ReaderNavigationMode.Default,
+    tapZoneTappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
+    tapZoneRightToLeft: Boolean = false,
+    onTapZoneOverlayDismiss: () -> Unit = {},
     pageContent: @Composable (cursor: Int, modifier: Modifier) -> Unit
 ) {
     if (cursors.isEmpty()) return
@@ -338,6 +347,17 @@ internal fun ReaderOverviewGallery(
                         )
                     ) {
                         pageContent(cursor, Modifier.fillMaxSize())
+                    }
+                    // Clipped to the card (rounded corners included); a tap here
+                    // dismisses the preview instead of driving the gallery.
+                    if (tapZoneOverlayVisible && isCenter) {
+                        ReaderTapZoneOverlay(
+                            navigationMode = tapZoneNavigationMode,
+                            tappingInvertMode = tapZoneTappingInvertMode,
+                            rightToLeft = tapZoneRightToLeft,
+                            onDismiss = onTapZoneOverlayDismiss,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                 }
             }

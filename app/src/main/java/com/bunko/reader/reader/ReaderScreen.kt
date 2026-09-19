@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -95,6 +96,7 @@ import com.bunko.reader.MarkChapterReadDto
 import com.bunko.reader.MarkVolumesReadDto
 import com.bunko.reader.PageTurnMode
 import com.bunko.reader.ProgressDto
+import com.bunko.reader.ReaderNavigationMode
 import com.bunko.reader.ReaderReadingDirection
 import com.bunko.reader.download.OfflineChapter
 import com.bunko.reader.download.OfflineIssueRepository
@@ -114,6 +116,7 @@ import com.bunko.reader.reader.internal.ReaderOverviewGallery
 import com.bunko.reader.reader.internal.readerOverviewCursors
 import com.bunko.reader.reader.internal.ReaderPageView
 import com.bunko.reader.reader.internal.ReaderTapLayer
+import com.bunko.reader.reader.internal.ReaderTapZoneOverlay
 import com.bunko.reader.reader.internal.ReaderVerticalScroll
 import com.bunko.reader.reader.internal.ReaderWebtoonDetector
 import com.bunko.reader.reader.internal.ReaderZoomEpsilon
@@ -311,6 +314,8 @@ fun ReaderScreen(
     var readerReady by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showReaderMenu by remember { mutableStateOf(false) }
+    // Mihon-style tap-zone preview, shown when the zones change in the dialog.
+    var tapZoneOverlayVisible by remember { mutableStateOf(false) }
     var readingDirection by remember { mutableStateOf(settings.reader.readingDirection) }
     // Per-book overrides survive a short close/reopen cycle in process memory. The server
     // direction and global Reader setting remain authoritative after the cache expires.
@@ -1177,6 +1182,14 @@ fun ReaderScreen(
     LaunchedEffect(isOverviewActive) {
         if (!isOverviewActive) {
             zoomPan = ReaderZoomPanState()
+        }
+    }
+
+    // Auto-hide the tap-zone preview after a beat (a tap on it hides it sooner).
+    LaunchedEffect(tapZoneOverlayVisible) {
+        if (tapZoneOverlayVisible) {
+            delay(1500L)
+            tapZoneOverlayVisible = false
         }
     }
 
@@ -2952,6 +2965,11 @@ fun ReaderScreen(
                     currentCursor = page,
                     reverseLayout = rtl,
                     progress = overviewProgress,
+                    tapZoneOverlayVisible = tapZoneOverlayVisible,
+                    tapZoneNavigationMode = settings.reader.navigationMode,
+                    tapZoneTappingInvertMode = settings.reader.tappingInvertMode,
+                    tapZoneRightToLeft = rtl,
+                    onTapZoneOverlayDismiss = { tapZoneOverlayVisible = false },
                     onSelect = { cursor ->
                         page = cursor
                         lastRemoteProgressPages[currentChapterId] = cursor
@@ -3391,10 +3409,20 @@ fun ReaderScreen(
                 },
                 navigationMode = settings.reader.navigationMode,
                 onSetNavigationMode = { newNav ->
+                    if (newNav != settings.reader.navigationMode &&
+                        newNav != ReaderNavigationMode.Disabled
+                    ) {
+                        tapZoneOverlayVisible = true
+                    }
                     scope.launch { settingsStore.setNavigationMode(newNav) }
                 },
                 tappingInvertMode = settings.reader.tappingInvertMode,
                 onSetTappingInvertMode = { newInvert ->
+                    if (newInvert != settings.reader.tappingInvertMode &&
+                        settings.reader.navigationMode != ReaderNavigationMode.Disabled
+                    ) {
+                        tapZoneOverlayVisible = true
+                    }
                     scope.launch { settingsStore.setTappingInvertMode(newInvert) }
                 },
                 autoWebtoonMode = settings.reader.autoWebtoonMode,
@@ -3418,6 +3446,22 @@ fun ReaderScreen(
                 }
             )
             }
+        }
+
+        // Mihon-style tap-zone preview above everything (including the menu).
+        // While the overview is open the preview lives on the current gallery
+        // card instead, so this fullscreen layer stays out of the way.
+        if (tapZoneOverlayVisible &&
+            !isOverviewActive &&
+            settings.reader.navigationMode != ReaderNavigationMode.Disabled
+        ) {
+            ReaderTapZoneOverlay(
+                navigationMode = settings.reader.navigationMode,
+                tappingInvertMode = settings.reader.tappingInvertMode,
+                rightToLeft = rtl,
+                onDismiss = { tapZoneOverlayVisible = false },
+                modifier = Modifier.zIndex(20f)
+            )
         }
 
     }
