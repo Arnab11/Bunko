@@ -81,8 +81,31 @@ import com.bunko.reader.library.internal.HomeDestination
 import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.OfflineStartupScreen
 
+import android.content.Intent
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 class MainActivity : ComponentActivity() {
     var volumeKeyHandler: ((Int) -> Boolean)? = null
+    private val _incomingFileUri = MutableStateFlow<Uri?>(null)
+    val incomingFileUri: StateFlow<Uri?> = _incomingFileUri.asStateFlow()
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action == Intent.ACTION_VIEW) {
+            val uri = intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            if (uri != null) {
+                _incomingFileUri.value = uri
+            }
+        }
+    }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
@@ -133,6 +156,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyEdgeToEdge(isDarkMode = true)
+        handleIncomingIntent(intent)
 
         val sessionStore = KavitaSessionStore(this)
         val settingsStore = AppSettingsStore(this)
@@ -195,6 +219,8 @@ class MainActivity : ComponentActivity() {
                         sessionStore = sessionStore,
                         settingsStore = settingsStore,
                         loginDefaults = loginDefaults,
+                        incomingFileUri = incomingFileUri,
+                        onConsumeIncomingUri = { _incomingFileUri.value = null },
                         onToggleTheme = toggleTheme
                     )
                 }
@@ -212,6 +238,8 @@ fun AppRoot(
     sessionStore: KavitaSessionStore,
     settingsStore: AppSettingsStore,
     loginDefaults: LoginDefaults = LoginDefaults(),
+    incomingFileUri: StateFlow<Uri?> = MutableStateFlow(null),
+    onConsumeIncomingUri: () -> Unit = {},
     onToggleTheme: () -> Unit = {},
 ) {
     val nav = rememberNavController()
@@ -306,6 +334,24 @@ fun AppRoot(
                 .background(BunkoBackground)
         )
         return
+    }
+
+    val pendingIncomingUri by incomingFileUri.collectAsState()
+    LaunchedEffect(pendingIncomingUri) {
+        val uri = pendingIncomingUri ?: return@LaunchedEffect
+        BunkoLog.i("Processing incoming file URI: $uri")
+        val book = localRepository.getOrCreateBookForUri(uri)
+        if (book != null) {
+            BunkoLog.i("Successfully indexed incoming book: ${book.id} - ${book.title}")
+            onConsumeIncomingUri()
+            localRepository.setStartupCompleted(true)
+            nav.navigate("local-reader/${book.id}?page=${book.lastReadPage}") {
+                launchSingleTop = true
+            }
+        } else {
+            BunkoLog.w("Could not index incoming book from URI: $uri")
+            onConsumeIncomingUri()
+        }
     }
 
     val resolvedStart = remember {

@@ -55,7 +55,7 @@ internal data class ReaderInvertCacheKey(
 )
 
 internal data class ReaderPrefetchTarget(
-    val model: String,
+    val model: Any,
     val targetWidth: Int,
     val targetHeight: Int
 )

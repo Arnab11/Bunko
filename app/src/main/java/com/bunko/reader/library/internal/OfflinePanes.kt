@@ -96,7 +96,11 @@ internal fun OfflineHomePane(
     onRescan: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (books.isEmpty()) {
+    val libraryBooks = remember(books) {
+        books.filter { !it.isExternalFile }
+    }
+
+    if (libraryBooks.isEmpty()) {
         EmptyLibraryState(
             hasBooksOverall = false,
             onChooseFolder = onChangeFolder,
@@ -105,12 +109,12 @@ internal fun OfflineHomePane(
         return
     }
 
-    val continueReading = remember(books) {
-        books.filter { it.lastReadPage > 0 && !it.isCompleted }
+    val continueReading = remember(libraryBooks) {
+        libraryBooks.filter { it.lastReadPage > 0 && !it.isCompleted }
             .sortedByDescending { it.lastReadPage }
     }
-    val recentlyAdded = remember(books) {
-        books.sortedByDescending { it.lastModified }
+    val recentlyAdded = remember(libraryBooks) {
+        libraryBooks.sortedByDescending { it.lastModified }
     }
 
     LazyColumn(
@@ -231,7 +235,7 @@ internal fun OfflineHomePane(
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
-                            text = "${books.size}",
+                            text = "${libraryBooks.size}",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -308,9 +312,10 @@ internal fun OfflineHistoryPane(
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val historyBooks = remember(books, sort) {
-        val inProgress = books.filter { it.lastReadPage > 0 && !it.isCompleted }
-        val targetList = if (inProgress.isNotEmpty()) inProgress else books.filter { it.lastReadPage > 0 }
+    val libraryHistory = remember(books, sort) {
+        val libraryOnly = books.filter { !it.isExternalFile && it.lastReadPage > 0 }
+        val inProgress = libraryOnly.filter { !it.isCompleted }
+        val targetList = if (inProgress.isNotEmpty()) inProgress else libraryOnly
         when (sort) {
             LocalBookSort.Title -> targetList.sortedBy { it.title.lowercase() }
             LocalBookSort.Recent -> targetList.sortedByDescending { it.lastReadPage }
@@ -319,7 +324,17 @@ internal fun OfflineHistoryPane(
         }
     }
 
-    if (historyBooks.isEmpty()) {
+    val openedFiles = remember(books, sort) {
+        val externalList = books.filter { it.isExternalFile }
+        when (sort) {
+            LocalBookSort.Title -> externalList.sortedBy { it.title.lowercase() }
+            LocalBookSort.Recent -> externalList.sortedByDescending { if (it.lastReadPage > 0) it.lastReadPage.toLong() else it.lastModified }
+            LocalBookSort.Modified -> externalList.sortedByDescending { it.lastModified }
+            LocalBookSort.Size -> externalList.sortedByDescending { it.sizeBytes }
+        }
+    }
+
+    if (libraryHistory.isEmpty() && openedFiles.isEmpty()) {
         Box(modifier = modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -332,35 +347,168 @@ internal fun OfflineHistoryPane(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Books you start reading will appear here with your progress.",
+                    text = "Books you start reading or open from files will appear here.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
                 )
             }
         }
     } else {
-        if (isGridView) {
-            PosterGrid(
-                items = historyBooks,
-                key = { it.id },
-                modifier = modifier.fillMaxSize()
-            ) { book ->
-                UnifiedPosterCard(
-                    item = book.toUnifiedMediaItem(),
-                    onClick = { onOpenBook(book) }
-                )
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            if (openedFiles.isNotEmpty()) {
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Opened from External Source",
+                                color = MaterialTheme.colorScheme.onBackground,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    text = "${openedFiles.size}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        if (isGridView) {
+                            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                                val minCardWidth = 130.dp
+                                val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
+                                val chunked = openedFiles.chunked(columns)
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    chunked.forEach { rowItems ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            rowItems.forEach { book ->
+                                                Box(modifier = Modifier.weight(1f)) {
+                                                    UnifiedPosterCard(
+                                                        item = book.toUnifiedMediaItem(),
+                                                        onClick = { onOpenBook(book) }
+                                                    )
+                                                }
+                                            }
+                                            repeat(columns - rowItems.size) {
+                                                Spacer(Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                openedFiles.forEach { book ->
+                                    UnifiedListItem(
+                                        item = book.toUnifiedMediaItem(),
+                                        onClick = { onOpenBook(book) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(historyBooks, key = { it.id }) { book ->
-                    UnifiedListItem(
-                        item = book.toUnifiedMediaItem(),
-                        onClick = { onOpenBook(book) }
-                    )
+
+            if (libraryHistory.isNotEmpty()) {
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Library History",
+                                color = MaterialTheme.colorScheme.onBackground,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    text = "${libraryHistory.size}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        if (isGridView) {
+                            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                                val minCardWidth = 130.dp
+                                val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
+                                val chunked = libraryHistory.chunked(columns)
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    chunked.forEach { rowItems ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            rowItems.forEach { book ->
+                                                Box(modifier = Modifier.weight(1f)) {
+                                                    UnifiedPosterCard(
+                                                        item = book.toUnifiedMediaItem(),
+                                                        onClick = { onOpenBook(book) }
+                                                    )
+                                                }
+                                            }
+                                            repeat(columns - rowItems.size) {
+                                                Spacer(Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                libraryHistory.forEach { book ->
+                                    UnifiedListItem(
+                                        item = book.toUnifiedMediaItem(),
+                                        onClick = { onOpenBook(book) }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -377,8 +525,9 @@ internal fun OfflineBrowsePane(
     onRescan: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val sortedBooks = remember(books, sort) {
-        books.sortedWith { left, right ->
+    val libraryBooks = remember(books) { books.filter { !it.isExternalFile } }
+    val sortedBooks = remember(libraryBooks, sort) {
+        libraryBooks.sortedWith { left, right ->
             when (sort) {
                 LocalBookSort.Title -> left.title.lowercase().compareTo(right.title.lowercase())
                 LocalBookSort.Recent -> right.lastReadPage.compareTo(left.lastReadPage)
@@ -389,7 +538,7 @@ internal fun OfflineBrowsePane(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        if (books.isEmpty()) {
+        if (libraryBooks.isEmpty()) {
             EmptyLibraryState(
                 hasBooksOverall = false,
                 onChooseFolder = onChangeFolder,
@@ -534,24 +683,25 @@ internal fun OfflineLibrariesPane(
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val comicBooks = remember(books) { books.filter { it.format.isComic } }
-    val epubBooks = remember(books) { books.filter { it.format.isEpub } }
-    val mobiBooks = remember(books) { books.filter { it.format == LocalBookFormat.MOBI || it.format == LocalBookFormat.AZW || it.format == LocalBookFormat.AZW3 } }
-    val allEbooks = remember(books) { books.filter { it.format.isReflowEbook } }
-    val pdfBooks = remember(books) { books.filter { it.format.isPdf } }
+    val libraryBooks = remember(books) { books.filter { !it.isExternalFile } }
+    val comicBooks = remember(libraryBooks) { libraryBooks.filter { it.format.isComic } }
+    val epubBooks = remember(libraryBooks) { libraryBooks.filter { it.format.isEpub } }
+    val mobiBooks = remember(libraryBooks) { libraryBooks.filter { it.format == LocalBookFormat.MOBI || it.format == LocalBookFormat.AZW || it.format == LocalBookFormat.AZW3 } }
+    val allEbooks = remember(libraryBooks) { libraryBooks.filter { it.format.isReflowEbook } }
+    val pdfBooks = remember(libraryBooks) { libraryBooks.filter { it.format.isPdf } }
 
     var selectedCategoryFilter by remember { mutableStateOf<String?>(null) }
     var selectedCategoryTitle by remember { mutableStateOf<String?>(null) }
     var selectedFolderFilter by remember { mutableStateOf<LocalFolder?>(null) }
 
-    val displayedBooks = remember(books, selectedCategoryFilter, selectedFolderFilter) {
+    val displayedBooks = remember(libraryBooks, selectedCategoryFilter, selectedFolderFilter) {
         when {
-            selectedCategoryFilter == "comics" -> books.filter { it.format.isComic }
-            selectedCategoryFilter == "ebooks" -> books.filter { it.format.isReflowEbook }
-            selectedCategoryFilter == "mobi" -> books.filter { it.format == LocalBookFormat.MOBI || it.format == LocalBookFormat.AZW || it.format == LocalBookFormat.AZW3 }
-            selectedCategoryFilter == "epub" -> books.filter { it.format == LocalBookFormat.EPUB }
-            selectedCategoryFilter == "pdf" -> books.filter { it.format.isPdf }
-            selectedFolderFilter != null -> books.filter {
+            selectedCategoryFilter == "comics" -> libraryBooks.filter { it.format.isComic }
+            selectedCategoryFilter == "ebooks" -> libraryBooks.filter { it.format.isReflowEbook }
+            selectedCategoryFilter == "mobi" -> libraryBooks.filter { it.format == LocalBookFormat.MOBI || it.format == LocalBookFormat.AZW || it.format == LocalBookFormat.AZW3 }
+            selectedCategoryFilter == "epub" -> libraryBooks.filter { it.format == LocalBookFormat.EPUB }
+            selectedCategoryFilter == "pdf" -> libraryBooks.filter { it.format.isPdf }
+            selectedFolderFilter != null -> libraryBooks.filter {
                 it.folderUriString == selectedFolderFilter?.uriString || (folders.size <= 1 && it.folderUriString.isBlank())
             }
             else -> emptyList()
@@ -566,7 +716,7 @@ internal fun OfflineLibrariesPane(
             val activeFilterTitle = selectedCategoryTitle
                 ?: selectedFolderFilter?.name
                 ?: "All Books"
-            val tabletBooks = if (selectedCategoryFilter == null && selectedFolderFilter == null) books else displayedBooks
+            val tabletBooks = if (selectedCategoryFilter == null && selectedFolderFilter == null) libraryBooks else displayedBooks
 
             Row(
                 modifier = Modifier
@@ -1055,13 +1205,14 @@ internal fun OfflineWantToReadPane(
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val unreadBooks = remember(books) { books.filter { it.lastReadPage == 0 && !it.isCompleted } }
+    val libraryBooks = remember(books) { books.filter { !it.isExternalFile } }
+    val unreadBooks = remember(libraryBooks) { libraryBooks.filter { it.lastReadPage == 0 && !it.isCompleted } }
 
     Box(modifier = modifier.fillMaxSize()) {
         if (unreadBooks.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = if (books.isEmpty()) "No books in library" else "All caught up! You have started all your books.",
+                    text = if (libraryBooks.isEmpty()) "No books in library" else "All caught up! You have started all your books.",
                     color = Color(0xFFB9BDBD),
                     style = MaterialTheme.typography.bodyLarge
                 )

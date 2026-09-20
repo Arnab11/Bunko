@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import android.util.LruCache
 import com.bunko.reader.BunkoLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -18,33 +19,87 @@ object PdfDocumentEngine {
 
     private val rendererMutex = Mutex()
 
-    suspend fun getPageCount(file: File): Int = withContext(Dispatchers.IO) {
-        try {
-            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                PdfRenderer(pfd).use { renderer ->
-                    renderer.pageCount
-                }
-            }
+    private val maxCacheBytes = (Runtime.getRuntime().maxMemory() / 4).toInt().coerceIn(64 * 1024 * 1024, 256 * 1024 * 1024)
+    private val pageBitmapCache = object : LruCache<String, Bitmap>(maxCacheBytes) {
+        override fun sizeOf(key: String, value: Bitmap): Int {
+            val bytes = value.allocationByteCount
+            return if (bytes > 0) bytes else (value.rowBytes * value.height).coerceAtLeast(1)
+        }
+    }
+
+    private class ActiveSession(
+        val filePath: String,
+        val pfd: ParcelFileDescriptor,
+        val renderer: PdfRenderer
+    )
+
+    private var activeSession: ActiveSession? = null
+
+    private fun getOrCreateRenderer(file: File): PdfRenderer? {
+        val current = activeSession
+        if (current != null && current.filePath == file.absolutePath) {
+            return current.renderer
+        }
+        closeActiveSession()
+        return try {
+            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) ?: return null
+            val renderer = PdfRenderer(pfd)
+            activeSession = ActiveSession(file.absolutePath, pfd, renderer)
+            renderer
         } catch (t: Throwable) {
-            BunkoLog.w("Failed to get PDF page count for ${file.name}", t)
-            0
+            BunkoLog.w("Failed to open PdfRenderer for ${file.name}", t)
+            null
+        }
+    }
+
+    fun closeActiveSession() {
+        activeSession?.let { session ->
+            try { session.renderer.close() } catch (_: Throwable) {}
+            try { session.pfd.close() } catch (_: Throwable) {}
+        }
+        activeSession = null
+    }
+
+    private fun cacheKey(file: File, pageIndex: Int): String {
+        return "${file.absolutePath}:$pageIndex"
+    }
+
+    fun getCachedBitmap(
+        file: File,
+        pageIndex: Int
+    ): Bitmap? {
+        val key = cacheKey(file, pageIndex)
+        synchronized(pageBitmapCache) {
+            val cached = pageBitmapCache.get(key)
+            return if (cached != null && !cached.isRecycled) cached else null
+        }
+    }
+
+    suspend fun getPageCount(file: File): Int = withContext(Dispatchers.IO) {
+        rendererMutex.withLock {
+            try {
+                val renderer = getOrCreateRenderer(file)
+                renderer?.pageCount ?: 0
+            } catch (t: Throwable) {
+                BunkoLog.w("Failed to get PDF page count for ${file.name}", t)
+                0
+            }
         }
     }
 
     suspend fun getPageDimensions(file: File): Map<Int, Pair<Int, Int>> = withContext(Dispatchers.IO) {
         val dims = mutableMapOf<Int, Pair<Int, Int>>()
-        try {
-            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                PdfRenderer(pfd).use { renderer ->
-                    for (i in 0 until renderer.pageCount) {
-                        renderer.openPage(i).use { page ->
-                            dims[i] = Pair(page.width, page.height)
-                        }
+        rendererMutex.withLock {
+            try {
+                val renderer = getOrCreateRenderer(file) ?: return@withLock dims
+                for (i in 0 until renderer.pageCount) {
+                    renderer.openPage(i).use { page ->
+                        dims[i] = Pair(page.width, page.height)
                     }
                 }
+            } catch (t: Throwable) {
+                BunkoLog.w("Failed to get PDF page dimensions for ${file.name}", t)
             }
-        } catch (t: Throwable) {
-            BunkoLog.w("Failed to get PDF page dimensions for ${file.name}", t)
         }
         dims
     }
@@ -55,45 +110,52 @@ object PdfDocumentEngine {
         targetWidth: Int = 0,
         targetHeight: Int = 0
     ): Bitmap? = withContext(Dispatchers.IO) {
+        val key = cacheKey(file, pageIndex)
+        synchronized(pageBitmapCache) {
+            val cached = pageBitmapCache.get(key)
+            if (cached != null && !cached.isRecycled) return@withContext cached
+        }
+
         rendererMutex.withLock {
+            synchronized(pageBitmapCache) {
+                val cached = pageBitmapCache.get(key)
+                if (cached != null && !cached.isRecycled) return@withLock cached
+            }
+
             try {
-                ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                    PdfRenderer(pfd).use { renderer ->
-                        if (pageIndex !in 0 until renderer.pageCount) return@use null
+                val renderer = getOrCreateRenderer(file) ?: return@withLock null
+                if (pageIndex !in 0 until renderer.pageCount) return@withLock null
 
-                        renderer.openPage(pageIndex).use { page ->
-                            val rawW = page.width.coerceAtLeast(1)
-                            val rawH = page.height.coerceAtLeast(1)
+                renderer.openPage(pageIndex).use { page ->
+                    val rawW = page.width.coerceAtLeast(1)
+                    val rawH = page.height.coerceAtLeast(1)
 
-                            val scale = when {
-                                targetWidth > 0 && targetHeight > 0 -> {
-                                    val scaleW = targetWidth.toFloat() / rawW
-                                    val scaleH = targetHeight.toFloat() / rawH
-                                    minOf(scaleW, scaleH).coerceIn(1.0f, 3.0f)
-                                }
-                                targetWidth > 0 -> (targetWidth.toFloat() / rawW).coerceIn(1.0f, 3.0f)
-                                targetHeight > 0 -> (targetHeight.toFloat() / rawH).coerceIn(1.0f, 3.0f)
-                                else -> 1.5f // Default 1.5x for crisp readability
-                            }
-
-                            val outW = (rawW * scale).toInt().coerceAtLeast(1)
-                            val outH = (rawH * scale).toInt().coerceAtLeast(1)
-
-                            val bitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-                            val canvas = Canvas(bitmap)
-                            canvas.drawColor(Color.WHITE)
-
-                            val matrix = android.graphics.Matrix().apply {
-                                setScale(scale, scale)
-                            }
-
-                            page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                            bitmap
+                    val scale = when {
+                        targetWidth > 0 && targetHeight > 0 -> {
+                            val scaleW = targetWidth.toFloat() / rawW
+                            val scaleH = targetHeight.toFloat() / rawH
+                            maxOf(scaleW, scaleH, 1.5f).coerceIn(1.5f, 3.0f)
                         }
+                        targetWidth > 0 -> (targetWidth.toFloat() / rawW).coerceIn(1.5f, 3.0f)
+                        targetHeight > 0 -> (targetHeight.toFloat() / rawH).coerceIn(1.5f, 3.0f)
+                        else -> 1.5f // Default 1.5x for crisp readability
                     }
+
+                    val outW = (rawW * scale).toInt().coerceAtLeast(1)
+                    val outH = (rawH * scale).toInt().coerceAtLeast(1)
+
+                    val bitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(Color.WHITE)
+
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    synchronized(pageBitmapCache) {
+                        pageBitmapCache.put(key, bitmap)
+                    }
+                    bitmap
                 }
             } catch (t: Throwable) {
                 BunkoLog.w("Failed to render PDF page $pageIndex in ${file.name}", t)
+                closeActiveSession()
                 null
             }
         }

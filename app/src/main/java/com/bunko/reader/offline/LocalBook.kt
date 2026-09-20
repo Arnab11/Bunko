@@ -89,7 +89,8 @@ data class LocalBook(
     val volumeOrIssue: String = "",
     val folderUriString: String = "",
     val folderName: String = "",
-    val isWebtoon: Boolean = false
+    val isWebtoon: Boolean = false,
+    val isExternalFile: Boolean = false
 ) {
     val isWebtoonBook: Boolean
         get() = isWebtoon || com.bunko.reader.reader.internal.ReaderWebtoonDetector.isWebtoonMetadata(seriesName = title)

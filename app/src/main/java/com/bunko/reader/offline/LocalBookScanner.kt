@@ -288,6 +288,105 @@ object LocalBookScanner {
         return output
     }
 
+    fun createBookFromSingleUri(context: Context, uri: Uri): LocalBook? {
+        val resolver = context.contentResolver
+        var displayName: String? = null
+        var sizeBytes: Long = 0L
+        var lastModified: Long = System.currentTimeMillis()
+
+        if (uri.scheme == "file") {
+            val file = uri.path?.let { File(it) }
+            if (file != null && file.exists()) {
+                displayName = file.name
+                sizeBytes = file.length()
+                lastModified = file.lastModified()
+            }
+        } else {
+            try {
+                resolver.query(
+                    uri,
+                    arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1) displayName = cursor.getString(nameIndex)
+                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (sizeIndex != -1) sizeBytes = cursor.getLong(sizeIndex)
+                    }
+                }
+            } catch (t: Throwable) {
+                BunkoLog.w("Could not query openable columns for $uri: ${t.message}")
+            }
+        }
+
+        if (displayName.isNullOrBlank()) {
+            displayName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
+        }
+        if (displayName.isNullOrBlank()) {
+            displayName = "Opened Document"
+        }
+
+        val rawExt = displayName!!.substringAfterLast('.', "").lowercase().trim()
+        val format = LocalBookFormat.fromExtension(rawExt)
+        val ext = if (format != LocalBookFormat.UNKNOWN && SupportedExtensions.contains(rawExt)) {
+            rawExt
+        } else {
+            val mime = runCatching { resolver.getType(uri) }.getOrNull()
+            val formatFromMime = when {
+                mime?.contains("epub", ignoreCase = true) == true -> LocalBookFormat.EPUB
+                mime?.contains("cbz", ignoreCase = true) == true -> LocalBookFormat.CBZ
+                mime?.contains("cbr", ignoreCase = true) == true -> LocalBookFormat.CBR
+                mime?.contains("mobi", ignoreCase = true) == true || mime?.contains("mobipocket", ignoreCase = true) == true -> LocalBookFormat.MOBI
+                mime?.contains("pdf", ignoreCase = true) == true -> LocalBookFormat.PDF
+                mime?.contains("zip", ignoreCase = true) == true -> LocalBookFormat.ZIP
+                mime?.contains("rar", ignoreCase = true) == true -> LocalBookFormat.RAR
+                mime?.contains("7z", ignoreCase = true) == true -> LocalBookFormat.SEVEN_ZIP
+                mime?.contains("tar", ignoreCase = true) == true -> LocalBookFormat.CBT
+                else -> LocalBookFormat.UNKNOWN
+            }
+            when (formatFromMime) {
+                LocalBookFormat.EPUB -> "epub"
+                LocalBookFormat.CBZ -> "cbz"
+                LocalBookFormat.CBR -> "cbr"
+                LocalBookFormat.MOBI -> "mobi"
+                LocalBookFormat.PDF -> "pdf"
+                LocalBookFormat.ZIP -> "zip"
+                LocalBookFormat.RAR -> "rar"
+                LocalBookFormat.SEVEN_ZIP -> "7z"
+                LocalBookFormat.CBT -> "cbt"
+                else -> rawExt
+            }
+        }
+
+        val effectiveFormat = LocalBookFormat.fromExtension(ext)
+        if (effectiveFormat == LocalBookFormat.UNKNOWN && !SupportedExtensions.contains(ext)) {
+            return null
+        }
+
+        val bookId = hashUri(uri.toString())
+        val cleanTitle = displayName!!.substringBeforeLast('.')
+            .replace('_', ' ')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .ifBlank { displayName!! }
+
+        val isWebtoonCandidate = com.bunko.reader.reader.internal.ReaderWebtoonDetector.isWebtoonMetadata(seriesName = cleanTitle)
+        return LocalBook(
+            id = bookId,
+            title = cleanTitle,
+            uriString = uri.toString(),
+            extension = ext,
+            format = effectiveFormat,
+            sizeBytes = sizeBytes,
+            lastModified = lastModified,
+            isWebtoon = isWebtoonCandidate,
+            isExternalFile = true
+        )
+    }
+
     fun hashUri(uri: String): String {
         return MessageDigest.getInstance("SHA-256")
             .digest(uri.toByteArray())

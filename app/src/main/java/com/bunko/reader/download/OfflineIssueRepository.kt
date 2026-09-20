@@ -111,11 +111,27 @@ sealed interface OfflinePage {
     ) : OfflinePage
 }
 
+fun getCachedOfflinePage(page: OfflinePage, targetWidth: Int = 0, targetHeight: Int = 0): Bitmap? {
+    return when (page) {
+        is OfflinePage.PdfPage -> {
+            val file = File(page.pdfPath)
+            if (file.isFile) {
+                com.bunko.reader.engine.pdf.PdfDocumentEngine.getCachedBitmap(file, page.index)
+            } else null
+        }
+        is OfflinePage.ArchiveEntry -> {
+            val key = "${page.archivePath}:${page.entryName}"
+            archivePageCache.get(key)?.takeIf { !it.isRecycled }
+        }
+    }
+}
+
 suspend fun decodeOfflinePage(
     page: OfflinePage,
     targetWidth: Int,
     targetHeight: Int
 ): Bitmap? = withContext(Dispatchers.IO) {
+    getCachedOfflinePage(page, targetWidth, targetHeight)?.let { return@withContext it }
     when (page) {
         is OfflinePage.ArchiveEntry -> decodeArchivePage(page, targetWidth, targetHeight)
         is OfflinePage.PdfPage -> decodePdfPage(page, targetWidth, targetHeight)
@@ -801,11 +817,25 @@ private fun decodeOfflineCoverPage(
     is OfflinePage.PdfPage -> decodePdfCoverPage(page, targetWidth, targetHeight)
 }
 
+private val archiveCacheMaxBytes = (Runtime.getRuntime().maxMemory() / 8).toInt().coerceIn(32 * 1024 * 1024, 128 * 1024 * 1024)
+private val archivePageCache = object : android.util.LruCache<String, Bitmap>(archiveCacheMaxBytes) {
+    override fun sizeOf(key: String, value: Bitmap): Int {
+        val bytes = value.allocationByteCount
+        return if (bytes > 0) bytes else (value.rowBytes * value.height).coerceAtLeast(1)
+    }
+}
+
 private fun decodeArchivePage(
     page: OfflinePage.ArchiveEntry,
     targetWidth: Int,
     targetHeight: Int
 ): Bitmap? {
+    val key = "${page.archivePath}:${page.entryName}"
+    synchronized(archivePageCache) {
+        val cached = archivePageCache.get(key)
+        if (cached != null && !cached.isRecycled) return cached
+    }
+
     val archive = File(page.archivePath)
     if (!archive.exists()) return null
     val bytes = kotlinx.coroutines.runBlocking {
@@ -823,19 +853,23 @@ private fun decodeArchivePage(
         )
         inPreferredConfig = Bitmap.Config.RGB_565
     }
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+    if (decoded != null) {
+        synchronized(archivePageCache) {
+            archivePageCache.put(key, decoded)
+        }
+    }
+    return decoded
 }
 
-private fun decodePdfPage(
+private suspend fun decodePdfPage(
     page: OfflinePage.PdfPage,
     targetWidth: Int,
     targetHeight: Int
 ): Bitmap? {
     val file = File(page.pdfPath)
     if (!file.isFile) return null
-    return kotlinx.coroutines.runBlocking {
-        com.bunko.reader.engine.pdf.PdfDocumentEngine.renderPageBitmap(file, page.index, targetWidth, targetHeight)
-    }
+    return com.bunko.reader.engine.pdf.PdfDocumentEngine.renderPageBitmap(file, page.index, targetWidth, targetHeight)
 }
 
 private fun decodePdfCoverPage(

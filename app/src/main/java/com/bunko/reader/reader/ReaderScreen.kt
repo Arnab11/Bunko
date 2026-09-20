@@ -351,6 +351,7 @@ fun ReaderScreen(
         val activeLoader = readerImageLoader
         onDispose {
             activeLoader?.shutdown()
+            com.bunko.reader.engine.pdf.PdfDocumentEngine.closeActiveSession()
             if (localBookId != null && localRepository != null && pages > 0) {
                 ReaderExitWriteScope.launch {
                     localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
@@ -770,6 +771,7 @@ fun ReaderScreen(
                         verticalRestoreNonce++
                     }
                     is ReaderDocument.Pdf -> {
+                        isPdf = true
                         val resolvedPages = (0 until document.pageCount).map { index ->
                             val dim = document.pageDimensions[index] ?: Pair(1200, 1600)
                             OfflinePage.PdfPage(document.pdfFile.absolutePath, index, dim.first, dim.second)
@@ -1577,7 +1579,7 @@ fun ReaderScreen(
             forceMemory: Boolean = false
         ): List<ReaderPrefetchTarget> {
             val rawTargets = indices.mapNotNull { index ->
-                val model = pageModel(index) as? String ?: return@mapNotNull null
+                val model = pageModel(index) ?: return@mapNotNull null
                 val targetWidth = readerPrefetchSlotWidthPx(
                     page = index,
                     pageCount = pages,
@@ -1613,7 +1615,7 @@ fun ReaderScreen(
         fun verticalPrefetchTargetsFor(indices: List<Int>): List<ReaderPrefetchTarget> {
             val fallbackAspectRatio = viewportWidthPx / viewportHeightPx.coerceAtLeast(1f)
             val rawTargets = indices.mapNotNull { index ->
-                val model = pageModel(index) as? String ?: return@mapNotNull null
+                val model = pageModel(index) ?: return@mapNotNull null
                 val size = readerVerticalPrefetchSize(
                     page = index,
                     pageDimensions = pageDimensions,
@@ -1656,7 +1658,7 @@ fun ReaderScreen(
             invertMode,
             settings.reader.invertWhiteThreshold
         ) {
-            if (offlineChapter != null || pages <= 0 || s == null) return@LaunchedEffect
+            if (pages <= 0 || (offlineChapter == null && s == null)) return@LaunchedEffect
             val targets = if (vertical) {
                 val indices = readerVerticalPrefetchPageIndicesAround(
                     page = page,
@@ -2414,7 +2416,7 @@ fun ReaderScreen(
             settings.reader.invertWhiteThreshold
         ) {
             val targetPage = activeTransition?.targetPage ?: return@LaunchedEffect
-            if (offlineChapter != null || pages <= 0) return@LaunchedEffect
+            if (pages <= 0 || (offlineChapter == null && s == null)) return@LaunchedEffect
             val targets = prefetchTargetsFor(
                 readerVisiblePageIndices(
                     page = targetPage,
@@ -2823,7 +2825,7 @@ fun ReaderScreen(
                         )
                     }
                 }
-            } else if (!transitionVisible) {
+            } else if (!usePlayCurl && !useCurl) {
                 RenderReaderPage(
                     cursor = page,
                     pageCount = pages,

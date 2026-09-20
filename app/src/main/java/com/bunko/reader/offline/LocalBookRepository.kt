@@ -97,6 +97,51 @@ class LocalBookRepository(context: Context) {
         return getSavedBooks().firstOrNull { it.id == bookId }
     }
 
+    suspend fun getOrCreateBookForUri(uri: Uri): LocalBook? = withContext(Dispatchers.IO) {
+        val uriStr = uri.toString()
+        val existing = getSavedBooks().firstOrNull { it.uriString == uriStr || it.id == LocalBookScanner.hashUri(uriStr) }
+        if (existing != null) {
+            if (!existing.hasCover) {
+                scope.launch {
+                    val coverPath = LocalBookScanner.generateCover(appContext, existing)
+                    if (!coverPath.isNullOrBlank()) {
+                        updateBookCover(existing.id, coverPath)
+                    }
+                }
+            }
+            return@withContext existing
+        }
+
+        val created = LocalBookScanner.createBookFromSingleUri(appContext, uri) ?: return@withContext null
+        appContext.localBooksDataStore.edit { prefs ->
+            val currentBooks = decodeBooks(prefs[KEY_BOOKS_JSON]).toMutableList()
+            val idx = currentBooks.indexOfFirst { it.id == created.id || it.uriString == created.uriString }
+            if (idx >= 0) {
+                val existingItem = currentBooks[idx]
+                currentBooks[idx] = created.copy(
+                    pageCount = if (existingItem.pageCount > 0) existingItem.pageCount else created.pageCount,
+                    lastReadPage = existingItem.lastReadPage,
+                    isCompleted = existingItem.isCompleted,
+                    coverPath = if (existingItem.hasCover) existingItem.coverPath else created.coverPath
+                )
+            } else {
+                currentBooks.add(0, created)
+            }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(currentBooks)
+        }
+
+        if (!created.hasCover) {
+            scope.launch {
+                val coverPath = LocalBookScanner.generateCover(appContext, created)
+                if (!coverPath.isNullOrBlank()) {
+                    updateBookCover(created.id, coverPath)
+                }
+            }
+        }
+
+        created
+    }
+
     suspend fun addFolder(uri: Uri, displayName: String) {
         val uriStr = uri.toString()
         appContext.localBooksDataStore.edit { prefs ->
@@ -124,8 +169,8 @@ class LocalBookRepository(context: Context) {
                 prefs.remove(KEY_FOLDER_NAME)
             }
 
-            // Remove books belonging to this folder
-            val books = decodeBooks(prefs[KEY_BOOKS_JSON]).filter { it.folderUriString != uriString }
+            // Remove books belonging to this folder, but keep external files intact
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON]).filter { it.isExternalFile || it.folderUriString != uriString }
             prefs[KEY_BOOKS_JSON] = encodeBooks(books)
         }
 
@@ -151,7 +196,13 @@ class LocalBookRepository(context: Context) {
             prefs.remove(KEY_FOLDERS_JSON)
             prefs.remove(KEY_FOLDER_URI)
             prefs.remove(KEY_FOLDER_NAME)
-            prefs.remove(KEY_BOOKS_JSON)
+            // Keep external files intact
+            val externalBooks = decodeBooks(prefs[KEY_BOOKS_JSON]).filter { it.isExternalFile }
+            if (externalBooks.isNotEmpty()) {
+                prefs[KEY_BOOKS_JSON] = encodeBooks(externalBooks)
+            } else {
+                prefs.remove(KEY_BOOKS_JSON)
+            }
         }
     }
 
@@ -162,7 +213,14 @@ class LocalBookRepository(context: Context) {
             try {
                 val prefs = appContext.localBooksDataStore.data.first()
                 val folders = decodeFolders(prefs[KEY_FOLDERS_JSON], prefs[KEY_FOLDER_URI], prefs[KEY_FOLDER_NAME])
+                val currentAllBooks = decodeBooks(prefs[KEY_BOOKS_JSON])
+                val externalBooks = currentAllBooks.filter { it.isExternalFile }
                 if (folders.isEmpty()) {
+                    if (externalBooks.isNotEmpty()) {
+                        appContext.localBooksDataStore.edit { editPrefs ->
+                            editPrefs[KEY_BOOKS_JSON] = encodeBooks(externalBooks)
+                        }
+                    }
                     _isScanning.value = false
                     return@launch
                 }
@@ -178,9 +236,9 @@ class LocalBookRepository(context: Context) {
                     }
                 }
 
-                val existingBooksMap = decodeBooks(prefs[KEY_BOOKS_JSON]).associateBy { it.id }
+                val existingBooksMap = currentAllBooks.associateBy { it.id }
 
-                val merged = allScanned.map { scanned ->
+                val mergedScanned = allScanned.map { scanned ->
                     val existing = existingBooksMap[scanned.id]
                     if (existing != null) {
                         scanned.copy(
@@ -193,6 +251,8 @@ class LocalBookRepository(context: Context) {
                         scanned
                     }
                 }
+
+                val merged = mergedScanned + externalBooks
 
                 appContext.localBooksDataStore.edit { editPrefs ->
                     editPrefs[KEY_BOOKS_JSON] = encodeBooks(merged)
@@ -271,17 +331,33 @@ class LocalBookRepository(context: Context) {
         }
 
         val uri = Uri.parse(book.uriString)
-        appContext.contentResolver.openInputStream(uri)?.use { input ->
-            val tempFile = File(cacheFolder, "${book.id}.${book.extension}.tmp")
-            FileOutputStream(tempFile).use { output ->
-                input.copyTo(output)
-            }
-            if (tempFile.renameTo(targetFile) || (targetFile.delete() && tempFile.renameTo(targetFile))) {
-                targetFile
+        try {
+            val input = if (uri.scheme == "file" && uri.path != null) {
+                val directFile = File(uri.path!!)
+                if (directFile.isFile && directFile.canRead()) {
+                    directFile.inputStream()
+                } else {
+                    appContext.contentResolver.openInputStream(uri)
+                }
             } else {
-                tempFile
+                appContext.contentResolver.openInputStream(uri)
             }
-        } ?: targetFile
+
+            input?.use { stream ->
+                val tempFile = File(cacheFolder, "${book.id}.${book.extension}.tmp")
+                FileOutputStream(tempFile).use { output ->
+                    stream.copyTo(output)
+                }
+                if (tempFile.renameTo(targetFile) || (targetFile.delete() && tempFile.renameTo(targetFile))) {
+                    targetFile
+                } else {
+                    tempFile
+                }
+            } ?: targetFile
+        } catch (t: Throwable) {
+            BunkoLog.w("Failed to prepare book file for ${book.uriString}", t)
+            targetFile
+        }
     }
 
     private fun decodeFolders(jsonStr: String?, legacyUri: String?, legacyName: String?): List<LocalFolder> {

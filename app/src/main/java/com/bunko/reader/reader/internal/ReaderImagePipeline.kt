@@ -2,7 +2,9 @@ package com.bunko.reader.reader.internal
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +64,7 @@ import com.bunko.reader.ReaderImageScaleType
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.download.OfflinePage
 import com.bunko.reader.download.decodeOfflinePage
+import com.bunko.reader.download.getCachedOfflinePage
 import kotlin.math.max
 import kotlin.math.min
 
@@ -553,32 +557,41 @@ private fun RowScope.PageImage(
     ) {
         val targetWidth = with(density) { maxWidth.toPx().toInt() }
         val targetHeight = with(density) { maxHeight.toPx().toInt() }
-        val pageModelState by produceState<PageModelState>(
-            initialValue = when (model) {
-                null -> PageModelState.Unavailable
-                is OfflinePage -> PageModelState.Loading
-                else -> PageModelState.Ready(model)
-            },
-            model,
-            targetWidth,
-            targetHeight,
-            cropBorders
-        ) {
-            value = when (model) {
-                null -> PageModelState.Unavailable
-                is OfflinePage -> try {
-                    val decoded = decodeOfflinePage(model, targetWidth, targetHeight)
-                    val processed = if (cropBorders && decoded is Bitmap) {
-                        cropBorderFromBitmap(decoded)
-                    } else decoded
-                    processed?.let(PageModelState::Ready) ?: PageModelState.Unavailable
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (t: Throwable) {
-                    BunkoLog.w("Reader offline page decode failed.", t)
-                    PageModelState.Unavailable
+
+        var pageModelState by remember(model, cropBorders) {
+            val cached = if (model is OfflinePage) getCachedOfflinePage(model) else null
+            mutableStateOf(
+                when {
+                    model == null -> PageModelState.Unavailable
+                    cached != null -> PageModelState.Ready(if (cropBorders) cropBorderFromBitmap(cached) ?: cached else cached)
+                    model is OfflinePage -> PageModelState.Loading
+                    else -> PageModelState.Ready(model)
                 }
-                else -> PageModelState.Ready(model)
+            )
+        }
+
+        LaunchedEffect(model, cropBorders) {
+            if (model is OfflinePage) {
+                val cached = getCachedOfflinePage(model)
+                if (cached != null) {
+                    val processed = if (cropBorders) cropBorderFromBitmap(cached) ?: cached else cached
+                    pageModelState = PageModelState.Ready(processed)
+                } else {
+                    try {
+                        val decoded = decodeOfflinePage(model, targetWidth.coerceAtLeast(1080), targetHeight.coerceAtLeast(1920))
+                        val processed = if (cropBorders && decoded is Bitmap) cropBorderFromBitmap(decoded) ?: decoded else decoded
+                        pageModelState = processed?.let(PageModelState::Ready) ?: PageModelState.Unavailable
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (t: Throwable) {
+                        BunkoLog.w("Reader offline page decode failed.", t)
+                        pageModelState = PageModelState.Unavailable
+                    }
+                }
+            } else if (model == null) {
+                pageModelState = PageModelState.Unavailable
+            } else {
+                pageModelState = PageModelState.Ready(model)
             }
         }
         val resolvedModel = (pageModelState as? PageModelState.Ready)?.model
@@ -591,7 +604,19 @@ private fun RowScope.PageImage(
             initialValue = when (invertMode) {
                 InvertMode.Off -> false
                 InvertMode.Always -> true
-                InvertMode.Smart -> cachedInvertDecision
+                InvertMode.Smart -> {
+                    if (resolvedModel is Bitmap) {
+                        cachedInvertDecision ?: try {
+                            analyzeShouldInvert(BitmapDrawable(ctx.resources, resolvedModel), whiteThreshold).also {
+                                cacheKey?.let { key -> invertDecisionCache[key] = it }
+                            }
+                        } catch (t: Throwable) {
+                            null
+                        }
+                    } else {
+                        cachedInvertDecision
+                    }
+                }
             },
             resolvedModel,
             invertMode,
@@ -604,31 +629,41 @@ private fun RowScope.PageImage(
                 InvertMode.Always -> true
                 InvertMode.Smart -> {
                     val loadedModel = resolvedModel
-                    val drawable = loadedDrawable
-                    if (loadedModel == null || drawable == null) {
-                        null
-                    } else {
-                        val key = ReaderInvertCacheKey(loadedModel, whiteThreshold)
+                    if (loadedModel is Bitmap) {
                         cachedInvertDecision ?: try {
-                            try {
-                                analyzeShouldInvert(drawable, whiteThreshold)
-                            } catch (t: Throwable) {
-                                BunkoLog.w(
-                                    "Reader Smart Invert drawable analysis failed; retrying from cache.",
-                                    t
-                                )
-                                analyzeShouldInvert(
-                                    ctx,
-                                    imageLoader,
-                                    loadedModel,
-                                    whiteThreshold
-                                )
-                            }.also { invertDecisionCache[key] = it }
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
+                            analyzeShouldInvert(BitmapDrawable(ctx.resources, loadedModel), whiteThreshold).also {
+                                cacheKey?.let { key -> invertDecisionCache[key] = it }
+                            }
                         } catch (t: Throwable) {
-                            BunkoLog.w("Reader Smart Invert analysis failed.", t)
                             null
+                        }
+                    } else {
+                        val drawable = loadedDrawable
+                        if (loadedModel == null || drawable == null) {
+                            null
+                        } else {
+                            val key = ReaderInvertCacheKey(loadedModel, whiteThreshold)
+                            cachedInvertDecision ?: try {
+                                try {
+                                    analyzeShouldInvert(drawable, whiteThreshold)
+                                } catch (t: Throwable) {
+                                    BunkoLog.w(
+                                        "Reader Smart Invert drawable analysis failed; retrying from cache.",
+                                        t
+                                    )
+                                    analyzeShouldInvert(
+                                        ctx,
+                                        imageLoader,
+                                        loadedModel,
+                                        whiteThreshold
+                                    )
+                                }.also { invertDecisionCache[key] = it }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (t: Throwable) {
+                                BunkoLog.w("Reader Smart Invert analysis failed.", t)
+                                null
+                            }
                         }
                     }
                 }
@@ -639,54 +674,67 @@ private fun RowScope.PageImage(
             PageModelState.Loading -> ReaderPageLoadingPlaceholder()
             PageModelState.Unavailable -> ReaderPageUnavailablePlaceholder()
             is PageModelState.Ready -> {
-                val imageRequest = remember(resolvedModel, cropBorders, ctx) {
-                    if (resolvedModel == null) null
-                    else if (resolvedModel is Bitmap || resolvedModel is Drawable) {
-                        resolvedModel
-                    } else {
-                        ImageRequest.Builder(ctx)
-                            .data(resolvedModel)
-                            .apply {
-                                if (cropBorders) {
-                                    transformations(CropBordersTransformation())
+                if (resolvedModel is Bitmap) {
+                    Image(
+                        bitmap = resolvedModel.asImageBitmap(),
+                        contentDescription = label,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .ePaperGrain(ePaperMode),
+                        alignment = alignment,
+                        contentScale = if (contentScale != ContentScale.Fit) contentScale else readerContentScale(imageScaleType),
+                        colorFilter = readerColorFilter(ePaperMode, shouldInvert == true)
+                    )
+                } else {
+                    val imageRequest = remember(resolvedModel, cropBorders, ctx) {
+                        if (resolvedModel == null) null
+                        else if (resolvedModel is Drawable) {
+                            resolvedModel
+                        } else {
+                            ImageRequest.Builder(ctx)
+                                .data(resolvedModel)
+                                .apply {
+                                    if (cropBorders) {
+                                        transformations(CropBordersTransformation())
+                                    }
                                 }
-                            }
-                            .build()
+                                .build()
+                        }
                     }
-                }
-                SubcomposeAsyncImage(
-                    model = imageRequest,
-                    imageLoader = imageLoader,
-                    contentDescription = label,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .ePaperGrain(ePaperMode),
-                    alignment = alignment,
-                    contentScale = if (contentScale != ContentScale.Fit) contentScale else readerContentScale(imageScaleType),
-                    colorFilter = readerColorFilter(ePaperMode, shouldInvert == true),
-                    onSuccess = { state ->
-                        loadedDrawable = state.result.drawable
-                    },
-                    loading = {
-                        PagePlaceholderContainer {
-                            ReaderPageLoadingPlaceholder()
-                        }
-                    },
-                    error = {
-                        PagePlaceholderContainer {
-                            ReaderPageUnavailablePlaceholder()
-                        }
-                    },
-                    success = {
-                        if (invertMode == InvertMode.Smart && shouldInvert == null) {
+                    SubcomposeAsyncImage(
+                        model = imageRequest,
+                        imageLoader = imageLoader,
+                        contentDescription = label,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .ePaperGrain(ePaperMode),
+                        alignment = alignment,
+                        contentScale = if (contentScale != ContentScale.Fit) contentScale else readerContentScale(imageScaleType),
+                        colorFilter = readerColorFilter(ePaperMode, shouldInvert == true),
+                        onSuccess = { state ->
+                            loadedDrawable = state.result.drawable
+                        },
+                        loading = {
                             PagePlaceholderContainer {
                                 ReaderPageLoadingPlaceholder()
                             }
-                        } else {
-                            SubcomposeAsyncImageContent()
+                        },
+                        error = {
+                            PagePlaceholderContainer {
+                                ReaderPageUnavailablePlaceholder()
+                            }
+                        },
+                        success = {
+                            if (invertMode == InvertMode.Smart && shouldInvert == null) {
+                                PagePlaceholderContainer {
+                                    ReaderPageLoadingPlaceholder()
+                                }
+                            } else {
+                                SubcomposeAsyncImageContent()
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
         }
     }
@@ -707,7 +755,7 @@ private fun PagePlaceholderContainer(content: @Composable () -> Unit) {
 // mistaken for one — still static and grey, never an animated indicator.
 @Composable
 private fun ReaderPageLoadingPlaceholder() {
-    Text("...", color = Color.Gray)
+    Box(modifier = Modifier.fillMaxSize())
 }
 
 @Composable
@@ -730,22 +778,32 @@ internal suspend fun prefetchReaderPages(
     targets.map { target ->
         launch {
             semaphore.withPermit {
-                // Prefetch targets are already bounded to the reader's RAM working set.
-                // Previously displayed pages remain available through Coil's disk LRU.
-                val request = ImageRequest.Builder(context)
-                    .data(target.model)
-                    .size(target.targetWidth, target.targetHeight)
-                    .memoryCachePolicy(CachePolicy.ENABLED)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .networkCachePolicy(CachePolicy.ENABLED)
-                    .build()
-                try {
-                    imageLoader.execute(request)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (t: Throwable) {
-                    BunkoLog.w("Reader prefetch failed.", t)
-                    // Prefetch is opportunistic; the visible page reports its own error.
+                when (val model = target.model) {
+                    is OfflinePage -> {
+                        try {
+                            decodeOfflinePage(model, target.targetWidth, target.targetHeight)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (t: Throwable) {
+                            BunkoLog.w("Reader offline prefetch failed.", t)
+                        }
+                    }
+                    is String -> {
+                        val request = ImageRequest.Builder(context)
+                            .data(model)
+                            .size(target.targetWidth, target.targetHeight)
+                            .memoryCachePolicy(CachePolicy.ENABLED)
+                            .diskCachePolicy(CachePolicy.ENABLED)
+                            .networkCachePolicy(CachePolicy.ENABLED)
+                            .build()
+                        try {
+                            imageLoader.execute(request)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (t: Throwable) {
+                            BunkoLog.w("Reader prefetch failed.", t)
+                        }
+                    }
                 }
             }
         }
@@ -756,7 +814,7 @@ internal suspend fun prefetchReaderPages(
 internal suspend fun preAnalyzeReaderPages(
     context: Context,
     imageLoader: ImageLoader,
-    models: List<String>,
+    models: List<Any>,
     whiteThreshold: Float,
     invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>
 ) = coroutineScope {
@@ -767,18 +825,27 @@ internal suspend fun preAnalyzeReaderPages(
                 val key = ReaderInvertCacheKey(model, whiteThreshold)
                 if (key !in invertDecisionCache) {
                     try {
-                        // Pre-analyzing Smart Invert keeps page-turn transitions from flashing unfiltered pages.
-                        invertDecisionCache[key] = analyzeShouldInvert(
-                            context,
-                            imageLoader,
-                            model,
-                            whiteThreshold
-                        )
+                        val shouldInvert = when (model) {
+                            is OfflinePage -> {
+                                val bitmap = getCachedOfflinePage(model) ?: decodeOfflinePage(model, 1080, 1920)
+                                if (bitmap != null) {
+                                    analyzeShouldInvert(BitmapDrawable(context.resources, bitmap), whiteThreshold)
+                                } else null
+                            }
+                            is Bitmap -> {
+                                analyzeShouldInvert(BitmapDrawable(context.resources, model), whiteThreshold)
+                            }
+                            else -> {
+                                analyzeShouldInvert(context, imageLoader, model, whiteThreshold)
+                            }
+                        }
+                        if (shouldInvert != null) {
+                            invertDecisionCache[key] = shouldInvert
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (t: Throwable) {
                         BunkoLog.w("Reader Smart Invert pre-analysis failed.", t)
-                        // Visible rendering retries the analysis if pre-analysis fails.
                     }
                 }
             }
