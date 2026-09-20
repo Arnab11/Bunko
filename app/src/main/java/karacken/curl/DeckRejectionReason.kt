@@ -1,0 +1,11 @@
+package karacken.curl
+
+enum class DeckRejectionReason {
+    CAPABILITIES_UNAVAILABLE,
+    SESSION_DETACHED,
+    STALE_GENERATION,
+    CONFLICTING_GENERATION,
+    DISPOSED,
+    INVALID_CONTENT,
+    REPLACED_WHILE_SETTLING
+}

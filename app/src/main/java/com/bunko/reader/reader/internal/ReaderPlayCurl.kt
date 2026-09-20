@@ -261,7 +261,7 @@ internal fun PlayCurlPage(
     AndroidView(
         factory = { context ->
             PageSurfaceView(context, paperArgb).apply {
-                setPageSurfaceListener(object : PageSurfaceListener {
+                pageSurfaceListener = object : PageSurfaceListener {
                     override fun onCapabilitiesAvailable(capabilities: RenderCapabilities) {
                         capabilitiesAvailable = true
                     }
@@ -293,7 +293,7 @@ internal fun PlayCurlPage(
                     override fun onRenderFailure(failure: RenderFailure) {
                         Log.e(PlayCurlLogTag, "render failure: ${failure.message} (${failure.reason})")
                     }
-                })
+                }
                 surfaceRef = this
                 host.view = this
                 attach()
