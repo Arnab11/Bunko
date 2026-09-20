@@ -12,10 +12,16 @@ class LocalBookTest {
     fun testFormatDetection() {
         assertEquals(LocalBookFormat.CBZ, LocalBookFormat.fromExtension("cbz"))
         assertEquals(LocalBookFormat.CBZ, LocalBookFormat.fromExtension("CBZ"))
+        assertEquals(LocalBookFormat.CBR, LocalBookFormat.fromExtension("cbr"))
         assertEquals(LocalBookFormat.ZIP, LocalBookFormat.fromExtension("zip"))
+        assertEquals(LocalBookFormat.RAR, LocalBookFormat.fromExtension("rar"))
+        assertEquals(LocalBookFormat.SEVEN_ZIP, LocalBookFormat.fromExtension("7z"))
         assertEquals(LocalBookFormat.EPUB, LocalBookFormat.fromExtension("epub"))
+        assertEquals(LocalBookFormat.MOBI, LocalBookFormat.fromExtension("mobi"))
+        assertEquals(LocalBookFormat.FB2, LocalBookFormat.fromExtension("fb2"))
         assertEquals(LocalBookFormat.PDF, LocalBookFormat.fromExtension("pdf"))
-        assertEquals(LocalBookFormat.UNKNOWN, LocalBookFormat.fromExtension("txt"))
+        assertEquals(LocalBookFormat.TXT, LocalBookFormat.fromExtension("txt"))
+        assertEquals(LocalBookFormat.UNKNOWN, LocalBookFormat.fromExtension("xyz"))
     }
 
     @Test

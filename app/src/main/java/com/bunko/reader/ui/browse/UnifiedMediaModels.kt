@@ -54,15 +54,15 @@ fun SeriesDto.toUnifiedMediaItem(session: KavitaSession): UnifiedMediaItem {
  */
 fun LocalBook.toUnifiedMediaItem(): UnifiedMediaItem {
     val progressFraction = if (pageCount > 0 && lastReadPage > 0) {
-        (lastReadPage.toFloat() / pageCount.toFloat()).coerceIn(0f, 1f)
+        (lastReadPage.toFloat() / (pageCount - 1).coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
     } else {
-        0f
+        null
     }
     return UnifiedMediaItem(
         id = id,
         title = title,
         subtitle = format.displayName,
-        coverModel = coverPath?.let { java.io.File(it) },
+        coverModel = coverPath?.takeIf { it.isNotBlank() }?.let { java.io.File(it) },
         progress = progressFraction,
         totalPages = pageCount,
         readPages = lastReadPage,

@@ -16,7 +16,6 @@ import java.util.regex.Pattern
 
 object ReaderEpubPaginator {
 
-    private val TagPattern = Pattern.compile("(?s)<(/?[a-zA-Z0-9]+)([^>]*)>")
     private val EntityPattern = Pattern.compile("&(#?[a-zA-Z0-9]+);")
 
     fun parseHtmlToBlocks(
@@ -27,146 +26,142 @@ object ReaderEpubPaginator {
         bookResourceUrlBuilder: (String, String, Int, String) -> String
     ): List<EpubBlock> {
         val blocks = mutableListOf<EpubBlock>()
-        val bodyContent = extractBodyContent(html)
-        val matcher = TagPattern.matcher(bodyContent)
+        if (html.isBlank()) return blocks
 
-        var lastIdx = 0
-        var currentTag = ""
-        var currentAttrs = ""
-        val textBuilder = StringBuilder()
-        val styles = mutableListOf<StyleSpan>()
-        val activeStyles = mutableListOf<ActiveStyle>()
+        try {
+            val doc = org.jsoup.Jsoup.parse(html)
+            val body = doc.body() ?: return blocks
 
-        fun flushText(isHeading: Boolean = false, headingLevel: Int = 0, isQuote: Boolean = false) {
-            val raw = textBuilder.toString()
-            textBuilder.setLength(0)
-            val trimmed = raw.trim()
-            if (trimmed.isEmpty()) {
-                styles.clear()
-                return
+            fun processNode(node: org.jsoup.nodes.Node, currentStyles: List<SpanStyle>): AnnotatedString {
+                val builder = AnnotatedString.Builder()
+                when (node) {
+                    is org.jsoup.nodes.TextNode -> {
+                        val text = node.text()
+                        if (text.isNotEmpty()) {
+                            val start = builder.length
+                            builder.append(text)
+                            currentStyles.forEach { style ->
+                                builder.addStyle(style, start, start + text.length)
+                            }
+                        }
+                    }
+                    is org.jsoup.nodes.Element -> {
+                        val tag = node.tagName().lowercase()
+                        val newStyles = currentStyles.toMutableList()
+                        when (tag) {
+                            "b", "strong" -> newStyles.add(SpanStyle(fontWeight = FontWeight.Bold))
+                            "i", "em" -> newStyles.add(SpanStyle(fontStyle = FontStyle.Italic))
+                            "u" -> newStyles.add(SpanStyle(textDecoration = TextDecoration.Underline))
+                            "s", "strike", "del" -> newStyles.add(SpanStyle(textDecoration = TextDecoration.LineThrough))
+                            "code", "pre" -> newStyles.add(SpanStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+                            "sup" -> newStyles.add(SpanStyle(baselineShift = androidx.compose.ui.text.style.BaselineShift.Superscript, fontSize = androidx.compose.ui.unit.TextUnit.Unspecified))
+                            "sub" -> newStyles.add(SpanStyle(baselineShift = androidx.compose.ui.text.style.BaselineShift.Subscript, fontSize = androidx.compose.ui.unit.TextUnit.Unspecified))
+                            "ruby" -> {
+                                // Japanese Ruby text: extract base text and rt annotation
+                                val rb = node.select("rb, text()").firstOrNull()?.toString() ?: node.ownText()
+                                val rt = node.select("rt").firstOrNull()?.text() ?: ""
+                                val rubyFormatted = if (rt.isNotEmpty()) "$rb ($rt)" else rb
+                                val start = builder.length
+                                builder.append(rubyFormatted)
+                                currentStyles.forEach { style ->
+                                    builder.addStyle(style, start, start + rubyFormatted.length)
+                                }
+                                return builder.toAnnotatedString()
+                            }
+                        }
+
+                        if (tag == "br") {
+                            builder.append("\n")
+                        } else {
+                            node.childNodes().forEach { child ->
+                                builder.append(processNode(child, newStyles))
+                            }
+                        }
+                    }
+                }
+                return builder.toAnnotatedString()
             }
 
-            // Adjust styles relative to the trimmed start
-            val leadingWs = raw.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
-            val length = trimmed.length
-            val annotatedBuilder = AnnotatedString.Builder(trimmed)
-
-            for (s in styles) {
-                val start = (s.start - leadingWs).coerceIn(0, length)
-                val end = (s.end - leadingWs).coerceIn(start, length)
-                if (end > start) {
-                    annotatedBuilder.addStyle(s.style, start, end)
-                }
-            }
-            styles.clear()
-
-            blocks.add(
-                EpubBlock.TextBlock(
-                    text = annotatedBuilder.toAnnotatedString(),
-                    isHeading = isHeading,
-                    headingLevel = headingLevel,
-                    isQuote = isQuote
-                )
-            )
-        }
-
-        while (matcher.find()) {
-            val textBefore = bodyContent.substring(lastIdx, matcher.start())
-            if (textBefore.isNotEmpty()) {
-                val decoded = decodeHtmlEntities(textBefore)
-                val startPos = textBuilder.length
-                textBuilder.append(decoded)
-                val endPos = textBuilder.length
-                for (active in activeStyles) {
-                    styles.add(StyleSpan(active.style, startPos, endPos))
-                }
-            }
-
-            val rawTagName = matcher.group(1) ?: ""
-            val tagName = rawTagName.lowercase()
-            val attrs = matcher.group(2).orEmpty()
-            val isClosing = tagName.startsWith("/")
-            val cleanTagName = tagName.removePrefix("/")
-
-            when (cleanTagName) {
-                "p", "div", "section", "article" -> {
-                    if (isClosing || textBuilder.isNotEmpty()) {
-                        flushText()
-                    }
-                }
-                "h1", "h2", "h3", "h4", "h5", "h6" -> {
-                    val level = cleanTagName.substring(1).toIntOrNull() ?: 1
-                    if (isClosing) {
-                        flushText(isHeading = true, headingLevel = level)
-                    } else if (textBuilder.isNotEmpty()) {
-                        flushText()
-                    }
-                }
-                "blockquote" -> {
-                    if (isClosing) {
-                        flushText(isQuote = true)
-                    } else if (textBuilder.isNotEmpty()) {
-                        flushText()
-                    }
-                }
-                "hr" -> {
-                    flushText()
-                    blocks.add(EpubBlock.DividerBlock)
-                }
-                "br" -> {
-                    textBuilder.append("\n")
-                }
-                "b", "strong" -> {
-                    if (isClosing) {
-                        removeActiveStyle(activeStyles, FontWeight.Bold)
-                    } else {
-                        activeStyles.add(ActiveStyle(SpanStyle(fontWeight = FontWeight.Bold), FontWeight.Bold))
-                    }
-                }
-                "i", "em" -> {
-                    if (isClosing) {
-                        removeActiveStyle(activeStyles, FontStyle.Italic)
-                    } else {
-                        activeStyles.add(ActiveStyle(SpanStyle(fontStyle = FontStyle.Italic), FontStyle.Italic))
-                    }
-                }
-                "u" -> {
-                    if (isClosing) {
-                        removeActiveStyle(activeStyles, TextDecoration.Underline)
-                    } else {
-                        activeStyles.add(ActiveStyle(SpanStyle(textDecoration = TextDecoration.Underline), TextDecoration.Underline))
-                    }
-                }
-                "s", "strike", "del" -> {
-                    if (isClosing) {
-                        removeActiveStyle(activeStyles, TextDecoration.LineThrough)
-                    } else {
-                        activeStyles.add(ActiveStyle(SpanStyle(textDecoration = TextDecoration.LineThrough), TextDecoration.LineThrough))
-                    }
-                }
-                "img", "image" -> {
-                    flushText()
-                    val src = extractAttribute(attrs, "src")
-                        ?: extractAttribute(attrs, "xlink:href")
-                        ?: extractAttribute(attrs, "href")
-                    if (!src.isNullOrBlank()) {
-                        val fullUrl = bookResourceUrlBuilder(baseUrl, apiKey, chapterId, src)
-                        val alt = extractAttribute(attrs, "alt")
-                        blocks.add(EpubBlock.ImageBlock(url = fullUrl, alt = alt))
+            fun traverseElements(element: org.jsoup.nodes.Element) {
+                element.children().forEach { child ->
+                    val tag = child.tagName().lowercase()
+                    when (tag) {
+                        "h1", "h2", "h3", "h4", "h5", "h6" -> {
+                            val level = tag.substring(1).toIntOrNull() ?: 1
+                            val text = processNode(child, listOf(SpanStyle(fontWeight = FontWeight.Bold)))
+                            if (text.isNotBlank()) {
+                                blocks.add(EpubBlock.TextBlock(text = text, isHeading = true, headingLevel = level))
+                            }
+                        }
+                        "p" -> {
+                            val text = processNode(child, emptyList())
+                            if (text.isNotBlank()) {
+                                blocks.add(EpubBlock.TextBlock(text = text))
+                            }
+                        }
+                        "blockquote" -> {
+                            val text = processNode(child, listOf(SpanStyle(fontStyle = FontStyle.Italic)))
+                            if (text.isNotBlank()) {
+                                blocks.add(EpubBlock.TextBlock(text = text, isQuote = true))
+                            }
+                        }
+                        "ul", "ol" -> {
+                            child.select("> li").forEachIndexed { idx, li ->
+                                val bullet = if (tag == "ol") "${idx + 1}. " else "• "
+                                val liText = processNode(li, emptyList())
+                                if (liText.isNotBlank()) {
+                                    val full = AnnotatedString.Builder(bullet).apply { append(liText) }.toAnnotatedString()
+                                    blocks.add(EpubBlock.TextBlock(text = full))
+                                }
+                            }
+                        }
+                        "hr" -> {
+                            blocks.add(EpubBlock.DividerBlock)
+                        }
+                        "img", "image" -> {
+                            val src = child.attr("src").ifEmpty { child.attr("xlink:href") }.ifEmpty { child.attr("href") }
+                            if (src.isNotBlank()) {
+                                val fullUrl = if (src.startsWith("/") || src.startsWith("http://") || src.startsWith("https://") || src.startsWith("file://")) {
+                                    src
+                                } else {
+                                    bookResourceUrlBuilder(baseUrl, apiKey, chapterId, src)
+                                }
+                                val alt = child.attr("alt").ifEmpty { null }
+                                blocks.add(EpubBlock.ImageBlock(url = fullUrl, alt = alt))
+                            }
+                        }
+                        "div", "section", "article", "main", "body" -> {
+                            // If it has direct text or children
+                            if (child.children().isEmpty()) {
+                                val text = processNode(child, emptyList())
+                                if (text.isNotBlank()) {
+                                    blocks.add(EpubBlock.TextBlock(text = text))
+                                }
+                            } else {
+                                traverseElements(child)
+                            }
+                        }
+                        else -> {
+                            val text = processNode(child, emptyList())
+                            if (text.isNotBlank()) {
+                                blocks.add(EpubBlock.TextBlock(text = text))
+                            }
+                        }
                     }
                 }
             }
 
-            lastIdx = matcher.end()
-        }
+            traverseElements(body)
 
-        val remainingText = bodyContent.substring(lastIdx)
-        if (remainingText.isNotEmpty()) {
-            val decoded = decodeHtmlEntities(remainingText)
-            textBuilder.append(decoded)
-        }
-        if (textBuilder.isNotEmpty()) {
-            flushText()
+            // If empty (e.g. text directly inside body without container tags)
+            if (blocks.isEmpty() && body.text().isNotBlank()) {
+                val direct = processNode(body, emptyList())
+                if (direct.isNotBlank()) {
+                    blocks.add(EpubBlock.TextBlock(text = direct))
+                }
+            }
+        } catch (t: Throwable) {
+            com.bunko.reader.BunkoLog.w("Failed to parse HTML to blocks", t)
         }
 
         return blocks

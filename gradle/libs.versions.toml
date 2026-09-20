@@ -15,6 +15,10 @@ kotlinxSerializationJson = "1.8.0"
 coil = "2.7.0"
 navigationCompose = "2.8.8"
 okhttp = "4.12.0"
+junrar = "7.5.5"
+commonsCompress = "1.26.1"
+xz = "1.9"
+jsoup = "1.17.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -40,6 +44,10 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 coil-svg = { group = "io.coil-kt", name = "coil-svg", version.ref = "coil" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 okhttp-logging-interceptor = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+junrar = { group = "com.github.junrar", name = "junrar", version.ref = "junrar" }
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
+tukaani-xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

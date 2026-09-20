@@ -26,7 +26,10 @@ import java.util.zip.ZipInputStream
 
 object LocalBookScanner {
 
-    private val SupportedExtensions = setOf("cbz", "zip", "epub", "pdf")
+    private val SupportedExtensions = setOf(
+        "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z",
+        "epub", "mobi", "azw", "azw3", "fb2", "pdf", "txt", "md"
+    )
     private val ImageExtensions = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "avif")
     private const val CoverMaxWidth = 400
     private const val CoverMaxHeight = 600
@@ -80,6 +83,7 @@ object LocalBookScanner {
                                     .replace('_', ' ')
                                     .replace(Regex("\\s+"), " ")
                                     .trim()
+                                val isWebtoonCandidate = com.bunko.reader.reader.internal.ReaderWebtoonDetector.isWebtoonMetadata(seriesName = cleanTitle)
                                 books.add(
                                     LocalBook(
                                         id = bookId,
@@ -90,7 +94,8 @@ object LocalBookScanner {
                                         sizeBytes = size,
                                         lastModified = modified,
                                         folderUriString = folderUriStr,
-                                        folderName = folderName
+                                        folderName = folderName,
+                                        isWebtoon = isWebtoonCandidate
                                     )
                                 )
                             }
@@ -116,13 +121,40 @@ object LocalBookScanner {
             return@withContext coverFile.absolutePath
         }
 
+        // Prepare local temp file to extract cover using universal engine
+        val cacheFolder = File(context.cacheDir, "cover_staging").apply { mkdirs() }
+        val tempBookFile = File(cacheFolder, "${book.id}.${book.extension}")
         val uri = Uri.parse(book.uriString)
-        val resolver = context.contentResolver
+
+        val fileReady = if (tempBookFile.isFile && tempBookFile.length() > 0) {
+            tempBookFile
+        } else {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    tempBookFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                tempBookFile
+            }.getOrNull()
+        } ?: return@withContext null
 
         val bitmap: Bitmap? = when (book.format) {
-            LocalBookFormat.PDF -> extractPdfCover(resolver, uri)
-            LocalBookFormat.CBZ, LocalBookFormat.ZIP -> extractZipCover(resolver, uri)
-            LocalBookFormat.EPUB -> extractEpubCover(resolver, uri)
+            LocalBookFormat.PDF -> {
+                com.bunko.reader.engine.pdf.PdfDocumentEngine.extractCoverBitmap(fileReady, CoverMaxWidth, CoverMaxHeight)
+            }
+            LocalBookFormat.EPUB -> {
+                com.bunko.reader.engine.epub.EpubPackageReader.extractCoverBitmap(context, fileReady, CoverMaxWidth, CoverMaxHeight)
+            }
+            LocalBookFormat.MOBI, LocalBookFormat.AZW, LocalBookFormat.AZW3 -> {
+                com.bunko.reader.engine.mobi.MobiDocumentReader.extractCoverBitmap(context, fileReady, CoverMaxWidth, CoverMaxHeight)
+            }
+            LocalBookFormat.FB2 -> {
+                com.bunko.reader.engine.fb2.Fb2DocumentReader.extractCoverBitmap(context, fileReady, CoverMaxWidth, CoverMaxHeight)
+            }
+            LocalBookFormat.CBZ, LocalBookFormat.CBR, LocalBookFormat.CB7,
+            LocalBookFormat.CBT, LocalBookFormat.ZIP, LocalBookFormat.RAR,
+            LocalBookFormat.SEVEN_ZIP -> {
+                com.bunko.reader.engine.archive.UniversalArchiveReader.extractCoverBitmap(fileReady, CoverMaxWidth, CoverMaxHeight)
+            }
             else -> null
         }
 

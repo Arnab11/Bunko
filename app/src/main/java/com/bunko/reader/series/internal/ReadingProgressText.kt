@@ -7,6 +7,7 @@ internal fun SeriesDto.readingProgress(): Float? {
     val total = pages ?: return null
     if (total <= 0) return null
     val read = (pagesRead ?: 0).coerceIn(0, total)
+    if (read <= 0) return null
     return read.toFloat() / total.toFloat()
 }
 
@@ -15,6 +16,7 @@ internal fun ChapterDto.readingProgress(): Float? {
     val total = pages ?: return null
     if (total <= 0) return null
     val read = (pagesRead ?: 0).coerceIn(0, total)
+    if (read <= 0) return null
     return read.toFloat() / total.toFloat()
 }
 

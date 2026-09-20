@@ -561,57 +561,47 @@ class OfflineIssueRepository(context: Context) {
 
     private fun inspectOfflineFile(file: File, record: OfflineIssueRecord): OfflineChapter {
         require(file.isFile) { "Offline file is missing" }
+        val ext = file.extension.lowercase().trim()
         val signature = file.inputStream().buffered().use { input ->
             ByteArray(4).also { input.read(it) }
         }
         return when {
-            signature.contentEquals(pdfSignature) -> inspectPdf(file, record)
-            signature[0] == 0x50.toByte() && signature[1] == 0x4B.toByte() -> inspectArchive(file, record)
-            else -> throw UnsupportedOfflineFormatException(
-                "Offline reading currently supports CBZ/ZIP and PDF files"
-            )
+            signature.contentEquals(pdfSignature) || ext == "pdf" -> inspectPdf(file, record)
+            ext == "epub" -> inspectEpub(file, record)
+            else -> inspectArchive(file, record)
         }
     }
 
     private fun inspectArchive(file: File, record: OfflineIssueRecord): OfflineChapter {
-        ZipFile(file).use { zip ->
-            zip.getEntry("mimetype")?.let { mimetype ->
-                val value = zip.getInputStream(mimetype).bufferedReader().use { it.readText().trim() }
-                if (value == "application/epub+zip") {
-                    throw UnsupportedOfflineFormatException("EPUB offline reading is not supported yet")
-                }
-            }
-            val candidates = zip.entries().asSequence()
-                .filter { entry ->
-                    !entry.isDirectory && entry.name.substringAfterLast('.', "").lowercase() in imageExtensions
-                }
-                .sortedWith { left, right -> compareNaturalFileNames(left.name, right.name) }
-                .toList()
-            val entries = candidates.mapNotNull { entry ->
-                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                zip.getInputStream(entry).use { BitmapFactory.decodeStream(it, null, options) }
-                val width = options.outWidth.takeIf { it > 0 } ?: return@mapNotNull null
-                val height = options.outHeight.takeIf { it > 0 } ?: return@mapNotNull null
-                Triple(entry, width, height)
-            }
-            val pages = entries.mapIndexed { index, entryInfo ->
-                OfflinePage.ArchiveEntry(file.absolutePath, entryInfo.first.name, index)
-            }
-            val dimensions = entries.mapIndexed { index, (entry, width, height) ->
-                index to FileDimensionDto(
-                    width = width,
-                    height = height,
-                    pageNumber = index,
-                    fileName = entry.name,
-                    isWide = width > height
-                )
-            }.toMap()
-            val coverPageIndex = comicInfoFrontCoverIndex(zip)
-                ?.takeIf { it in pages.indices }
-                ?: 0
-            // ComicInfo front-cover metadata wins over filename order because fan-made archives often mix naming schemes.
-            return OfflineChapter(record, pages, dimensions, coverPageIndex)
+        val entries = kotlinx.coroutines.runBlocking {
+            com.bunko.reader.engine.archive.UniversalArchiveReader.listImageEntries(file)
         }
+        val rawDims = kotlinx.coroutines.runBlocking {
+            com.bunko.reader.engine.archive.UniversalArchiveReader.extractPageDimensions(file, entries, sampleLimit = 15)
+        }
+        val dimensions = rawDims.mapValues { (index, dim) ->
+            FileDimensionDto(
+                width = dim.first,
+                height = dim.second,
+                pageNumber = index,
+                fileName = entries.getOrNull(index) ?: "page-$index",
+                isWide = dim.first > dim.second
+            )
+        }
+        val pages = entries.mapIndexed { index, entryName ->
+            OfflinePage.ArchiveEntry(file.absolutePath, entryName, index)
+        }
+        return OfflineChapter(record, pages, dimensions, 0)
+    }
+
+    private fun inspectEpub(file: File, record: OfflineIssueRecord): OfflineChapter {
+        val parsed = kotlinx.coroutines.runBlocking {
+            com.bunko.reader.engine.epub.EpubPackageReader.parseEpub(appContext, file)
+        }
+        val pages = parsed.spines.mapIndexed { index, spine ->
+            OfflinePage.ArchiveEntry(file.absolutePath, spine.href.ifEmpty { "spine_$index" }, index)
+        }
+        return OfflineChapter(record, pages, emptyMap(), 0)
     }
 
     private fun comicInfoFrontCoverIndex(zip: ZipFile): Int? {
@@ -817,22 +807,23 @@ private fun decodeArchivePage(
     targetHeight: Int
 ): Bitmap? {
     val archive = File(page.archivePath)
-    if (!archive.isFile) return null
-    return ZipFile(archive).use { zip ->
-        val entry = zip.getEntry(page.entryName) ?: return@use null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        zip.getInputStream(entry).use { BitmapFactory.decodeStream(it, null, bounds) }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@use null
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = calculateInSampleSize(
-                width = bounds.outWidth,
-                height = bounds.outHeight,
-                targetWidth = targetWidth,
-                targetHeight = targetHeight
-            )
-        }
-        zip.getInputStream(entry).use { BitmapFactory.decodeStream(it, null, options) }
+    if (!archive.exists()) return null
+    val bytes = kotlinx.coroutines.runBlocking {
+        com.bunko.reader.engine.archive.UniversalArchiveReader.extractEntryBytes(archive, page.entryName)
+    } ?: return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = calculateInSampleSize(
+            width = bounds.outWidth,
+            height = bounds.outHeight,
+            targetWidth = targetWidth,
+            targetHeight = targetHeight
+        )
+        inPreferredConfig = Bitmap.Config.RGB_565
     }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 }
 
 private fun decodePdfPage(
@@ -842,30 +833,8 @@ private fun decodePdfPage(
 ): Bitmap? {
     val file = File(page.pdfPath)
     if (!file.isFile) return null
-    ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
-        PdfRenderer(descriptor).use { renderer ->
-            if (page.index !in 0 until renderer.pageCount) return null
-            renderer.openPage(page.index).use { pdfPage ->
-                val requestedScale = maxOf(
-                    targetWidth.coerceAtLeast(1).toFloat() / pdfPage.width,
-                    targetHeight.coerceAtLeast(1).toFloat() / pdfPage.height,
-                    1f
-                ) * 2f
-                val scale = minOf(
-                    requestedScale,
-                    4096f / pdfPage.width,
-                    4096f / pdfPage.height
-                ).coerceAtLeast(1f)
-                val bitmap = Bitmap.createBitmap(
-                    (pdfPage.width * scale).toInt().coerceAtLeast(1),
-                    (pdfPage.height * scale).toInt().coerceAtLeast(1),
-                    Bitmap.Config.ARGB_8888
-                )
-                bitmap.eraseColor(Color.WHITE)
-                pdfPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                return bitmap
-            }
-        }
+    return kotlinx.coroutines.runBlocking {
+        com.bunko.reader.engine.pdf.PdfDocumentEngine.renderPageBitmap(file, page.index, targetWidth, targetHeight)
     }
 }
 
@@ -903,8 +872,9 @@ private fun calculateInSampleSize(
     targetWidth: Int,
     targetHeight: Int
 ): Int {
-    val requestedWidth = (targetWidth.coerceAtLeast(1) * 2).coerceAtMost(4096)
-    val requestedHeight = (targetHeight.coerceAtLeast(1) * 2).coerceAtMost(4096)
+    if (targetWidth <= 0 || targetHeight <= 0) return 1
+    val requestedWidth = (targetWidth.coerceAtLeast(1) * 2).coerceIn(1080, 4096)
+    val requestedHeight = (targetHeight.coerceAtLeast(1) * 2).coerceIn(1920, 4096)
     var sample = 1
     while (width / (sample * 2) >= requestedWidth && height / (sample * 2) >= requestedHeight) {
         sample *= 2

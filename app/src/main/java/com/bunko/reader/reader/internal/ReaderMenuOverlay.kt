@@ -1457,6 +1457,7 @@ internal fun ReaderMenuOverlay(
                         reverseTrackColors = rightToLeft,
                         showStopIndicator = false,
                         roundThumb = true,
+                        wavy = true,
                         modifier = Modifier.weight(1f)
                     )
 

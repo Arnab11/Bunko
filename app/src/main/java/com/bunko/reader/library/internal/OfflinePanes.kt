@@ -1107,20 +1107,38 @@ fun LocalBookPosterCard(
                 DynamicCoverPlaceholder(book = book)
             }
 
-            Surface(
-                shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.65f),
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(6.dp)
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    text = book.format.displayName,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                )
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.65f)
+                ) {
+                    Text(
+                        text = book.format.displayName,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    )
+                }
+                if (book.isWebtoonBook) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    ) {
+                        Text(
+                            text = "WEBTOON",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
             }
 
             if (book.lastReadPage > 0) {
@@ -1242,6 +1260,21 @@ fun LocalBookListItem(
                             color = Color.White,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
+                    }
+
+                    if (book.isWebtoonBook) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "WEBTOON",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
 
                     Text(

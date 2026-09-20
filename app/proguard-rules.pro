@@ -33,6 +33,9 @@
 # Retrofit & OkHttp
 -dontwarn okhttp3.**
 -dontwarn retrofit2.**
+-dontwarn org.slf4j.**
+-dontwarn org.apache.commons.compress.**
+-dontwarn com.github.junrar.**
 -keepattributes Signature
 -keepattributes Exceptions
 -keepclassmembers,allowobfuscation interface * {

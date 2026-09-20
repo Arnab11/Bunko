@@ -393,7 +393,8 @@ internal fun ChapterGridCard(
 /** Internal to series, not for external use. */
 @Composable
 internal fun ReadingProgressBar(progress: Float?, modifier: Modifier = Modifier) {
-    val boundedProgress = (progress ?: 0f).coerceIn(0f, 1f)
+    if (progress == null || progress <= 0f) return
+    val boundedProgress = progress.coerceIn(0f, 1f)
     val fillColor = if (boundedProgress >= 1f) ReadingProgressRead else ReadingProgressInProgress
     Box(modifier = modifier.background(ReadingProgressTrack)) {
         Box(

@@ -6,25 +6,47 @@ import java.io.File
 @Serializable
 enum class LocalBookFormat {
     CBZ,
+    CBR,
+    CB7,
+    CBT,
     ZIP,
+    RAR,
+    SEVEN_ZIP,
     EPUB,
+    MOBI,
+    AZW,
+    AZW3,
+    FB2,
     PDF,
+    TXT,
     UNKNOWN;
 
     val displayName: String
         get() = when (this) {
             CBZ -> "CBZ"
+            CBR -> "CBR"
+            CB7 -> "CB7"
+            CBT -> "CBT"
             ZIP -> "ZIP"
+            RAR -> "RAR"
+            SEVEN_ZIP -> "7Z"
             EPUB -> "EPUB"
+            MOBI -> "MOBI"
+            AZW, AZW3 -> "AZW"
+            FB2 -> "FB2"
             PDF -> "PDF"
+            TXT -> "TXT"
             UNKNOWN -> "OTHER"
         }
 
     val isComic: Boolean
-        get() = this == CBZ || this == ZIP
+        get() = this == CBZ || this == CBR || this == CB7 || this == CBT || this == ZIP || this == RAR || this == SEVEN_ZIP
 
     val isEpub: Boolean
         get() = this == EPUB
+
+    val isReflowEbook: Boolean
+        get() = this == EPUB || this == MOBI || this == AZW || this == AZW3 || this == FB2 || this == TXT
 
     val isPdf: Boolean
         get() = this == PDF
@@ -32,9 +54,19 @@ enum class LocalBookFormat {
     companion object {
         fun fromExtension(ext: String): LocalBookFormat = when (ext.lowercase().trim()) {
             "cbz" -> CBZ
+            "cbr" -> CBR
+            "cb7" -> CB7
+            "cbt" -> CBT
             "zip" -> ZIP
+            "rar" -> RAR
+            "7z" -> SEVEN_ZIP
             "epub" -> EPUB
+            "mobi" -> MOBI
+            "azw" -> AZW
+            "azw3" -> AZW3
+            "fb2" -> FB2
             "pdf" -> PDF
+            "txt", "md" -> TXT
             else -> UNKNOWN
         }
     }
@@ -56,8 +88,12 @@ data class LocalBook(
     val seriesName: String = "",
     val volumeOrIssue: String = "",
     val folderUriString: String = "",
-    val folderName: String = ""
+    val folderName: String = "",
+    val isWebtoon: Boolean = false
 ) {
+    val isWebtoonBook: Boolean
+        get() = isWebtoon || com.bunko.reader.reader.internal.ReaderWebtoonDetector.isWebtoonMetadata(seriesName = title)
+
     val formattedSize: String
         get() {
             if (sizeBytes <= 0) return ""

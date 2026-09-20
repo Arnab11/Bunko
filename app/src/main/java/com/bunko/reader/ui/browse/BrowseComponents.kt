@@ -697,7 +697,8 @@ internal fun seriesShelfHeight(): Dp =
 
 @Composable
 private fun SeriesReadingProgressBar(progress: Float?, modifier: Modifier = Modifier) {
-    val boundedProgress = (progress ?: 0f).coerceIn(0f, 1f)
+    if (progress == null || progress <= 0f) return
+    val boundedProgress = progress.coerceIn(0f, 1f)
     val fillColor = if (boundedProgress >= 1f) ReadingProgressRead else ReadingProgressInProgress
     Box(modifier = modifier.background(ReadingProgressTrack)) {
         Box(
@@ -713,5 +714,6 @@ private fun SeriesDto.readingProgress(): Float? {
     val total = pages ?: return null
     if (total <= 0) return null
     val read = (pagesRead ?: 0).coerceIn(0, total)
+    if (read <= 0) return null
     return read.toFloat() / total.toFloat()
 }

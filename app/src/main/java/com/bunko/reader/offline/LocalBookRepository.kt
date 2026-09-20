@@ -261,7 +261,7 @@ class LocalBookRepository(context: Context) {
         val cacheFolder = File(appContext.cacheDir, "active_books").apply { mkdirs() }
         val targetFile = File(cacheFolder, "${book.id}.${book.extension}")
 
-        if (targetFile.isFile && targetFile.length() > 0 && targetFile.length() == book.sizeBytes) {
+        if (targetFile.isFile && targetFile.length() > 0 && (book.sizeBytes <= 0L || targetFile.length() == book.sizeBytes)) {
             return@withContext targetFile
         }
 

@@ -346,7 +346,8 @@ private fun IssueReadSplitButton(
 
 @Composable
 private fun IssueProgressBar(progress: Float?, modifier: Modifier = Modifier) {
-    val bounded = (progress ?: 0f).coerceIn(0f, 1f)
+    if (progress == null || progress <= 0f) return
+    val bounded = progress.coerceIn(0f, 1f)
     val fillColor = if (bounded >= 1f) ReadingProgressRead else ReadingProgressInProgress
     Box(modifier.background(ReadingProgressTrack)) {
         Box(

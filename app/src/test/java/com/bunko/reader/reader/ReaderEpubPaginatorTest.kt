@@ -65,7 +65,7 @@ class ReaderEpubPaginatorTest {
 
         assertEquals(1, blocks.size)
         val p = blocks[0] as EpubBlock.TextBlock
-        assertEquals("\"Hello & welcome—enjoy!\"", p.text.text)
+        assertEquals("“Hello & welcome—enjoy!”", p.text.text)
     }
 
     @Test

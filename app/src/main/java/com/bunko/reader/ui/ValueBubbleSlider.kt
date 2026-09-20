@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -40,12 +41,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlin.math.sin
 
 private val SliderThumbWidth = 4.dp
 private val ValueIndicatorMinWidth = 40.dp
@@ -65,6 +72,7 @@ internal fun ValueBubbleSlider(
     reverseTrackColors: Boolean = false,
     showStopIndicator: Boolean = true,
     roundThumb: Boolean = false,
+    wavy: Boolean = false,
     onValueChangeFinished: (() -> Unit)? = null
 ) {
     var showBubble by remember { mutableStateOf(false) }
@@ -92,7 +100,7 @@ internal fun ValueBubbleSlider(
     }
 
     BoxWithConstraints(modifier = modifier) {
-        val effectiveThumbWidth = if (roundThumb) 14.dp else SliderThumbWidth
+        val effectiveThumbWidth = if (roundThumb) 16.dp else SliderThumbWidth
         val thumbCenter = effectiveThumbWidth / 2 + (maxWidth - effectiveThumbWidth).coerceAtLeast(0.dp) * fraction
         val indicatorOffset = (thumbCenter - ValueIndicatorMinWidth / 2)
             .coerceIn(0.dp, (maxWidth - ValueIndicatorMinWidth).coerceAtLeast(0.dp))
@@ -158,19 +166,19 @@ internal fun ValueBubbleSlider(
             onValueChangeFinished?.invoke()
         }
 
-        if (roundThumb) {
+        if (wavy || roundThumb) {
             val roundThumbComposable: @Composable (SliderState) -> Unit = {
                 Box(
                     modifier = Modifier
-                        .size(14.dp)
-                        .shadow(elevation = 2.dp, shape = CircleShape)
+                        .size(if (isDragged || isPressed) 18.dp else 16.dp)
+                        .shadow(elevation = 3.dp, shape = CircleShape)
                         .background(
                             color = if (reverseTrackColors) colorScheme.secondaryContainer else colorScheme.primary,
                             shape = CircleShape
                         )
                 )
             }
-            val roundTrackComposable: @Composable (SliderState) -> Unit = { sliderState ->
+            val wavyTrackComposable: @Composable (SliderState) -> Unit = { sliderState ->
                 val rangeSpan = sliderState.valueRange.endInclusive - sliderState.valueRange.start
                 val progress = if (rangeSpan > 0f) {
                     ((sliderState.value - sliderState.valueRange.start) / rangeSpan).coerceIn(0f, 1f)
@@ -178,19 +186,77 @@ internal fun ValueBubbleSlider(
                 val activeColor = if (reverseTrackColors) colorScheme.secondaryContainer else colorScheme.primary
                 val inactiveColor = Color(0x33FFFFFF)
 
-                Box(
+                Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp)
-                        .clip(CircleShape)
-                        .background(inactiveColor)
+                        .height(28.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(progress)
-                            .fillMaxHeight()
-                            .background(activeColor)
-                    )
+                    val width = size.width
+                    val height = size.height
+                    val centerY = height / 2f
+                    val strokeWidthPx = 4.5.dp.toPx()
+                    val amplitudePx = 3.2.dp.toPx()
+                    val waveLengthPx = 22.dp.toPx()
+
+                    val activeWidth = (width * progress).coerceIn(0f, width)
+
+                    // 1. Inactive straight track
+                    if (reverseTrackColors) {
+                        val inactiveEnd = width - activeWidth
+                        if (inactiveEnd > 0f) {
+                            drawLine(
+                                color = inactiveColor,
+                                start = Offset(0f, centerY),
+                                end = Offset(inactiveEnd, centerY),
+                                strokeWidth = strokeWidthPx,
+                                cap = StrokeCap.Round
+                            )
+                        }
+                    } else {
+                        val inactiveStart = activeWidth
+                        if (inactiveStart < width) {
+                            drawLine(
+                                color = inactiveColor,
+                                start = Offset(inactiveStart, centerY),
+                                end = Offset(width, centerY),
+                                strokeWidth = strokeWidthPx,
+                                cap = StrokeCap.Round
+                            )
+                        }
+                    }
+
+                    // 2. Active Material Expressive wavy track (static wave)
+                    if (activeWidth > 2f) {
+                        val path = Path()
+                        val startX = if (reverseTrackColors) width - activeWidth else 0f
+                        val endX = if (reverseTrackColors) width else activeWidth
+                        val stepPx = 2f
+
+                        path.moveTo(startX, centerY)
+                        var currentX = startX
+                        while (currentX <= endX) {
+                            val relX = if (reverseTrackColors) (endX - currentX) else (currentX - startX)
+                            val edgeTaper = minOf(
+                                relX / (waveLengthPx * 0.4f),
+                                (activeWidth - relX) / (waveLengthPx * 0.4f)
+                            ).coerceIn(0f, 1f)
+                            val currentAmp = amplitudePx * edgeTaper
+
+                            val y = centerY + currentAmp * sin((relX / waveLengthPx) * 2 * Math.PI)
+                            path.lineTo(currentX, y.toFloat())
+                            currentX += stepPx
+                        }
+
+                        drawPath(
+                            path = path,
+                            color = activeColor,
+                            style = Stroke(
+                                width = strokeWidthPx,
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+                    }
                 }
             }
 
@@ -204,7 +270,7 @@ internal fun ValueBubbleSlider(
                 interactionSource = interactionSource,
                 colors = sliderColors,
                 thumb = roundThumbComposable,
-                track = roundTrackComposable,
+                track = wavyTrackComposable,
                 modifier = sliderModifier
             )
         } else if (showStopIndicator) {
@@ -242,3 +308,4 @@ internal fun ValueBubbleSlider(
         }
     }
 }
+

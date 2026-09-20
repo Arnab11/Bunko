@@ -171,10 +171,12 @@ import androidx.activity.compose.BackHandler
 import com.bunko.reader.download.OfflineIssueRecord
 import com.bunko.reader.download.OfflinePage
 import com.bunko.reader.download.compareNaturalFileNames
+import com.bunko.reader.engine.ReaderDocumentFactory
+import com.bunko.reader.engine.model.ComicPageResource
+import com.bunko.reader.engine.model.ReaderDocument
 import com.bunko.reader.offline.LocalBookFormat
 import com.bunko.reader.offline.LocalBookRepository
 import java.io.File
-import java.util.zip.ZipFile
 
 // Process-lived scope for chapter-exit writes (mark read/unread, final progress) so they
 // survive the reader being popped off the back stack the instant the user leaves.
@@ -214,55 +216,6 @@ internal fun readerPageBackgroundColor(
 }
 
 private val LocalImageExtensions = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "avif")
-
-private suspend fun loadLocalEpubSpines(ctx: Context, file: File): List<List<EpubBlock>> = withContext(Dispatchers.IO) {
-    val result = mutableListOf<List<EpubBlock>>()
-    try {
-        val cacheDir = File(ctx.cacheDir, "epub_resources_${file.nameWithoutExtension.hashCode()}")
-        if (!cacheDir.exists()) cacheDir.mkdirs()
-
-        ZipFile(file).use { zip ->
-            zip.entries().asSequence().forEach { entry ->
-                val lower = entry.name.lowercase()
-                if (!entry.isDirectory && (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp") || lower.endsWith(".gif"))) {
-                    val dest = File(cacheDir, entry.name.substringAfterLast('/'))
-                    if (!dest.exists() || dest.length() == 0L) {
-                        zip.getInputStream(entry).use { input ->
-                            dest.outputStream().use { output -> input.copyTo(output) }
-                        }
-                    }
-                }
-            }
-
-            val xhtmlEntries = zip.entries().asSequence()
-                .filter { !it.isDirectory && (it.name.endsWith(".xhtml") || it.name.endsWith(".html") || it.name.endsWith(".htm")) }
-                .sortedWith { a, b -> compareNaturalFileNames(a.name, b.name) }
-                .toList()
-
-            var spineIndex = 0
-            for (entry in xhtmlEntries) {
-                val html = zip.getInputStream(entry).bufferedReader().use { it.readText() }
-                val blocks = ReaderEpubPaginator.parseHtmlToBlocks(
-                    html = html,
-                    chapterId = spineIndex,
-                    baseUrl = "",
-                    apiKey = "",
-                    bookResourceUrlBuilder = { _, _, _, resourcePath ->
-                        val fileName = resourcePath.substringAfterLast('/')
-                        File(cacheDir, fileName).absolutePath
-                    }
-                )
-                if (blocks.isNotEmpty()) {
-                    result.add(blocks)
-                    spineIndex++
-                }
-            }
-        }
-    } catch (t: Throwable) {
-        BunkoLog.w("Error parsing local epub spines", t)
-    }
-    result
-}
 
 internal fun readerPortraitBackPageContentAlpha(showContent: Boolean): Float {
     return if (showContent) ReaderPortraitBackPageContentAlpha else 0f
@@ -759,20 +712,27 @@ fun ReaderScreen(
                     return@LaunchedEffect
                 }
 
-                when (book.format) {
-                    LocalBookFormat.CBZ, LocalBookFormat.ZIP -> {
-                        val resolvedPages = withContext(Dispatchers.IO) {
-                            ZipFile(file).use { zip ->
-                                zip.entries().asSequence()
-                                    .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in LocalImageExtensions }
-                                    .sortedWith { a, b -> compareNaturalFileNames(a.name, b.name) }
-                                    .mapIndexed { index, entry ->
-                                        OfflinePage.ArchiveEntry(file.absolutePath, entry.name, index)
-                                    }
-                                    .toList()
+                val document = ReaderDocumentFactory.openLocalDocument(ctx, file, book.title)
+                when (document) {
+                    is ReaderDocument.Comic -> {
+                        val resolvedPages = document.pages.map { resource ->
+                            when (resource) {
+                                is ComicPageResource.ArchiveEntry -> OfflinePage.ArchiveEntry(resource.archiveFile.absolutePath, resource.entryName, resource.index)
+                                is ComicPageResource.DirectFile -> OfflinePage.ArchiveEntry(resource.file.parent ?: "", resource.file.name, resource.index)
+                                is ComicPageResource.RemoteUrl -> OfflinePage.ArchiveEntry("", resource.url, resource.index)
                             }
                         }
+                        val dimensionsDtoMap = document.dimensions.mapValues { (idx, dim) ->
+                            FileDimensionDto(
+                                width = dim.first,
+                                height = dim.second,
+                                pageNumber = idx,
+                                fileName = "page-$idx",
+                                isWide = dim.first > dim.second
+                            )
+                        }
                         pages = resolvedPages.size
+                        pageDimensions = dimensionsDtoMap
                         offlineChapter = OfflineChapter(
                             record = OfflineIssueRecord(
                                 serverKey = "local",
@@ -788,25 +748,43 @@ fun ReaderScreen(
                                 pageCount = resolvedPages.size
                             ),
                             pages = resolvedPages,
-                            dimensions = emptyMap()
+                            dimensions = dimensionsDtoMap
                         )
+                        val effectiveDirection = if (cachedPreferences?.readingDirection != null) {
+                            cachedPreferences.readingDirection
+                        } else {
+                            ReaderWebtoonDetector.resolveEffectiveReadingDirection(
+                                preferredDirection = persistedReaderSettings.readingDirection,
+                                autoWebtoonMode = persistedReaderSettings.autoWebtoonMode,
+                                pageDimensions = dimensionsDtoMap,
+                                genres = document.genres,
+                                tags = document.tags,
+                                publishers = listOfNotNull(document.publisher),
+                                summary = document.summary,
+                                seriesName = book.title
+                            )
+                        }
+                        readingDirection = effectiveDirection
                         page = (initialPage ?: book.lastReadPage).coerceIn(0, (pages - 1).coerceAtLeast(0))
                         readerReady = pages > 0
                         verticalRestoreNonce++
                     }
-                    LocalBookFormat.PDF -> {
-                        val resolvedPages = withContext(Dispatchers.IO) {
-                            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                                PdfRenderer(pfd).use { renderer ->
-                                    (0 until renderer.pageCount).map { index ->
-                                        renderer.openPage(index).use { p ->
-                                            OfflinePage.PdfPage(file.absolutePath, index, p.width, p.height)
-                                        }
-                                    }
-                                }
-                            }
+                    is ReaderDocument.Pdf -> {
+                        val resolvedPages = (0 until document.pageCount).map { index ->
+                            val dim = document.pageDimensions[index] ?: Pair(1200, 1600)
+                            OfflinePage.PdfPage(document.pdfFile.absolutePath, index, dim.first, dim.second)
+                        }
+                        val dimensionsDtoMap = document.pageDimensions.mapValues { (idx, dim) ->
+                            FileDimensionDto(
+                                width = dim.first,
+                                height = dim.second,
+                                pageNumber = idx,
+                                fileName = "page-$idx",
+                                isWide = dim.first > dim.second
+                            )
                         }
                         pages = resolvedPages.size
+                        pageDimensions = dimensionsDtoMap
                         offlineChapter = OfflineChapter(
                             record = OfflineIssueRecord(
                                 serverKey = "local",
@@ -822,25 +800,33 @@ fun ReaderScreen(
                                 pageCount = resolvedPages.size
                             ),
                             pages = resolvedPages,
-                            dimensions = emptyMap()
+                            dimensions = dimensionsDtoMap
                         )
                         page = (initialPage ?: book.lastReadPage).coerceIn(0, (pages - 1).coerceAtLeast(0))
                         readerReady = pages > 0
                         verticalRestoreNonce++
                     }
-                    LocalBookFormat.EPUB -> {
+                    is ReaderDocument.Reflow -> {
                         isEpub = true
-                        val spineBlocks = loadLocalEpubSpines(ctx, file)
+                        val spineBlocks = document.spines.map { spine ->
+                            ReaderEpubPaginator.parseHtmlToBlocks(
+                                html = spine.rawHtml,
+                                chapterId = spine.spineIndex,
+                                baseUrl = "",
+                                apiKey = "",
+                                bookResourceUrlBuilder = { _, _, _, resourcePath -> resourcePath }
+                            )
+                        }.filter { it.isNotEmpty() }
+
                         if (spineBlocks.isEmpty()) {
-                            error = "Could not parse EPUB content."
+                            error = "Could not parse book content."
                             return@LaunchedEffect
                         }
                         epubSpineBlocks = spineBlocks
+                        pages = spineBlocks.size
                         page = (initialPage ?: book.lastReadPage)
+                        readerReady = true
                         verticalRestoreNonce++
-                    }
-                    else -> {
-                        error = "Format ${book.extension} is not supported."
                     }
                 }
             } catch (t: Throwable) {
@@ -877,6 +863,12 @@ fun ReaderScreen(
         }.getOrNull()
         offlineChapter = local
         if (local != null) {
+            val archiveFile = File(local.record.archivePath)
+            val isLocalEpub = local.record.archivePath.endsWith(".epub", ignoreCase = true)
+            val isLocalPdf = local.record.archivePath.endsWith(".pdf", ignoreCase = true)
+            if (isLocalEpub) isEpub = true
+            if (isLocalPdf) isPdf = true
+
             seriesName = local.record.seriesName
             currentVolumeId = local.record.volumeId
             currentChapter = ReaderChapterEntry(
@@ -887,11 +879,36 @@ fun ReaderScreen(
             )
             pages = local.pages.size
             pageDimensions = local.dimensions
+            if (cachedPreferences?.readingDirection == null && !isLocalEpub && !isLocalPdf) {
+                readingDirection = ReaderWebtoonDetector.resolveEffectiveReadingDirection(
+                    preferredDirection = persistedReaderSettings.readingDirection,
+                    autoWebtoonMode = persistedReaderSettings.autoWebtoonMode,
+                    pageDimensions = local.dimensions,
+                    seriesName = local.record.seriesName
+                )
+            }
             page = (initialPage ?: local.record.localPage).coerceIn(0, (pages - 1).coerceAtLeast(0))
             if (!local.record.progressPending) {
                 lastRemoteProgressPages[currentChapterId] = page
             }
-            readerReady = pages > 0
+            if (isLocalEpub && archiveFile.isFile) {
+                val parsed = runCatching {
+                    com.bunko.reader.engine.epub.EpubPackageReader.parseEpub(ctx, archiveFile)
+                }.getOrNull()
+                if (parsed != null) {
+                    val spineBlocks = parsed.spines.map { spine ->
+                        ReaderEpubPaginator.parseHtmlToBlocks(
+                            html = spine.rawHtml,
+                            chapterId = spine.spineIndex,
+                            baseUrl = "",
+                            apiKey = "",
+                            bookResourceUrlBuilder = { _, _, _, path -> path }
+                        )
+                    }.filter { it.isNotEmpty() }
+                    epubSpineBlocks = spineBlocks
+                }
+            }
+            readerReady = if (isLocalEpub) epubSpineBlocks.isNotEmpty() else pages > 0
             verticalRestoreNonce++
         }
 
@@ -1110,7 +1127,7 @@ fun ReaderScreen(
         return
     }
 
-    if (!readerReady) {
+    if (!readerReady && (!isEpub || epubSpineBlocks.isEmpty())) {
         ReaderLoadingScreen(
             preparingPdf = isPdf,
             error = error,

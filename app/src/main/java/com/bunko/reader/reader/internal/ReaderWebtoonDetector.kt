@@ -8,7 +8,7 @@ import com.bunko.reader.SeriesMetadataDto
  * Intelligent detector for Webtoon / Manhwa / Long Strip formats.
  * Inspects page aspect ratios, series titles, tags, genres, publishers, and metadata.
  */
-internal object ReaderWebtoonDetector {
+object ReaderWebtoonDetector {
 
     private val WEBTOON_KEYWORDS = listOf(
         "webtoon",
@@ -27,10 +27,26 @@ internal object ReaderWebtoonDetector {
         "tappytoon",
         "webtoon",
         "naver webtoon",
+        "naver",
         "lezhin",
         "toomics",
         "redice studio",
-        "line webtoon"
+        "redice",
+        "line webtoon",
+        "piccoma",
+        "bilibili",
+        "asura",
+        "asurascans",
+        "reaper",
+        "reaperscans",
+        "flamescans",
+        "flame comics",
+        "voidscans",
+        "void scans",
+        "luminous scans",
+        "alpha scans",
+        "cosmic scans",
+        "lucaz"
     )
 
     private val KNOWN_WEBTOON_TITLES = listOf(
@@ -53,11 +69,72 @@ internal object ReaderWebtoonDetector {
         "sweet home",
         "bastard",
         "unordinary",
-        "lore olympus"
+        "lore olympus",
+        "overgeared",
+        "greatest real estate developer",
+        "greatest estate developer",
+        "reincarnation of the suicidal battle god",
+        "sss-class",
+        "trash of the count",
+        "pick me up",
+        "doom breaker",
+        "ranker who lives a second time",
+        "tomb raider king",
+        "villains are destined to die",
+        "who made me a princess",
+        "remarried empress",
+        "leveling with the gods",
+        "damn reincarnation",
+        "reformation of the deadbeat noble",
+        "swordmaster's youngest son",
+        "player who can't level up",
+        "murim login",
+        "infinite leveling",
+        "worthless regression",
+        "return of the disaster-class hero",
+        "standard of reincarnation",
+        "talent-swallowing magician",
+        "boundless necromancer",
+        "auto-hunting",
+        "reaper of the drifting moon",
+        "dungeon reset",
+        "survival story of a sword king",
+        "return of the mad demon",
+        "the boxer",
+        "weak hero",
+        "hardcore leveling warrior",
+        "martial peak",
+        "apotheosis",
+        "tales of demons and gods",
+        "hero killer",
+        "study group",
+        "get schooled",
+        "manager kim",
+        "questism",
+        "reality quest",
+        "juvenile offender",
+        "true beauty",
+        "unholy blood",
+        "jungle juice",
+        "terror man",
+        "revival man",
+        "the gamer",
+        "girls of the wild",
+        "kubera",
+        "cheese in the trap",
+        "shotgun boy",
+        "see you in my 19th life",
+        "solo max-level newbie",
+        "max level newbie",
+        "ranker's return",
+        "worn and torn newbie",
+        "skeleton soldier",
+        "villain to kill",
+        "breaker"
     )
 
     private val WEBTOON_WORD_REGEX = Regex(
-        "\\b(webtoon|webtoons|manhwa|manhua|long strip|longstrip|vertical scroll)\\b",
+        "\\b(webtoon|webtoons|manhwa|manhua|long strip|longstrip|vertical scroll|kakaopage|tapas|asura|reaper|flamescan|voidscan|lucaz)\\b",
         RegexOption.IGNORE_CASE
     )
 
@@ -79,7 +156,7 @@ internal object ReaderWebtoonDetector {
             return true
         }
 
-        // 3. Check Dedicated Webtoon Publishers / Studios
+        // 3. Check Dedicated Webtoon Publishers / Studios / Scanlators
         if (publishers != null && publishers.any { p -> WEBTOON_PLATFORMS.any { pub -> p.contains(pub, ignoreCase = true) } }) {
             return true
         }
@@ -91,15 +168,23 @@ internal object ReaderWebtoonDetector {
             }
         }
 
-        // 5. Check Series Name
+        // 5. Check Series Name / File Title
         if (!seriesName.isNullOrBlank()) {
             val lowerName = seriesName.lowercase()
+                .replace('_', ' ')
+                .replace('-', ' ')
+                .replace(Regex("\\s+"), " ")
+
             if (KNOWN_WEBTOON_TITLES.any { title -> lowerName.contains(title) }) {
+                return true
+            }
+            if (WEBTOON_WORD_REGEX.containsMatchIn(lowerName)) {
                 return true
             }
             if (lowerName.contains("[webtoon]") || lowerName.contains("(webtoon)") ||
                 lowerName.contains("[manhwa]") || lowerName.contains("(manhwa)") ||
-                lowerName.contains("[manhua]") || lowerName.contains("(manhua)")
+                lowerName.contains("[manhua]") || lowerName.contains("(manhua)") ||
+                lowerName.contains("[long strip]") || lowerName.contains("(long strip)")
             ) {
                 return true
             }
@@ -197,3 +282,4 @@ internal object ReaderWebtoonDetector {
         return preferredDirection
     }
 }
+
