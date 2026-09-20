@@ -9,7 +9,6 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-brightgreen.svg)]()
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%208.0%2B-brightgreen.svg)]()
-[![App Size](https://img.shields.io/badge/APK%20Size-~3.2%20MB-blue.svg)]()
 
 [English README](README.md)
 
@@ -26,7 +25,7 @@
 ## ✨ 主な機能
 
 ### 🚀 ユニバーサルマルチフォーマットエンジン
-アプリサイズわずか **~3.2 MB** を維持しながら、主要な電子書籍・コミック形式をすべてネイティブサポート:
+主要な電子書籍・コミック形式をすべてネイティブサポート:
 
 | カテゴリ | 対応フォーマット | 特徴 |
 | :--- | :--- | :--- |

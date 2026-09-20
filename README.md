@@ -9,7 +9,6 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-brightgreen.svg)]()
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%208.0%2B-brightgreen.svg)]()
-[![App Size](https://img.shields.io/badge/APK%20Size-~3.2%20MB-blue.svg)]()
 
 [日本語 README](README.ja.md)
 
@@ -26,7 +25,7 @@ It offers a unified reading experience across **remote Kavita server streams**, 
 ## ✨ Features & Highlights
 
 ### 🚀 Universal Multi-Format Engine
-A single, shared, non-redundant reader engine powering both local files and remote Kavita streams while keeping the app footprint ultra-compact (**~3.2 MB APK**):
+A single, shared, non-redundant reader engine powering both local files and remote Kavita streams:
 
 | Category | Formats Supported | Engine Capabilities |
 | :--- | :--- | :--- |
@@ -81,7 +80,7 @@ adb install app-arm64-v8a-release.apk
 # Debug Build
 ./gradlew assembleDebug
 
-# Release Build (Minified & Optimized ~3.2 MB)
+# Release Build (Minified & Optimized)
 ./gradlew assembleRelease
 
 # Run Unit Tests

@@ -1,8 +1,10 @@
 package com.bunko.reader.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,8 +13,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,12 +30,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bunko.reader.ui.theme.AppTheme
 import com.bunko.reader.ui.theme.LocalThemeTransitionState
 import com.bunko.reader.NavigationBarStyle
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsAppearanceScreen(
     currentTheme: AppTheme,
@@ -125,21 +136,41 @@ fun SettingsAppearanceScreen(
             )
 
             SettingsSectionCard {
-                RadioSettingRow(
-                    title = NavigationBarStyle.Standard.label,
-                    subtitle = NavigationBarStyle.Standard.description,
-                    selected = navigationBarStyle == NavigationBarStyle.Standard,
-                    onClick = { onNavigationBarStyleChanged(NavigationBarStyle.Standard) }
-                )
-
-                SettingsDivider()
-
-                RadioSettingRow(
-                    title = NavigationBarStyle.FloatingPill.label,
-                    subtitle = NavigationBarStyle.FloatingPill.description,
-                    selected = navigationBarStyle == NavigationBarStyle.FloatingPill,
-                    onClick = { onNavigationBarStyleChanged(NavigationBarStyle.FloatingPill) }
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                ) {
+                    val styles = NavigationBarStyle.entries
+                    styles.forEachIndexed { index, style ->
+                        val isSelected = navigationBarStyle == style
+                        ToggleButton(
+                            checked = isSelected,
+                            onCheckedChange = { onNavigationBarStyleChanged(style) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { role = Role.RadioButton },
+                            shapes = when (index) {
+                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                styles.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant
+                            )
+                        ) {
+                            Text(
+                                text = style.label,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
             }
         }
     }
