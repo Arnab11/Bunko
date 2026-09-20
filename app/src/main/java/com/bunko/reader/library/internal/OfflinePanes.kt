@@ -536,14 +536,21 @@ internal fun OfflineLibrariesPane(
 ) {
     val comicBooks = remember(books) { books.filter { it.format.isComic } }
     val epubBooks = remember(books) { books.filter { it.format.isEpub } }
+    val mobiBooks = remember(books) { books.filter { it.format == LocalBookFormat.MOBI || it.format == LocalBookFormat.AZW || it.format == LocalBookFormat.AZW3 } }
+    val allEbooks = remember(books) { books.filter { it.format.isReflowEbook } }
     val pdfBooks = remember(books) { books.filter { it.format.isPdf } }
 
-    var selectedFormatFilter by remember { mutableStateOf<LocalBookFormat?>(null) }
+    var selectedCategoryFilter by remember { mutableStateOf<String?>(null) }
+    var selectedCategoryTitle by remember { mutableStateOf<String?>(null) }
     var selectedFolderFilter by remember { mutableStateOf<LocalFolder?>(null) }
 
-    val displayedBooks = remember(books, selectedFormatFilter, selectedFolderFilter) {
+    val displayedBooks = remember(books, selectedCategoryFilter, selectedFolderFilter) {
         when {
-            selectedFormatFilter != null -> books.filter { it.format == selectedFormatFilter }
+            selectedCategoryFilter == "comics" -> books.filter { it.format.isComic }
+            selectedCategoryFilter == "ebooks" -> books.filter { it.format.isReflowEbook }
+            selectedCategoryFilter == "mobi" -> books.filter { it.format == LocalBookFormat.MOBI || it.format == LocalBookFormat.AZW || it.format == LocalBookFormat.AZW3 }
+            selectedCategoryFilter == "epub" -> books.filter { it.format == LocalBookFormat.EPUB }
+            selectedCategoryFilter == "pdf" -> books.filter { it.format.isPdf }
             selectedFolderFilter != null -> books.filter {
                 it.folderUriString == selectedFolderFilter?.uriString || (folders.size <= 1 && it.folderUriString.isBlank())
             }
@@ -556,10 +563,10 @@ internal fun OfflineLibrariesPane(
 
         if (isTablet) {
             // Tablet Dual Pane: Library categories on Left, Books on Right
-            val activeFilterTitle = selectedFormatFilter?.displayName
+            val activeFilterTitle = selectedCategoryTitle
                 ?: selectedFolderFilter?.name
                 ?: "All Books"
-            val tabletBooks = if (selectedFormatFilter == null && selectedFolderFilter == null) books else displayedBooks
+            val tabletBooks = if (selectedCategoryFilter == null && selectedFolderFilter == null) books else displayedBooks
 
             Row(
                 modifier = Modifier
@@ -654,7 +661,8 @@ internal fun OfflineLibrariesPane(
                             count = books.size,
                             icon = Icons.Filled.Folder,
                             onClick = {
-                                selectedFormatFilter = null
+                                selectedCategoryFilter = null
+                                selectedCategoryTitle = null
                                 selectedFolderFilter = null
                             }
                         )
@@ -678,7 +686,8 @@ internal fun OfflineLibrariesPane(
                                 count = count,
                                 icon = Icons.Filled.FolderOpen,
                                 onClick = {
-                                    selectedFormatFilter = null
+                                    selectedCategoryFilter = null
+                                    selectedCategoryTitle = null
                                     selectedFolderFilter = folder
                                 }
                             )
@@ -698,24 +707,52 @@ internal fun OfflineLibrariesPane(
                     item {
                         FormatLibraryCard(
                             title = "eBooks",
+                            subtitle = "All reflowable books",
+                            count = allEbooks.size,
+                            icon = Icons.Filled.AutoStories,
+                            onClick = {
+                                selectedFolderFilter = null
+                                selectedCategoryFilter = "ebooks"
+                                selectedCategoryTitle = "eBooks"
+                            }
+                        )
+                    }
+                    item {
+                        FormatLibraryCard(
+                            title = "MOBI / Kindle",
+                            subtitle = "MOBI, AZW, PRC e-books",
+                            count = mobiBooks.size,
+                            icon = Icons.Filled.AutoStories,
+                            onClick = {
+                                selectedFolderFilter = null
+                                selectedCategoryFilter = "mobi"
+                                selectedCategoryTitle = "MOBI / Kindle"
+                            }
+                        )
+                    }
+                    item {
+                        FormatLibraryCard(
+                            title = "EPUB",
                             subtitle = "EPUB publications",
                             count = epubBooks.size,
                             icon = Icons.Filled.AutoStories,
                             onClick = {
                                 selectedFolderFilter = null
-                                selectedFormatFilter = LocalBookFormat.EPUB
+                                selectedCategoryFilter = "epub"
+                                selectedCategoryTitle = "EPUB"
                             }
                         )
                     }
                     item {
                         FormatLibraryCard(
                             title = "Comics & Manga",
-                            subtitle = "CBZ archives",
+                            subtitle = "CBZ, CBR, ZIP archives",
                             count = comicBooks.size,
                             icon = Icons.Filled.Folder,
                             onClick = {
                                 selectedFolderFilter = null
-                                selectedFormatFilter = LocalBookFormat.CBZ
+                                selectedCategoryFilter = "comics"
+                                selectedCategoryTitle = "Comics & Manga"
                             }
                         )
                     }
@@ -727,7 +764,8 @@ internal fun OfflineLibrariesPane(
                             icon = Icons.Filled.PictureAsPdf,
                             onClick = {
                                 selectedFolderFilter = null
-                                selectedFormatFilter = LocalBookFormat.PDF
+                                selectedCategoryFilter = "pdf"
+                                selectedCategoryTitle = "PDF Documents"
                             }
                         )
                     }
@@ -771,8 +809,8 @@ internal fun OfflineLibrariesPane(
         }
 
         // Phone layout
-        if (selectedFormatFilter != null || selectedFolderFilter != null) {
-            val filterTitle = selectedFormatFilter?.displayName ?: selectedFolderFilter?.name.orEmpty()
+        if (selectedCategoryFilter != null || selectedFolderFilter != null) {
+            val filterTitle = selectedCategoryTitle ?: selectedFolderFilter?.name.orEmpty()
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier
@@ -786,7 +824,8 @@ internal fun OfflineLibrariesPane(
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier.clickable {
-                            selectedFormatFilter = null
+                            selectedCategoryFilter = null
+                            selectedCategoryTitle = null
                             selectedFolderFilter = null
                         }
                     )
@@ -944,20 +983,52 @@ internal fun OfflineLibrariesPane(
             item {
                 FormatLibraryCard(
                     title = "eBooks",
+                    subtitle = "All reflowable books",
+                    count = allEbooks.size,
+                    icon = Icons.Filled.AutoStories,
+                    onClick = {
+                        selectedCategoryFilter = "ebooks"
+                        selectedCategoryTitle = "eBooks"
+                    }
+                )
+            }
+
+            item {
+                FormatLibraryCard(
+                    title = "MOBI / Kindle",
+                    subtitle = "MOBI, AZW, PRC e-books",
+                    count = mobiBooks.size,
+                    icon = Icons.Filled.AutoStories,
+                    onClick = {
+                        selectedCategoryFilter = "mobi"
+                        selectedCategoryTitle = "MOBI / Kindle"
+                    }
+                )
+            }
+
+            item {
+                FormatLibraryCard(
+                    title = "EPUB",
                     subtitle = "EPUB publications",
                     count = epubBooks.size,
                     icon = Icons.Filled.AutoStories,
-                    onClick = { selectedFormatFilter = LocalBookFormat.EPUB }
+                    onClick = {
+                        selectedCategoryFilter = "epub"
+                        selectedCategoryTitle = "EPUB"
+                    }
                 )
             }
 
             item {
                 FormatLibraryCard(
                     title = "Comics & Manga",
-                    subtitle = "CBZ and ZIP archives",
+                    subtitle = "CBZ, CBR, ZIP archives",
                     count = comicBooks.size,
                     icon = Icons.Filled.Folder,
-                    onClick = { selectedFormatFilter = LocalBookFormat.CBZ }
+                    onClick = {
+                        selectedCategoryFilter = "comics"
+                        selectedCategoryTitle = "Comics & Manga"
+                    }
                 )
             }
 
@@ -967,7 +1038,10 @@ internal fun OfflineLibrariesPane(
                     subtitle = "Portable Document Format",
                     count = pdfBooks.size,
                     icon = Icons.Filled.PictureAsPdf,
-                    onClick = { selectedFormatFilter = LocalBookFormat.PDF }
+                    onClick = {
+                        selectedCategoryFilter = "pdf"
+                        selectedCategoryTitle = "PDF Documents"
+                    }
                 )
             }
         }

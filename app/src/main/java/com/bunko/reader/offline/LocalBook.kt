@@ -61,7 +61,7 @@ enum class LocalBookFormat {
             "rar" -> RAR
             "7z" -> SEVEN_ZIP
             "epub" -> EPUB
-            "mobi" -> MOBI
+            "mobi", "prc" -> MOBI
             "azw" -> AZW
             "azw3" -> AZW3
             "fb2" -> FB2

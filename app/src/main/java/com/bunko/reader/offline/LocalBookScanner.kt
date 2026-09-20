@@ -28,7 +28,7 @@ object LocalBookScanner {
 
     private val SupportedExtensions = setOf(
         "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z",
-        "epub", "mobi", "azw", "azw3", "fb2", "pdf", "txt", "md"
+        "epub", "mobi", "prc", "azw", "azw3", "fb2", "pdf", "txt", "md"
     )
     private val ImageExtensions = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "avif")
     private const val CoverMaxWidth = 400
@@ -75,7 +75,7 @@ object LocalBookScanner {
                         if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                             scanFolder(docId, currentDepth + 1)
                         } else {
-                            val ext = name.substringAfterLast('.', "").lowercase()
+                            val ext = name.substringAfterLast('.', "").lowercase().trim()
                             if (ext in SupportedExtensions) {
                                 val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
                                 val bookId = hashUri(fileUri.toString())
@@ -84,20 +84,20 @@ object LocalBookScanner {
                                     .replace(Regex("\\s+"), " ")
                                     .trim()
                                 val isWebtoonCandidate = com.bunko.reader.reader.internal.ReaderWebtoonDetector.isWebtoonMetadata(seriesName = cleanTitle)
-                                books.add(
-                                    LocalBook(
-                                        id = bookId,
-                                        title = cleanTitle,
-                                        uriString = fileUri.toString(),
-                                        extension = ext,
-                                        format = LocalBookFormat.fromExtension(ext),
-                                        sizeBytes = size,
-                                        lastModified = modified,
-                                        folderUriString = folderUriStr,
-                                        folderName = folderName,
-                                        isWebtoon = isWebtoonCandidate
-                                    )
+                                val localBook = LocalBook(
+                                    id = bookId,
+                                    title = cleanTitle,
+                                    uriString = fileUri.toString(),
+                                    extension = ext,
+                                    format = LocalBookFormat.fromExtension(ext),
+                                    sizeBytes = size,
+                                    lastModified = modified,
+                                    folderUriString = folderUriStr,
+                                    folderName = folderName,
+                                    isWebtoon = isWebtoonCandidate
                                 )
+                                books.add(localBook)
+                                BunkoLog.i("Found local book: ${localBook.title} (${localBook.format}, ext=$ext, size=$size)")
                             }
                         }
                     }

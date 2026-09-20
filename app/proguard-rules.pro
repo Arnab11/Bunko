@@ -41,3 +41,8 @@
 -keepclassmembers,allowobfuscation interface * {
     @retrofit2.http.* <methods>;
 }
+
+# Bunko Offline & Engine Models for Serialization
+-keep class com.bunko.reader.offline.** { *; }
+-keepclassmembers enum com.bunko.reader.offline.** { *; }
+-keep class com.bunko.reader.engine.** { *; }

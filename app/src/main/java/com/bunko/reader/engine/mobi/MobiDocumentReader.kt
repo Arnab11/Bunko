@@ -9,161 +9,127 @@ import com.bunko.reader.engine.model.TocItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.RandomAccessFile
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 data class ParsedMobi(
     val title: String,
+    val author: String? = null,
+    val publisher: String? = null,
+    val description: String? = null,
+    val language: String? = null,
     val spines: List<ReflowSpine>,
     val tableOfContents: List<TocItem>,
     val coverPath: String? = null,
     val resourceDir: File
 )
 
+/**
+ * MOBI / AZW / PalmDOC Document Reader powered by the Librera Reader parsing engine.
+ */
 object MobiDocumentReader {
 
     suspend fun parseMobi(context: Context, file: File): ParsedMobi = withContext(Dispatchers.IO) {
         val cacheKey = "mobi_${file.nameWithoutExtension.hashCode()}_${file.length()}"
         val resourceDir = File(context.cacheDir, cacheKey).apply { if (!exists()) mkdirs() }
 
-        var title = file.nameWithoutExtension
+        val parser = LibreraMobiParser(file)
+        val title = parser.getTitle().ifBlank { file.nameWithoutExtension }
+        val author = parser.getAuthor()
+        val publisher = parser.getPublisher()
+        val description = parser.getDescription()
+        val language = parser.getLanguage()
+
         val spines = mutableListOf<ReflowSpine>()
         val toc = mutableListOf<TocItem>()
         var coverPath: String? = null
 
-        RandomAccessFile(file, "r").use { raf ->
-            val numRecords = readHeaderAndRecordCount(raf)
-            if (numRecords <= 1) throw IllegalArgumentException("Invalid MOBI / PalmDoc database")
-
-            val recordOffsets = LongArray(numRecords)
-            for (i in 0 until numRecords) {
-                raf.seek(78L + i * 8L)
-                recordOffsets[i] = raf.readInt().toLong() and 0xFFFFFFFFL
+        // 1. Extract cover image
+        val coverBytes = parser.getCoverOrThumb()
+        if (coverBytes != null && coverBytes.isNotEmpty()) {
+            val coverExt = detectImageFormat(coverBytes) ?: "jpg"
+            val coverFile = File(resourceDir, "cover.$coverExt")
+            if (!coverFile.exists() || coverFile.length() == 0L) {
+                coverFile.writeBytes(coverBytes)
             }
+            coverPath = coverFile.absolutePath
+        }
 
-            // Read Record 0
-            val rec0Len = (recordOffsets[1] - recordOffsets[0]).toInt()
-            val rec0Bytes = ByteArray(rec0Len)
-            raf.seek(recordOffsets[0])
-            raf.readFully(rec0Bytes)
+        // 2. Extract embedded images
+        val allImages = parser.getAllImageRecords()
+        allImages.forEachIndexed { index, imgBytes ->
+            val ext = detectImageFormat(imgBytes) ?: "jpg"
+            val imgFile = File(resourceDir, "image_${String.format("%04d", index + 1)}.$ext")
+            if (!imgFile.exists() || imgFile.length() == 0L) {
+                imgFile.writeBytes(imgBytes)
+            }
+            if (coverPath == null) {
+                coverPath = imgFile.absolutePath
+            }
+        }
 
-            val rec0Buf = ByteBuffer.wrap(rec0Bytes).order(ByteOrder.BIG_ENDIAN)
-            val compression = rec0Buf.getShort(0).toInt() and 0xFFFF
-            val textRecordCount = rec0Buf.getShort(8).toInt() and 0xFFFF
+        // 3. Extract text content via Librera parser
+        val rawHtml = parser.getTextContent()
+        val doc = Jsoup.parse(rawHtml)
 
-            // Try to extract MOBI title
-            if (rec0Bytes.size >= 88) {
-                val mobiHeaderOffset = 16
-                val magic = String(rec0Bytes, mobiHeaderOffset + 4, 4)
-                if (magic == "MOBI") {
-                    val fullTitleOffset = rec0Buf.getInt(mobiHeaderOffset + 68)
-                    val fullTitleLength = rec0Buf.getInt(mobiHeaderOffset + 72)
-                    if (fullTitleOffset in 0 until rec0Bytes.size && fullTitleLength > 0 && fullTitleOffset + fullTitleLength <= rec0Bytes.size) {
-                        val extracted = String(rec0Bytes, fullTitleOffset, fullTitleLength).trim()
-                        if (extracted.isNotBlank()) title = extracted
-                    }
+        // Rewrite <img> tags to point to extracted resource files
+        var imgTagCounter = 1
+        doc.select("img, image, mbp\\:pagebreak").forEach { el ->
+            if (el.tagName().equals("img", ignoreCase = true)) {
+                val jpgFile = File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.jpg")
+                val pngFile = File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.png")
+                val gifFile = File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.gif")
+                val webpFile = File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.webp")
+
+                val actual = when {
+                    jpgFile.exists() -> jpgFile
+                    pngFile.exists() -> pngFile
+                    gifFile.exists() -> gifFile
+                    webpFile.exists() -> webpFile
+                    else -> null
                 }
-            }
-
-            // Decompress text records
-            val textStream = ByteArrayOutputStream()
-            val safeTextRecCount = textRecordCount.coerceIn(1, numRecords - 1)
-            for (i in 1..safeTextRecCount) {
-                val start = recordOffsets[i]
-                val end = if (i + 1 < numRecords) recordOffsets[i + 1] else file.length()
-                val len = (end - start).toInt()
-                if (len <= 0) continue
-
-                val bytes = ByteArray(len)
-                raf.seek(start)
-                raf.readFully(bytes)
-
-                when (compression) {
-                    1 -> textStream.write(bytes) // None
-                    2 -> decompressPalmDoc(bytes, textStream) // PalmDOC LZ77
-                    else -> textStream.write(bytes)
+                if (actual != null) {
+                    el.attr("src", actual.absolutePath)
                 }
+                imgTagCounter++
             }
+        }
 
-            // Extract images from subsequent records
-            var imageIndex = 1
-            for (i in (safeTextRecCount + 1) until numRecords) {
-                val start = recordOffsets[i]
-                val end = if (i + 1 < numRecords) recordOffsets[i + 1] else file.length()
-                val len = (end - start).toInt()
-                if (len < 16) continue
-
-                val bytes = ByteArray(len)
-                raf.seek(start)
-                raf.readFully(bytes)
-
-                val ext = detectImageFormat(bytes)
-                if (ext != null) {
-                    val imgFile = File(resourceDir, "image_${String.format("%04d", imageIndex)}.$ext")
-                    if (!imgFile.exists() || imgFile.length() == 0L) {
-                        imgFile.writeBytes(bytes)
-                    }
-                    if (coverPath == null) coverPath = imgFile.absolutePath
-                    imageIndex++
-                }
-            }
-
-            val rawHtml = textStream.toString("UTF-8").ifEmpty { textStream.toString("ISO-8859-1") }
-            val doc = Jsoup.parse(rawHtml)
-
-            // Rewrite <img> tags to local images
-            var imgCount = 1
-            doc.select("img, image, mbp\\:pagebreak").forEach { el ->
-                if (el.tagName().equals("img", ignoreCase = true)) {
-                    val imgFile = File(resourceDir, "image_${String.format("%04d", imgCount)}.jpg")
-                    val pngFile = File(resourceDir, "image_${String.format("%04d", imgCount)}.png")
-                    val actual = if (imgFile.exists()) imgFile else if (pngFile.exists()) pngFile else null
-                    if (actual != null) {
-                        el.attr("src", actual.absolutePath)
-                    }
-                    imgCount++
-                }
-            }
-
-            // Split into chapters by <mbp:pagebreak>, <h1>, <h2> or chunk size
-            val body = doc.body()
-            val sections = doc.select("div.chapter, section, mbp\\:pagebreak")
-            if (sections.isNotEmpty()) {
-                var currentSpineIdx = 0
-                val chapters = rawHtml.split(Regex("(?i)<mbp:pagebreak[^>]*>|(?i)<div class=[\"']chapter[\"']>"))
-                chapters.forEachIndexed { idx, chunk ->
-                    if (chunk.isNotBlank()) {
-                        spines.add(
-                            ReflowSpine(
-                                id = "mobi_spine_$idx",
-                                spineIndex = idx,
-                                title = "Chapter ${idx + 1}",
-                                rawHtml = chunk
-                            )
+        // 4. Split chapters by pagebreaks or headings
+        val chapters = rawHtml.split(Regex("(?i)<mbp:pagebreak[^>]*>|(?i)<div class=[\"']chapter[\"']>"))
+        if (chapters.size > 1) {
+            chapters.forEachIndexed { idx, chunk ->
+                if (chunk.isNotBlank()) {
+                    spines.add(
+                        ReflowSpine(
+                            id = "mobi_spine_$idx",
+                            spineIndex = idx,
+                            title = "Chapter ${idx + 1}",
+                            rawHtml = chunk
                         )
-                        toc.add(TocItem("Chapter ${idx + 1}", idx))
-                    }
+                    )
+                    toc.add(TocItem("Chapter ${idx + 1}", idx))
                 }
             }
+        }
 
-            if (spines.isEmpty()) {
-                spines.add(
-                    ReflowSpine(
-                        id = "mobi_spine_0",
-                        spineIndex = 0,
-                        title = title,
-                        rawHtml = doc.outerHtml()
-                    )
+        if (spines.isEmpty()) {
+            spines.add(
+                ReflowSpine(
+                    id = "mobi_spine_0",
+                    spineIndex = 0,
+                    title = title,
+                    rawHtml = doc.outerHtml()
                 )
-                toc.add(TocItem(title, 0))
-            }
+            )
+            toc.add(TocItem(title, 0))
         }
 
         ParsedMobi(
             title = title,
+            author = author,
+            publisher = publisher,
+            description = description,
+            language = language,
             spines = spines,
             tableOfContents = toc,
             coverPath = coverPath,
@@ -178,99 +144,30 @@ object MobiDocumentReader {
         maxHeight: Int = 600
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            RandomAccessFile(file, "r").use { raf ->
-                val numRecords = readHeaderAndRecordCount(raf)
-                if (numRecords <= 1) return@use null
+            val parser = LibreraMobiParser(file)
+            val bytes = parser.getCoverOrThumb() ?: return@withContext null
 
-                val recordOffsets = LongArray(numRecords)
-                for (i in 0 until numRecords) {
-                    raf.seek(78L + i * 8L)
-                    recordOffsets[i] = raf.readInt().toLong() and 0xFFFFFFFFL
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+
+            var sampleSize = 1
+            if (bounds.outHeight > maxHeight || bounds.outWidth > maxWidth) {
+                val halfH = bounds.outHeight / 2
+                val halfW = bounds.outWidth / 2
+                while ((halfH / sampleSize) >= maxHeight && (halfW / sampleSize) >= maxWidth) {
+                    sampleSize *= 2
                 }
-
-                // Check first few image records
-                for (i in 1 until numRecords.coerceAtMost(50)) {
-                    val start = recordOffsets[i]
-                    val end = if (i + 1 < numRecords) recordOffsets[i + 1] else file.length()
-                    val len = (end - start).toInt()
-                    if (len < 32) continue
-
-                    val bytes = ByteArray(len)
-                    raf.seek(start)
-                    raf.readFully(bytes)
-
-                    if (detectImageFormat(bytes) != null) {
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-
-                        var sampleSize = 1
-                        if (bounds.outHeight > maxHeight || bounds.outWidth > maxWidth) {
-                            val halfH = bounds.outHeight / 2
-                            val halfW = bounds.outWidth / 2
-                            while ((halfH / sampleSize) >= maxHeight && (halfW / sampleSize) >= maxWidth) {
-                                sampleSize *= 2
-                            }
-                        }
-
-                        val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize.coerceAtLeast(1) }
-                        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
-                        if (bmp != null) return@use bmp
-                    }
-                }
-                null
             }
+
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize.coerceAtLeast(1)
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
         } catch (t: Throwable) {
             BunkoLog.w("Failed to extract MOBI cover from ${file.name}", t)
             null
-        }
-    }
-
-    private fun readHeaderAndRecordCount(raf: RandomAccessFile): Int {
-        raf.seek(76)
-        return raf.readShort().toInt() and 0xFFFF
-    }
-
-    private fun decompressPalmDoc(src: ByteArray, out: ByteArrayOutputStream) {
-        var i = 0
-        while (i < src.size) {
-            val b = src[i].toInt() and 0xFF
-            i++
-            when {
-                b == 0 -> {} // literal null
-                b in 1..8 -> {
-                    // copy literal b bytes
-                    val count = b
-                    if (i + count <= src.size) {
-                        out.write(src, i, count)
-                        i += count
-                    }
-                }
-                b in 9..0x7F -> {
-                    // literal character
-                    out.write(b)
-                }
-                b in 0x80..0xBF -> {
-                    // distance & length pair
-                    if (i < src.size) {
-                        val b2 = src[i].toInt() and 0xFF
-                        i++
-                        val distance = (((b and 0x3F) shl 3) or (b2 shr 5)) + 1
-                        val length = (b2 and 0x07) + 3
-                        val currentBytes = out.toByteArray()
-                        val copyStart = currentBytes.size - distance
-                        if (copyStart >= 0) {
-                            for (k in 0 until length) {
-                                out.write(currentBytes[(copyStart + (k % distance))].toInt() and 0xFF)
-                            }
-                        }
-                    }
-                }
-                b >= 0xC0 -> {
-                    // space followed by char
-                    out.write(' '.code)
-                    out.write(b xor 0x80)
-                }
-            }
         }
     }
 

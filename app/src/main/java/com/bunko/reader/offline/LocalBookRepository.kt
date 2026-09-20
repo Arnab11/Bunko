@@ -28,7 +28,12 @@ private val Context.localBooksDataStore by preferencesDataStore("local_books_pre
 class LocalBookRepository(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+        encodeDefaults = true
+    }
 
     private val KEY_FOLDERS_JSON = stringPreferencesKey("local_library_folders_json")
     private val KEY_FOLDER_URI = stringPreferencesKey("default_folder_uri")

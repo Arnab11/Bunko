@@ -108,4 +108,41 @@ class UniversalReaderEngineTest {
         assertEquals("Chapter 2", parsed.spines[1].title)
         assertTrue(parsed.spines[0].rawHtml.contains("digital library"))
     }
+
+    @Test
+    fun testByteArrayBufferAndLz77() {
+        val buffer = com.bunko.reader.engine.mobi.ByteArrayBuffer(16)
+        buffer.write("Hello ".toByteArray())
+        buffer.write("World".toByteArray())
+        assertEquals("Hello World", buffer.toString())
+        assertEquals(11, buffer.size())
+
+        // Test LZ77 literal byte decompression
+        val rawBytes = byteArrayOf(
+            5, 'B'.code.toByte(), 'u'.code.toByte(), 'n'.code.toByte(), 'k'.code.toByte(), 'o'.code.toByte(),
+            ' '.code.toByte(),
+            (0xC0 or 'R'.code).toByte() // Space followed by char
+        )
+        val decompressed = com.bunko.reader.engine.mobi.LibreraMobiParser.lz77(rawBytes)
+        val resultStr = String(decompressed)
+        assertEquals("Bunko  R", resultStr)
+    }
+
+    @Test
+    fun testRealMobiFile() {
+        val file = File("src/test/resources/sample.mobi")
+        if (file.exists()) {
+            val parser = com.bunko.reader.engine.mobi.LibreraMobiParser(file)
+            println("MOBI Title: ${parser.getTitle()}")
+            println("MOBI Author: ${parser.getAuthor()}")
+            println("MOBI Records: ${parser.recordsCount}")
+            println("MOBI firstImageIndex: ${parser.firstImageIndex}")
+            println("MOBI lastContentIndex: ${parser.lastContentIndex}")
+            val text = parser.getTextContent()
+            println("MOBI text length: ${text.length}")
+            val cover = parser.getCoverOrThumb()
+            println("MOBI cover: ${cover?.size} bytes")
+            assertTrue(text.isNotEmpty())
+        }
+    }
 }
