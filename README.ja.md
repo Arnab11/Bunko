@@ -30,13 +30,13 @@
 | カテゴリ | 対応フォーマット | 特徴 |
 | :--- | :--- | :--- |
 | **コミック・漫画** | `.cbz`, `.cbr`, `.cb7`, `.cbt`, `.zip`, `.rar`, `.7z`, `.tar`, 画像フォルダ | 自然順ソート、ComicInfo.xml メタデータ解析、アーカイブ形式の自動検出フォールバック。 |
-| **リフロー型電子書籍** | `.epub` (EPUB 2 & 3), `.mobi`, `.azw`, `.azw3`, `.fb2`, `.txt`, `.md` | Pure-Java PalmDOC LZ77 伸張 (Librera 由来)、OPF/NCX スパイン解決、ルビ・傍点・リストの忠実な再現。 |
+| **リフロー型電子書籍** | `.epub` (EPUB 2 & 3), `.mobi`, `.azw`, `.azw3`, `.fb2`, `.txt`, `.md` | PalmDOC LZ77 伸張 (Librera 由来)、OPF/NCX スパイン解決、ルビ・傍点・リストの忠実な再現。 |
 | **ドキュメント** | `.pdf` | ハードウェアアクセラレーションによる高解像度スレッドセーフ PDF レンダリング。 |
 
 ---
 
 ### 🎨 読書体験とエルゴノミクス
-- **PlayCurl 3D OpenGL リアルページめくり**: ベジエシャドウとスムーズなドラッグ操作による本物の紙のような 3D めくり体験。
+- **PlayCurl 3D OpenGL リアルページめくり**: Pure Kotlin Jetpack Compose による 3D カール物理と遅延ゼロの連続めくり。
 - **Webtoon 連続縦スクロール**: 75% 画面高タップスクロールおよび左右余白設定に対応。
 - **Auto Webtoon 自動判定**: ComicInfo タグ、タイトルキーワード、画像アスペクト比による縦スクロール自動切り替え。
 - **Material Expressive Wavy プログレスバー**: 正弦波状のシークバーとフローティングバブルインジケータ (右開き/左開き対応)。
@@ -54,8 +54,8 @@ Bunko は数多くの優れたオープンソースプロジェクトと開発�
 
 | プロジェクト | 作者 / チーム | ライセンス | Bunko での役割 |
 | :--- | :--- | :--- | :--- |
-| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | Pure-Java PalmDOC LZ77 伸張、EXTH メタデータ解析、MOBI/AZW ストリーミングレコードパーサー (`LibreraMobiParser`, `ByteArrayBuffer`)。 |
-| **[PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl)** | [Darkaxt](https://github.com/Darkaxt) / [karankalsi](https://github.com/karankalsi) | MIT | 3D OpenGL ページカール物理エンジンおよびリアルタイムめくり描画。 |
+| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | PalmDOC LZ77 伸張、EXTH メタデータ解析、MOBI/AZW ストリーミングレコードパーサー (`LibreraMobiParser`, `ByteArrayBuffer`)。 |
+| **[PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl)** | [Darkaxt](https://github.com/Darkaxt) / [karankalsi](https://github.com/karankalsi) | MIT | Kotlin Compose へ移植された 3D OpenGL ページカール物理エンジンおよび遅延ゼロめくり描画。 |
 | **[Mihon](https://github.com/mihonapp/mihon)** | [Mihon Open Source Project](https://github.com/mihonapp) | Apache-2.0 | タップゾーン設定、タップ反転、画像スケーリング、余白自動クロップ、Webtoon 縦スクロール設計。 |
 | **[Kavita](https://www.kavitareader.com/)** | [Kavita Team](https://github.com/Kareadita/Kavita) | GPL-3.0 | セルフホスト型デジタルライブラリサーバーおよび API 仕様。 |
 | **[Jsoup](https://jsoup.org/)** | [Jonathan Hedley](https://github.com/jhy) | MIT | HTML DOM 解析、EPUB / MOBI / FB2 チャプター分割、ルビ抽出。 |

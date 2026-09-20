@@ -30,13 +30,13 @@ A single, shared, non-redundant reader engine powering both local files and remo
 | Category | Formats Supported | Engine Capabilities |
 | :--- | :--- | :--- |
 | **Comics & Manga** | `.cbz`, `.cbr`, `.cb7`, `.cbt`, `.zip`, `.rar`, `.7z`, `.tar`, image folders | Natural numeric entry sorting, ComicInfo.xml metadata inspection, automatic archive fallback. |
-| **Reflowable E-Books** | `.epub` (EPUB 2 & 3), `.mobi`, `.azw`, `.azw3`, `.fb2`, `.txt`, `.md` | Pure-Java PalmDOC LZ77 decompressor (Librera), OPF/NCX spine resolver, Ruby/Furigana text formatting. |
+| **Reflowable E-Books** | `.epub` (EPUB 2 & 3), `.mobi`, `.azw`, `.azw3`, `.fb2`, `.txt`, `.md` | PalmDOC LZ77 decompressor (Librera), OPF/NCX spine resolver, Ruby/Furigana text formatting. |
 | **Documents** | `.pdf` | High-DPI hardware-accelerated thread-safe PDF renderer. |
 
 ---
 
 ### 🎨 Reading Ergonomics & UI
-- **PlayCurl 3D OpenGL Page Turn**: Realistic 3D curl physics with Bezier shadows and smooth gesture drag.
+- **PlayCurl 3D OpenGL Page Turn**: Pure Kotlin Jetpack Compose 3D curl physics with Bezier shadows and instant zero-delay consecutive turns.
 - **Continuous Webtoon Scroll**: Seamless vertical scrolling with tap-to-scroll viewport jumping (75%) and adjustable side margins.
 - **Auto Webtoon Detection**: Automatic manhwa/webtoon identification via title heuristics, ComicInfo tags, and aspect ratio analysis.
 - **Material Expressive Wavy Progress Bar**: Wavy sinusoidal page seekbar with interactive value bubbles and RTL/Manga direction support.
@@ -95,8 +95,8 @@ Bunko is built with open source and stands on the shoulders of incredible projec
 
 | Project | Author / Team | License | Role in Bunko |
 | :--- | :--- | :--- | :--- |
-| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | Pure-Java PalmDOC LZ77 decompression, EXTH metadata, and streaming MOBI/AZW record parser (`LibreraMobiParser`, `ByteArrayBuffer`). |
-| **[PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl)** | [Darkaxt](https://github.com/Darkaxt) / [karankalsi](https://github.com/karankalsi) | MIT | 3D OpenGL page-curl physics engine and realistic turn rendering. |
+| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | PalmDOC LZ77 decompression, EXTH metadata, and streaming MOBI/AZW record parser (`LibreraMobiParser`, `ByteArrayBuffer`). |
+| **[PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl)** | [Darkaxt](https://github.com/Darkaxt) / [karankalsi](https://github.com/karankalsi) | MIT | 3D OpenGL page-curl physics engine migrated to Kotlin Compose with instant turn rendering. |
 | **[Mihon](https://github.com/mihonapp/mihon)** | [Mihon Open Source Project](https://github.com/mihonapp) | Apache-2.0 | Tap navigation zones, tap inversion modes, scale types, scan border cropping, and webtoon continuous scrolling ergonomics. |
 | **[Kavita](https://www.kavitareader.com/)** | [Kavita Team](https://github.com/Kareadita/Kavita) | GPL-3.0 | Self-hosted digital library server and REST API specification. |
 | **[Jsoup](https://jsoup.org/)** | [Jonathan Hedley](https://github.com/jhy) | MIT | HTML DOM manipulation, EPUB / MOBI / FB2 chapter splitting, and Ruby/Furigana text parsing. |
