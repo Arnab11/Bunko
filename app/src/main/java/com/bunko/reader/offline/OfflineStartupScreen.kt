@@ -374,7 +374,7 @@ fun OfflineStartupScreen(
                         }
 
                         Text(
-                            text = "Read EPUB, CBZ, ZIP, and PDF files directly from your device storage with zero internet required.",
+                            text = "Read EPUB, MOBI, Comics (CBZ/CBR), and PDF files directly from your device storage with zero internet required.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

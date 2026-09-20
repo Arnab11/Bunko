@@ -1471,7 +1471,7 @@ fun EmptyLibraryState(
                 text = if (hasBooksOverall) {
                     "Try adjusting your search query."
                 } else {
-                    "Choose a folder containing CBZ, ZIP, EPUB, or PDF files to get started."
+                    "Choose a folder containing EPUB, MOBI, Comics, or PDF files to get started."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

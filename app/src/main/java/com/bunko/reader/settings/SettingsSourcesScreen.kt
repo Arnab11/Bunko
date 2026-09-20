@@ -227,7 +227,7 @@ fun SettingsSourcesScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Directories scanned for EPUB, CBZ, and PDF books",
+                                text = "Directories scanned for EPUB, MOBI, Comics, and PDF books",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
