@@ -35,6 +35,10 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
       # Optional release signing, same secret contract as mpvRx:
       # SIGNING_KEYSTORE (base64), SIGNING_KEY_ALIAS, SIGNING_STORE_PASSWORD,
       # KEY_PASSWORD. Gradle signs the per-ABI release APKs directly when they
@@ -83,7 +87,7 @@ jobs:
       - name: Upload universal release APK
         uses: actions/upload-artifact@v7
         with:
-          name: Bunko-universal-${{ github.sha }}
+          name: Bunko-universal-release-${{ steps.sha.outputs.short }}
           path: app/build/outputs/apk/release/app-universal-release.apk
           retention-days: 14
           compression-level: 0
@@ -92,7 +96,7 @@ jobs:
       - name: Upload arm64-v8a release APK
         uses: actions/upload-artifact@v7
         with:
-          name: Bunko-arm64-v8a-${{ github.sha }}
+          name: Bunko-arm64-v8a-release-${{ steps.sha.outputs.short }}
           path: app/build/outputs/apk/release/app-arm64-v8a-release.apk
           retention-days: 14
           compression-level: 0
@@ -101,7 +105,7 @@ jobs:
       - name: Upload armeabi-v7a release APK
         uses: actions/upload-artifact@v7
         with:
-          name: Bunko-armeabi-v7a-${{ github.sha }}
+          name: Bunko-armeabi-v7a-release-${{ steps.sha.outputs.short }}
           path: app/build/outputs/apk/release/app-armeabi-v7a-release.apk
           retention-days: 14
           compression-level: 0
@@ -110,7 +114,7 @@ jobs:
       - name: Upload x86 release APK
         uses: actions/upload-artifact@v7
         with:
-          name: Bunko-x86-${{ github.sha }}
+          name: Bunko-x86-release-${{ steps.sha.outputs.short }}
           path: app/build/outputs/apk/release/app-x86-release.apk
           retention-days: 14
           compression-level: 0
@@ -119,7 +123,7 @@ jobs:
       - name: Upload x86_64 release APK
         uses: actions/upload-artifact@v7
         with:
-          name: Bunko-x86_64-${{ github.sha }}
+          name: Bunko-x86_64-release-${{ steps.sha.outputs.short }}
           path: app/build/outputs/apk/release/app-x86_64-release.apk
           retention-days: 14
           compression-level: 0
