@@ -36,7 +36,10 @@ data class BunkoRelease(
     @SerialName("body") val body: String = "",
     @SerialName("published_at") val publishedAt: String = "",
     @SerialName("prerelease") val prerelease: Boolean = false,
-    @SerialName("assets") val assets: List<UpdateAsset> = emptyList()
+    @SerialName("assets") val assets: List<UpdateAsset> = emptyList(),
+    @SerialName("commit_count") val commitCount: Int? = null,
+    @SerialName("commit_sha") val commitSha: String? = null,
+    @SerialName("channel") val channel: String? = null
 )
 
 enum class UpdateChannel {
@@ -77,10 +80,24 @@ class BunkoUpdateManager(context: Context) {
         val current = currentVersion()
         val newer = when (channel) {
             UpdateChannel.STABLE -> current != null && isVersionNewer(release.tagName, current)
-            UpdateChannel.PREVIEW -> current != null && isPreviewNewer(release.tagName, current)
+            UpdateChannel.PREVIEW -> current != null && isPreviewReleaseNewer(release, current)
         }
         if (newer) release else null
     }
+
+    private fun isPreviewReleaseNewer(release: BunkoRelease, current: String): Boolean {
+        // Manifest model (mpvRx-style): the preview feed carries a commit count
+        // compared against this build's GIT_COUNT.
+        val remoteCount = release.commitCount ?: parsePreviewCount(release.tagName)
+        if (remoteCount != null) {
+            return remoteCount > com.bunko.reader.BuildConfig.GIT_COUNT
+        }
+        // Fallback for hand-cut prereleases without a count: tag comparison.
+        return isPreviewNewer(release.tagName, current)
+    }
+
+    private fun parsePreviewCount(tagName: String): Int? =
+        PreviewBuildRegex.find(tagName)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
     fun ignoreVersion(version: String, channel: UpdateChannel) {
         prefs.edit().putString(ignoredVersionKey(channel), version).apply()
@@ -143,12 +160,29 @@ class BunkoUpdateManager(context: Context) {
     }
 
     private suspend fun getLatestPrerelease(): BunkoRelease? = withContext(Dispatchers.IO) {
+        // Primary feed: the auto-built preview manifest published to Pages.
+        fetchPreviewManifest()?.let { return@withContext it }
+        // Fallback: the newest hand-cut GitHub prerelease.
         val request = releaseRequest(ReleasesListUrl)
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Unexpected code $response")
             val body = response.body?.string() ?: throw IOException("Empty response")
             json.decodeFromString<List<BunkoRelease>>(body)
                 .firstOrNull { it.prerelease && it.tagName.isNotBlank() }
+        }
+    }
+
+    private suspend fun fetchPreviewManifest(): BunkoRelease? = withContext(Dispatchers.IO) {
+        val request = releaseRequest(PreviewManifestUrl)
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                runCatching { json.decodeFromString<BunkoRelease>(body) }.getOrNull()
+                    ?.takeIf { it.tagName.isNotBlank() }
+            }
+        } catch (t: IOException) {
+            null
         }
     }
 
@@ -163,13 +197,16 @@ class BunkoUpdateManager(context: Context) {
     }
 
     private fun selectBestApkAsset(assets: List<UpdateAsset>): UpdateAsset? {
-        val apkAssets = assets.filter {
-            it.name.endsWith(".apk", ignoreCase = true) && it.downloadUrl.isNotBlank()
+        val deviceArch = primaryDeviceAbi()
+        return selectBunkoApkAsset(assets, deviceArch)
+    }
+
+    private fun primaryDeviceAbi(): String {
+        val primaryAbi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: return "universal"
+        return when (primaryAbi) {
+            "arm64-v8a", "armeabi-v7a", "x86", "x86_64" -> primaryAbi
+            else -> "universal"
         }
-        // Prefer a universal APK, then any APK (Bunko ships one variant).
-        return apkAssets.firstOrNull {
-            it.name.contains("universal", ignoreCase = true)
-        } ?: apkAssets.firstOrNull()
     }
 
     private fun downloadApk(url: String, destination: File): Flow<Float> = flow {
@@ -208,6 +245,8 @@ class BunkoUpdateManager(context: Context) {
             "https://api.github.com/repos/Arnab11/Bunko/releases/latest"
         const val ReleasesListUrl =
             "https://api.github.com/repos/Arnab11/Bunko/releases?per_page=20"
+        const val PreviewManifestUrl =
+            "https://arnab11.github.io/Bunko/latest.json"
 
         val json = Json { ignoreUnknownKeys = true }
         val client = OkHttpClient.Builder()
@@ -215,6 +254,27 @@ class BunkoUpdateManager(context: Context) {
             .build()
     }
 }
+
+/**
+ * Picks the best release APK for [deviceArch] (mpvRx-style): an arch-specific
+ * `Bunko-<abi>-<tag>.apk` first, then the universal build, then any APK.
+ */
+internal fun selectBunkoApkAsset(assets: List<UpdateAsset>, deviceArch: String): UpdateAsset? {
+    val apkAssets = assets.filter {
+        it.name.endsWith(".apk", ignoreCase = true) && it.downloadUrl.isNotBlank()
+    }
+    apkAssets.firstOrNull { it.name.hasAssetToken(deviceArch) }?.let { return it }
+    apkAssets.firstOrNull { it.name.hasAssetToken("universal") }?.let { return it }
+    return apkAssets.firstOrNull { asset ->
+        KnownAbis.none { abi -> asset.name.hasAssetToken(abi) }
+    } ?: apkAssets.firstOrNull()
+}
+
+private val KnownAbis = setOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+
+private fun String.hasAssetToken(token: String): Boolean =
+    Regex("(?:^|-)${Regex.escape(token)}(?:-|\\.apk$)", RegexOption.IGNORE_CASE)
+        .containsMatchIn(this)
 
 fun isVersionNewer(candidate: String, current: String): Boolean {
     val candidateParts = candidate.versionParts() ?: return false
@@ -256,6 +316,13 @@ fun isPreviewNewer(candidate: String, current: String): Boolean {
 }
 
 private val PreviewTagRegex = Regex("""preview\.(\d+)""", RegexOption.IGNORE_CASE)
+
+/** Preview build number from a manifest tag (`preview-r123`) or hand-cut tag. */
+internal fun BunkoRelease.previewBuildNumber(): Int? =
+    commitCount ?: PreviewTagRegex.find(tagName)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        ?: PreviewBuildRegex.find(tagName)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+private val PreviewBuildRegex = Regex("""(?:preview-)?r(\d+)""", RegexOption.IGNORE_CASE)
 
 private fun String.previewNumber(): Int {
     val base = trim().removePrefix("v").removePrefix("V")

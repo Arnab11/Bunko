@@ -1,13 +1,17 @@
-name: Make release
+name: Make Pre Release
+
+# Hand-cut beta channel: pushing a v0.24-preview.1 tag publishes the preview
+# build type as a GitHub prerelease. (The scheduled preview.yml covers the
+# automatic per-commit previews.)
 
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+-preview.[0-9]+"
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Tag to release (e.g. v0.24; previews use Make Pre Release)"
+        description: "Preview tag to release (e.g. v0.24-preview.1)"
         required: true
         type: string
 
@@ -18,7 +22,7 @@ env:
   APKS: universal arm64-v8a armeabi-v7a x86 x86_64
 
 jobs:
-  release-for-github:
+  pre-release-for-github:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -48,16 +52,13 @@ jobs:
           else
             VERSION_TAG="${GITHUB_REF#refs/tags/}"
           fi
-          if ! echo "$VERSION_TAG" | grep -Eq '^v[0-9]+\.[0-9]+$'; then
-            echo "::error::Tag must look like v0.24 (got: $VERSION_TAG)."
+          if ! echo "$VERSION_TAG" | grep -Eq '^v[0-9]+\.[0-9]+-preview\.[0-9]+$'; then
+            echo "::error::Tag must look like v0.24-preview.1 (got: $VERSION_TAG)."
             exit 1
           fi
           echo "tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
-      # Release signing is mandatory here (unlike CI builds): all four secrets
-      # must be present, mirroring the mpvRx release contract. Gradle signs
-      # the per-ABI APKs directly via keystore.properties.
-      - name: Configure release signing
+      - name: Configure preview signing
         env:
           SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
@@ -65,7 +66,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$SIGNING_KEYSTORE" ] || [ -z "$SIGNING_KEY_ALIAS" ] || [ -z "$SIGNING_STORE_PASSWORD" ] || [ -z "$KEY_PASSWORD" ]; then
-            echo "::error::Release signing requires SIGNING_KEYSTORE, SIGNING_KEY_ALIAS, SIGNING_STORE_PASSWORD and KEY_PASSWORD secrets."
+            echo "::error::Preview signing requires SIGNING_KEYSTORE, SIGNING_KEY_ALIAS, SIGNING_STORE_PASSWORD and KEY_PASSWORD secrets."
             exit 1
           fi
           echo "$SIGNING_KEYSTORE" | base64 --decode > release.keystore
@@ -76,41 +77,54 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
 
-      - name: Build signed per-ABI release APKs
-        run: ./gradlew assembleRelease --stacktrace --no-daemon --max-workers=2
+      - name: Build preview APKs
+        run: ./gradlew assemblePreview --stacktrace --no-daemon --max-workers=2
 
-      - name: Verify APK signatures
+      - name: Sign and verify preview APKs
+        shell: bash
         run: |
+          set -euo pipefail
+          apksigner="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          printf '%s' "${{ secrets.SIGNING_KEYSTORE }}" | base64 --decode > release.keystore
           for abi in $APKS; do
-            f="app/build/outputs/apk/release/app-${abi}-release.apk"
-            if [ ! -f "$f" ]; then
-              echo "::error::Missing expected APK: $f"
+            unsigned="app/build/outputs/apk/preview/app-${abi}-preview-unsigned.apk"
+            signed="app/build/outputs/apk/preview/app-${abi}-preview.apk"
+            if [[ ! -f "$unsigned" ]]; then
+              echo "::error::Missing expected APK: $unsigned"
               exit 1
             fi
-            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$f"
+            "$apksigner" sign \
+              --ks release.keystore \
+              --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+              --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
+              --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+              --out "$signed" \
+              "$unsigned"
+            "$apksigner" verify --verbose "$signed"
+            rm -f "$unsigned"
           done
 
-      - name: Stage release assets
+      - name: Stage pre-release assets
         env:
           VERSION_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          mkdir -p release-assets
+          mkdir -p preview
           for abi in $APKS; do
-            cp "app/build/outputs/apk/release/app-${abi}-release.apk" "release-assets/Bunko-${abi}-${VERSION_TAG}.apk"
+            cp "app/build/outputs/apk/preview/app-${abi}-preview.apk" "preview/Bunko-preview-${abi}-${VERSION_TAG}.apk"
           done
           rm -f release.keystore keystore.properties
-          (cd release-assets && sha256sum ./*.apk > checksums.txt)
-          cat release-assets/checksums.txt
+          (cd preview && sha256sum ./*.apk > checksums.txt)
+          cat preview/checksums.txt
 
-      - name: Create GitHub release
+      - name: Create GitHub pre-release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Bunko ${{ steps.version.outputs.tag }}
           generate_release_notes: true
           draft: false
-          prerelease: false
+          prerelease: true
           fail_on_unmatched_files: true
           files: |
-            release-assets/Bunko-*.apk
-            release-assets/checksums.txt
+            preview/Bunko-*.apk
+            preview/checksums.txt

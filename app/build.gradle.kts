@@ -1,3 +1,4 @@
+import com.android.build.api.variant.FilterConfiguration
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -6,6 +7,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
+
+// Version bands (mpvRx-style): stable occupies the top of its band, preview
+// uses the next band offset by commit count, so the upgrade path
+// Stable -> Preview -> newer Preview -> next Stable always increases.
+// Bump releaseVersionCode with every stable release.
+val releaseVersionCode = 1
+val versionCodeBandSize = 10_000
+val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
+val previewVersionCode =
+    (releaseVersionCode + 1) * versionCodeBandSize +
+        (getCommitCount().toIntOrNull() ?: 1).coerceIn(1, versionCodeBandSize - 2)
 
 // Release signing is configured via a git-ignored keystore.properties at the repo
 // root. When it's absent (e.g. fresh clone / CI without secrets), release builds
@@ -29,10 +41,13 @@ android {
         applicationId = "com.bunko.reader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
+        versionCode = stableVersionCode
         versionName = "0.23"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "GIT_SHA", "\"${getCommitSha()}\"")
+        buildConfigField("int", "GIT_COUNT", getCommitCount())
     }
 
     signingConfigs {
@@ -46,12 +61,29 @@ android {
         }
     }
 
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
+        }
+        create("preview") {
+            initWith(getByName("release"))
+            signingConfig = null
+            buildConfigField("boolean", "IS_PREVIEW_BUILD", "true")
+            versionNameSuffix = "-beta.r${getCommitCount()}"
         }
         release {
+            buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -65,12 +97,38 @@ android {
             }
         }
     }
+
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
     buildFeatures {
+        buildConfig = true
         compose = true
+    }
+
+    // Per-ABI version codes (mpvRx-style): keeps every split output on a
+    // distinct, ordered code within its channel band.
+    androidComponents {
+        val abiCodes = mapOf(
+            "universal" to 0,
+            "armeabi-v7a" to 1,
+            "arm64-v8a" to 2,
+            "x86" to 3,
+            "x86_64" to 4
+        )
+        onVariants { variant ->
+            val channelVersionCode =
+                if (variant.buildType == "preview") previewVersionCode
+                else (variant.outputs.mapNotNull { it.versionCode.getOrNull() }.firstOrNull() ?: stableVersionCode)
+            variant.outputs.forEach { output ->
+                val abi = output.filters
+                    .find { it.filterType == FilterConfiguration.FilterType.ABI }
+                    ?.identifier
+                output.versionCode.set(channelVersionCode * 10 + (abiCodes[abi] ?: 0))
+            }
+        }
     }
 }
 
@@ -100,3 +158,22 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+// ---------------- Git helpers ----------------
+
+fun getCommitCount(): String = runCommand("git rev-list --count HEAD") ?: "0"
+
+fun getCommitSha(): String = runCommand("git rev-parse --short HEAD") ?: "unknown"
+
+fun runCommand(command: String): String? =
+    try {
+        val parts = command.split(' ')
+        val process = ProcessBuilder(parts)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        process.waitFor()
+        output.ifBlank { null }
+    } catch (_: Exception) {
+        null
+    }

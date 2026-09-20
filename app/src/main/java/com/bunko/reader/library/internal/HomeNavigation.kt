@@ -94,9 +94,15 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.sp
+import com.bunko.reader.BuildConfig
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import com.bunko.reader.CollectionDto
@@ -812,7 +818,20 @@ internal fun HomeTopBar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = title,
+                    text = buildAnnotatedString {
+                        append(title)
+                        if (BuildConfig.IS_PREVIEW_BUILD) {
+                            withStyle(
+                                SpanStyle(
+                                    fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                                    fontWeight = FontWeight.SemiBold,
+                                    baselineShift = BaselineShift.Superscript
+                                )
+                            ) {
+                                append(" (Beta)")
+                            }
+                        }
+                    },
                     color = MaterialTheme.colorScheme.primary,
                     style = if (onBack == null) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,

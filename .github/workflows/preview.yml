@@ -1,0 +1,236 @@
+name: Preview Build
+
+# Auto-built beta channel (mpvRx-style): every 30 minutes, publish preview
+# APKs to GitHub Pages with a latest.json manifest when app sources changed.
+# The app's Preview update channel reads that manifest.
+# Prerequisite (one time): repo Settings -> Pages -> Source: GitHub Actions.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: bunko-preview-pages
+  cancel-in-progress: true
+
+env:
+  APKS: universal arm64-v8a armeabi-v7a x86 x86_64
+  PREVIEW_MANIFEST_URL: https://arnab11.github.io/Bunko/latest.json
+  SITE_BASE_URL: https://arnab11.github.io/Bunko
+
+jobs:
+  build-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      should_build: ${{ steps.activity.outputs.should_build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check for unpublished app activity
+        id: activity
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          source_fingerprint="$(
+            git ls-files -s -- \
+              app \
+              build.gradle.kts \
+              settings.gradle.kts \
+              gradle.properties \
+              gradle \
+              | sha256sum | cut -d' ' -f1
+          )"
+          latest_fingerprint="$(
+            curl -fsSL --retry 3 --retry-delay 2 "$PREVIEW_MANIFEST_URL" \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin).get("source_fingerprint", ""))' \
+              2>/dev/null || true
+          )"
+          echo "source_fingerprint=$source_fingerprint" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          elif [[ -z "$latest_fingerprint" ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$source_fingerprint" != "$latest_fingerprint" ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect metadata
+        id: metadata
+        if: steps.activity.outputs.should_build == 'true'
+        run: |
+          echo "commit_count=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        if: steps.activity.outputs.should_build == 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Make gradlew executable
+        if: steps.activity.outputs.should_build == 'true'
+        run: chmod +x ./gradlew
+
+      - name: Build preview APKs
+        if: steps.activity.outputs.should_build == 'true'
+        run: ./gradlew assemblePreview --stacktrace --no-daemon --max-workers=2
+
+      - name: Sign and verify preview APKs
+        if: steps.activity.outputs.should_build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          if [[ -z "${{ secrets.SIGNING_KEYSTORE }}" || -z "${{ secrets.SIGNING_KEY_ALIAS }}" || -z "${{ secrets.SIGNING_STORE_PASSWORD }}" || -z "${{ secrets.KEY_PASSWORD }}" ]]; then
+            echo "Required signing secrets are missing; refusing to publish unsigned preview APKs."
+            exit 1
+          fi
+          test -x "$apksigner"
+          printf '%s' "${{ secrets.SIGNING_KEYSTORE }}" | base64 --decode > release.keystore
+          trap 'rm -f release.keystore' EXIT
+          for abi in $APKS; do
+            unsigned="app/build/outputs/apk/preview/app-${abi}-preview-unsigned.apk"
+            signed="app/build/outputs/apk/preview/app-${abi}-preview.apk"
+            if [[ ! -f "$unsigned" ]]; then
+              echo "::error::Missing expected APK: $unsigned"
+              exit 1
+            fi
+            "$apksigner" sign \
+              --ks release.keystore \
+              --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+              --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
+              --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+              --out "$signed" \
+              "$unsigned"
+            "$apksigner" verify --verbose "$signed"
+            rm -f "$unsigned"
+          done
+
+      - name: Stage GitHub Pages preview site
+        if: steps.activity.outputs.should_build == 'true'
+        env:
+          COMMIT_COUNT: ${{ steps.metadata.outputs.commit_count }}
+          SOURCE_SHA: ${{ steps.metadata.outputs.source_sha }}
+          SHORT_SHA: ${{ steps.metadata.outputs.short_sha }}
+          PUBLISHED_AT: ${{ steps.metadata.outputs.published_at }}
+          SOURCE_FINGERPRINT: ${{ steps.activity.outputs.source_fingerprint }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf site
+          mkdir -p site/downloads
+          touch site/.nojekyll
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Bunko Preview Builds</title></head>
+          <body>
+          <h1>Bunko Preview Builds</h1>
+          <p>Automatic beta builds. The in-app Preview update channel installs these directly.</p>
+          <p>See <a href="latest.json">latest.json</a> for the current build metadata.</p>
+          </body>
+          </html>
+          HTML
+
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import shutil
+          from pathlib import Path
+
+          site_dir = Path("site")
+          downloads_dir = site_dir / "downloads"
+          base_url = os.environ["SITE_BASE_URL"].rstrip("/")
+          commit_count = int(os.environ["COMMIT_COUNT"])
+          source_sha = os.environ["SOURCE_SHA"]
+          published_at = os.environ["PUBLISHED_AT"]
+
+          assets = []
+          for abi in ["universal", "arm64-v8a", "armeabi-v7a", "x86", "x86_64"]:
+              source = Path("app/build/outputs/apk/preview") / f"app-{abi}-preview.apk"
+              if not source.is_file():
+                  raise SystemExit(f"Missing signed APK for {abi}: {source}")
+              name = f"Bunko-preview-r{commit_count}-{abi}.apk"
+              destination = downloads_dir / name
+              shutil.copy2(source, destination)
+              assets.append({
+                  "abi": abi,
+                  "browser_download_url": f"{base_url}/downloads/{name}",
+                  "name": name,
+                  "size": destination.stat().st_size,
+                  "content_type": "application/vnd.android.package-archive",
+                  "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
+              })
+
+          manifest = {
+              "tag_name": f"preview-r{commit_count}",
+              "name": f"Bunko Preview r{commit_count}",
+              "body": f"Automatic preview from {source_sha[:7]}.",
+              "published_at": published_at,
+              "assets": assets,
+              "channel": "preview",
+              "commit_sha": source_sha,
+              "commit_count": commit_count,
+              "source_fingerprint": os.environ["SOURCE_FINGERPRINT"],
+          }
+          (site_dir / "latest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          PY
+
+          python3 -m json.tool site/latest.json >/dev/null
+          find site -maxdepth 2 -type f -printf '%p %k KB\n' | sort
+
+      - name: Upload preview APKs as Actions artifact
+        if: steps.activity.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bunko-preview-r${{ steps.metadata.outputs.commit_count }}
+          path: |
+            site/downloads/*.apk
+            site/latest.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Configure GitHub Pages
+        if: steps.activity.outputs.should_build == 'true'
+        uses: actions/configure-pages@v6
+
+      - name: Upload GitHub Pages artifact
+        if: steps.activity.outputs.should_build == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy-preview:
+    name: Publish preview download page
+    needs: build-preview
+    if: needs.build-preview.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

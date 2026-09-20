@@ -53,7 +53,8 @@ fun UpdateSheet(
     onAction: () -> Unit,
     onIgnore: () -> Unit
 ) {
-    val latestVersion = release.tagName.removePrefix("v").removePrefix("V")
+    val latestVersion = release.previewBuildNumber()?.let { "Beta r$it" }
+        ?: release.tagName.removePrefix("v").removePrefix("V")
     val downloadSize = release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }?.size ?: 0L
 
     ModalBottomSheet(
