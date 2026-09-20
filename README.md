@@ -3,95 +3,120 @@
 </p>
 
 # Bunko
-> An Android manga reader for [Kavita](https://www.kavitareader.com/),
-> designed for self-scanned libraries and tablet-first reading.
+> A lightweight, modern Android reader for [Kavita](https://www.kavitareader.com/) and local storage,
+> designed for self-scanned manga, comics, light novels, and e-books with tablet-first ergonomics.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Status: Early Development](https://img.shields.io/badge/Status-Early%20Development-orange.svg)]()
+[![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-brightgreen.svg)]()
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%208.0%2B-brightgreen.svg)]()
+[![App Size](https://img.shields.io/badge/APK%20Size-~3.2%20MB-blue.svg)]()
 
 [日本語 README](README.ja.md)
 
 ---
 
-## What is Bunko
+## 📖 What is Bunko
 
-**Bunko** (文庫, *library / paperback*) is a third-party Android app for reading manga and light novels from a [Kavita](https://www.kavitareader.com/) server.
+**Bunko** (文庫, *paperback library*) is a fast, native Android reader built with Jetpack Compose and Material 3 Expressive design.
 
-It is especially focused on people who digitize their own physical books and want a comfortable native reading experience on tablets and phones.
+It offers a unified reading experience across **remote Kavita server streams**, **downloaded offline chapters**, and **local device storage** with full support for every major comic, manga, e-book, and fixed-layout format.
 
-> Status: **v0.22 (early)**. Usable, but still evolving.
+---
 
-## Highlights
+## ✨ Features & Highlights
 
-Several Kavita clients already exist. Bunko focuses on **tablet/phone parity** and **reading ergonomics for self-scanned books**.
+### 🚀 Universal Multi-Format Engine
+A single, shared, non-redundant reader engine powering both local files and remote Kavita streams while keeping the app footprint ultra-compact (**~3.2 MB APK**):
 
-- **Spread-pair correction**
-  When covers, title pages, or wide illustrations shift a spread by one page, edge long press or the reader menu provides **Shift +1 / -1** controls to recover the intended pairing.
+| Category | Formats Supported | Engine Capabilities |
+| :--- | :--- | :--- |
+| **Comics & Manga** | `.cbz`, `.cbr`, `.cb7`, `.cbt`, `.zip`, `.rar`, `.7z`, `.tar`, image folders | Natural numeric entry sorting, ComicInfo.xml metadata inspection, automatic archive fallback. |
+| **Reflowable E-Books** | `.epub` (EPUB 2 & 3), `.mobi`, `.azw`, `.azw3`, `.fb2`, `.txt`, `.md` | Pure-Java PalmDOC LZ77 decompressor (Librera), OPF/NCX spine resolver, Ruby/Furigana text formatting. |
+| **Documents** | `.pdf` | High-DPI hardware-accelerated thread-safe PDF renderer. |
 
-- **Smart Invert**
-  The reader can switch between **Off / Smart / Always**. Smart Invert flips mostly-white text pages for night reading while leaving illustrations and color pages untouched.
-  - The "Smart" detection threshold (percentage of white) is **adjustable in the settings**
+---
 
-- **Search**
-  The Home Search tab searches Series / Persons / Genres / Tags / Collections / Reading Lists / Chapters and lets you jump from authors or metadata to filtered series grids.
+### 🎨 Reading Ergonomics & UI
+- **PlayCurl 3D OpenGL Page Turn**: Realistic 3D curl physics with Bezier shadows and smooth gesture drag.
+- **Continuous Webtoon Scroll**: Seamless vertical scrolling with tap-to-scroll viewport jumping (75%) and adjustable side margins.
+- **Auto Webtoon Detection**: Automatic manhwa/webtoon identification via title heuristics, ComicInfo tags, and aspect ratio analysis.
+- **Material Expressive Wavy Progress Bar**: Wavy sinusoidal page seekbar with interactive value bubbles and RTL/Manga direction support.
+- **Spread-Pair Correction**: Shift spread pairing (+1 / -1) to restore intended two-page layouts affected by title/cover offsets.
+- **Smart Invert & E-Paper Modes**: Inverts mostly-white pages for comfortable night reading while preserving color illustrations (configurable white-pixel threshold).
+- **Customizable Tap Navigation**: Flexible tap zones (Default, L-shaped, Kindle-ish, Edge, Right & Left) with inversion options.
+- **Image Scaling & Border Crop**: Fit Screen, Stretch, Fit Width, Fit Height, Original, Smart Fit, and automatic border whitespace removal.
+- **E-Book Typography**: Dynamic font size, custom fonts (Serif, Sans-serif, Monospace), text alignment, and chapter TOC tree.
 
-## Other features
+---
 
-- Multiple Kavita server profiles
-- Reading progress sync and mark-as-read on completion
-- Offline reading
-- Reader page prefetch
-- Admin-only Scan Library / metadata refresh actions
-- Navigation rail on tablets and bottom navigation on phones
-- Automatic single-page / spread switching
-- Right-to-left and left-to-right binding
-- Pinch zoom, pan, double-tap zoom
-- Tap and swipe page turns
-- Continuous vertical reading and Webtoon mode with 75% viewport tap-to-scroll and configurable side padding
-- Auto Webtoon mode with intelligent detection via strip aspect ratios and metadata tags/genres
-- Customizable tap zones (Default, L-shaped, Kindle-ish, Edge, Right & Left) with inversion options
-- Image scale modes (Fit Screen, Stretch, Fit Width, Fit Height, Original, Smart Fit) and automatic border crop
-- Page-jump slider
+### 📚 Library Management & Connectivity
+- **Multi-Server Kavita Profiles**: Fast switching between servers with secure token authentication.
+- **Reading Progress Sync**: Bi-directional progress synchronization and auto mark-as-read on completion.
+- **Offline Library Folders**: Storage Access Framework (SAF) folder picker with multi-folder indexing and format categorization (eBooks, MOBI, Comics, PDF).
+- **Global & Local Search**: Instant search across Series, Persons, Genres, Tags, Collections, Reading Lists, and Chapters.
+- **Tablet & Foldable Optimization**: Adaptive Navigation Rail, dual-pane library layout, and automatic spread/single-page layout transitions.
 
-## Install
+---
 
-Download the APK from [Releases](https://github.com/Arnab11/Bunko/releases) and sideload it onto an Android 8.0+ device.
+## 📦 Installation
 
-## Usage
+Download the latest APK from the [Releases](https://github.com/Arnab11/Bunko/releases) page and install it on any Android 8.0+ device (arm64-v8a, armeabi-v7a, x86, x86_64, or Universal).
 
-1. Register your Kavita server URL and Auth Key (`x-api-key`) from the first-launch flow or Settings.
-2. Tap **Connect** to authenticate.
-3. Open a title from Home, Libraries, or Search.
-4. Tap the center of the reader to open the reader menu.
+```bash
+adb install app-arm64-v8a-release.apk
+```
 
-## License
+---
 
-[Apache License 2.0](LICENSE) © 2026 BunkoApp
+## 🛠️ Build from Source
 
-## Roadmap
+### Requirements
+- JDK 17 or JDK 21
+- Android SDK (API 35+)
+- Gradle 8.x / 9.x
 
-- Page-turn animation polish
-- More Kavita server features surfaced natively
-- App icon refresh
+### Build Commands
 
-## For Developers
+```bash
+# Debug Build
+./gradlew assembleDebug
 
-Bunko is written in Kotlin 2.x with Jetpack Compose and Material 3 / Material 3 Expressive components. Networking is handled with Retrofit and kotlinx.serialization, while cover and reader-page images are loaded with Coil.
+# Release Build (Minified & Optimized ~3.2 MB)
+./gradlew assembleRelease
 
-Kavita integration is intentionally centralized around `app/src/main/java/com/bunko/reader/KavitaApi.kt`. UI layers should consume Bunko models and repositories rather than constructing Kavita calls directly.
+# Run Unit Tests
+./gradlew test
+```
 
-Design notes and implementation scratchpads live under `docs/`. They are internal working notes and may be git-ignored, stale, or written for local development rather than public API documentation. For public discussion, bug reports, and feature requests, please use [GitHub issues](https://github.com/Arnab11/Bunko/issues).
+---
 
-## Third-party
+## 🤝 Acknowledgments & Credits
 
-- The "Play Curl" page-turn effect is built on a vendored copy of
-  [Darkaxt/PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl) (a maintained fork of
-  [karankalsi/PlayLikeCurl](https://github.com/karankalsi/PlayLikeCurl), MIT License),
-  whose `karackencurllib` sources live under `app/src/main/java/karacken/curl/`.
-  The legacy `karackencurllib-1.0.aar` from the upstream release is kept under
-  `app/libs/` for reference. The previous 3D curl implementation (a vendored fork of
-  [oleksandrbalan/pagecurl](https://github.com/oleksandrbalan/pagecurl), Apache-2.0)
-  remains under `app/src/main/java/eu/wewox/pagecurl/` but is no longer used.
-- Reader tap navigation zones, tap inversion modes, scale types, scan border cropping, and Webtoon continuous scrolling / auto Webtoon mode detection are inspired by and adapted from [Mihon](https://github.com/mihonapp/mihon) (Apache-2.0, © Mihon Open Source Project and contributors).
+Bunko is built with open source and stands on the shoulders of incredible projects and contributors across the Android and reader ecosystem:
 
+| Project | Author / Team | License | Role in Bunko |
+| :--- | :--- | :--- | :--- |
+| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | Pure-Java PalmDOC LZ77 decompression, EXTH metadata, and streaming MOBI/AZW record parser (`LibreraMobiParser`, `ByteArrayBuffer`). |
+| **[PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl)** | [Darkaxt](https://github.com/Darkaxt) / [karankalsi](https://github.com/karankalsi) | MIT | 3D OpenGL page-curl physics engine and realistic turn rendering. |
+| **[Mihon](https://github.com/mihonapp/mihon)** | [Mihon Open Source Project](https://github.com/mihonapp) | Apache-2.0 | Tap navigation zones, tap inversion modes, scale types, scan border cropping, and webtoon continuous scrolling ergonomics. |
+| **[Kavita](https://www.kavitareader.com/)** | [Kavita Team](https://github.com/Kareadita/Kavita) | GPL-3.0 | Self-hosted digital library server and REST API specification. |
+| **[Jsoup](https://jsoup.org/)** | [Jonathan Hedley](https://github.com/jhy) | MIT | HTML DOM manipulation, EPUB / MOBI / FB2 chapter splitting, and Ruby/Furigana text parsing. |
+| **[Junrar](https://github.com/junrar/junrar)** | [Junrar Contributors](https://github.com/junrar/junrar) | Apache-2.0 | Pure-Java RAR archive entry extractor for CBR comics. |
+| **[Apache Commons Compress](https://commons.apache.org/proper/commons-compress/)** | [Apache Software Foundation](https://www.apache.org/) | Apache-2.0 | 7-Zip (`.7z`/`.cb7`) and TAR (`.tar`/`.cbt`) archive extraction pipelines. |
+| **[Coil](https://coil-kt.github.io/coil/)** | [Coil Contributors](https://github.com/coil-kt/coil) | Apache-2.0 | High-performance image loading, decoding, and memory caching. |
+
+---
+
+## 📄 License
+
+Distributed under the **Apache License 2.0**. See [`LICENSE`](LICENSE) for more information.
+
+```
+Copyright 2026 BunkoApp
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+```
