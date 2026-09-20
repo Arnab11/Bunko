@@ -429,7 +429,9 @@ internal fun OfflineSearchPane(
     onSearchQueryChange: (String) -> Unit,
     isGridView: Boolean,
     onOpenBook: (LocalBook) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Inline mode: the query field lives in the top bar.
+    showSearchField: Boolean = true
 ) {
     val searchResults = remember(books, searchQuery) {
         if (searchQuery.isBlank()) emptyList()
@@ -437,7 +439,8 @@ internal fun OfflineSearchPane(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        OutlinedTextField(
+        if (showSearchField) {
+            OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
             placeholder = { Text("Search books & comics...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
@@ -464,7 +467,8 @@ internal fun OfflineSearchPane(
                 focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
             )
-        )
+            )
+        }
 
         if (searchQuery.isBlank()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

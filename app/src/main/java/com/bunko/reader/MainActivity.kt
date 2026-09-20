@@ -2,7 +2,6 @@ package com.bunko.reader
 
 import android.os.Bundle
 import android.view.KeyEvent
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -75,8 +74,9 @@ import com.bunko.reader.download.OfflineIssueRepository
 import com.bunko.reader.reader.ReaderScreen
 import com.bunko.reader.series.ChapterPickScreen
 import com.bunko.reader.series.SeriesScreen
-import com.bunko.reader.update.AvailableUpdate
-import com.bunko.reader.update.GitHubUpdateChecker
+import com.bunko.reader.update.UpdateSheet
+import com.bunko.reader.update.UpdateState
+import com.bunko.reader.update.rememberUpdateController
 import com.bunko.reader.library.internal.HomeDestination
 import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.OfflineStartupScreen
@@ -219,8 +219,15 @@ fun AppRoot(
     val appSettings by settingsStore.flow.collectAsState(initial = AppSettings())
 
     var sessionRevision by remember { mutableIntStateOf(0) }
-    var availableUpdate by remember { mutableStateOf<AvailableUpdate?>(null) }
-    var updateNoticeShown by rememberSaveable { mutableStateOf(false) }
+    val updateController = rememberUpdateController(ctx)
+    val currentVersionName = remember {
+        runCatching {
+            @Suppress("DEPRECATION")
+            ctx.packageManager
+                .getPackageInfo(ctx.packageName, 0)
+                .versionName
+        }.getOrNull().orEmpty().ifBlank { "0.23" }
+    }
     val offlineRepository = remember(ctx) { OfflineIssueRepository(ctx) }
     val localRepository = remember(ctx) { LocalBookRepository(ctx) }
     var installedImageLoader by remember { mutableStateOf<ImageLoader?>(null) }
@@ -245,12 +252,6 @@ fun AppRoot(
 
     LaunchedEffect(Unit) {
         installImageLoader(null)
-        @Suppress("DEPRECATION")
-        val currentVersion = ctx.packageManager
-            .getPackageInfo(ctx.packageName, 0)
-            .versionName
-            .orEmpty()
-        availableUpdate = GitHubUpdateChecker(ctx).check(currentVersion)
     }
 
     LaunchedEffect(sessionRevision) {
@@ -434,15 +435,6 @@ fun AppRoot(
                     initialIsOffline = (activeMode == "offline"),
                     initialSearchQuery = backStack.arguments!!.getString("search").orEmpty(),
                     initialDestination = initialDestination,
-                    availableUpdate = availableUpdate?.takeUnless { updateNoticeShown },
-                    onOpenUpdate = { releaseUrl ->
-                        runCatching {
-                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(releaseUrl)))
-                        }.onFailure {
-                            BunkoLog.w("Could not open release URL.", it)
-                        }
-                    },
-                    onUpdateNoticeShown = { updateNoticeShown = true },
                     onOpenSettings = { nav.navigate("settings") },
                     onOpenShelf = { shelfKind -> nav.navigate("shelf/${shelfKind.routeValue}") },
                     onOpenBookmarks = { nav.navigate("bookmarks") },
@@ -574,7 +566,12 @@ fun AppRoot(
                     libraryName = libraryName,
                     onBack = { nav.popBackStack() },
                     onSearchHome = { query ->
-                        nav.navigate("libraries?search=${Uri.encode(query)}")
+                        // Return to the existing hub instead of stacking a duplicate
+                        // libraries entry; the query opens inline search there.
+                        nav.navigate("libraries?search=${Uri.encode(query)}") {
+                            popUpTo("libraries?search={search}&tab={tab}") { inclusive = true }
+                            launchSingleTop = true
+                        }
                     },
                     onSelect = { s ->
                         val resolvedLib = s.libraryId?.takeIf { it > 0 } ?: libraryId
@@ -669,7 +666,8 @@ fun AppRoot(
                     localRepository = localRepository,
                     sessionStore = sessionStore,
                     onConfigureServerDetails = { nav.navigate("settings/server") },
-                    onBack = { nav.popBackStack() }
+                    onBack = { nav.popBackStack() },
+                    updateController = updateController
                 )
             }
 
@@ -685,6 +683,34 @@ fun AppRoot(
             }
             composable("settings/cache") {
                 CacheSettingsScreen(onBack = { nav.popBackStack() })
+            }
+        }
+
+        // Global in-app updater sheet (mpvRx-style), above every destination.
+        val updateState = updateController.state
+        if (updateState is UpdateState.Available || updateState is UpdateState.ReadyToInstall) {
+            val release = when (updateState) {
+                is UpdateState.Available -> updateState.release
+                is UpdateState.ReadyToInstall -> updateState.release
+                else -> null
+            }
+            if (release != null) {
+                UpdateSheet(
+                    release = release,
+                    isDownloading = updateController.isDownloading,
+                    progress = updateController.downloadProgress,
+                    isInstallReady = updateState is UpdateState.ReadyToInstall,
+                    currentVersion = currentVersionName,
+                    onDismiss = { updateController.dismiss() },
+                    onAction = {
+                        if (updateState is UpdateState.ReadyToInstall) {
+                            updateController.installUpdate(release)
+                        } else {
+                            updateController.downloadUpdate(release)
+                        }
+                    },
+                    onIgnore = { updateController.ignoreVersion(release.tagName) }
+                )
             }
         }
 }

@@ -337,7 +337,12 @@ internal fun HomeContent(
     downloaded: List<OfflineIssueRecord>,
     api: KavitaApi?,
     searchHistoryStore: SearchHistoryStore,
-    initialSearchQuery: String = "",
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    // mpvRx-style inline search: results overlay the current destination
+    // instead of swapping to a separate Search page.
+    isSearching: Boolean = false,
+    onOpenInlineSearch: () -> Unit = {},
     selectedLibrary: LibraryDto? = null,
     onSelectLibraryChange: (LibraryDto?) -> Unit = {},
     selectedShelf: HomeShelfKind? = null,
@@ -377,7 +382,6 @@ internal fun HomeContent(
     val librariesListState = rememberLazyListState()
     val wantToReadGridState = rememberLazyGridState()
     val searchListState = rememberLazyListState()
-    var searchQuery by rememberSaveable(initialSearchQuery) { mutableStateOf(initialSearchQuery) }
 
     LaunchedEffect(scrollToTopSignal) {
         if (scrollToTopSignal <= 0) return@LaunchedEffect
@@ -390,7 +394,8 @@ internal fun HomeContent(
         }
     }
 
-    Column(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
         if (isOffline) {
             val pullState = rememberPullToRefreshState()
             PullToRefreshBox(
@@ -459,7 +464,7 @@ internal fun HomeContent(
                         OfflineSearchPane(
                             books = offlineBooks,
                             searchQuery = searchQuery,
-                            onSearchQueryChange = { searchQuery = it },
+                            onSearchQueryChange = onSearchQueryChange,
                             isGridView = isGridView,
                             onOpenBook = onOpenOfflineBook,
                             modifier = Modifier.fillMaxSize()
@@ -579,8 +584,8 @@ internal fun HomeContent(
                                         libraryName = activeLibrary.name,
                                         onBack = null,
                                         onSearchHome = { q ->
-                                            searchQuery = q
-                                            onSelectDestination(HomeDestination.Search)
+                                            onSearchQueryChange(q)
+                                            onOpenInlineSearch()
                                         },
                                         statusBarPadding = false,
                                         navigationBarPadding = false,
@@ -606,8 +611,8 @@ internal fun HomeContent(
                                 onBack = { onSelectLibraryChange(null) },
                                 onSearchHome = { q ->
                                     onSelectLibraryChange(null)
-                                    searchQuery = q
-                                    onSelectDestination(HomeDestination.Search)
+                                    onSearchQueryChange(q)
+                                    onOpenInlineSearch()
                                 },
                                 statusBarPadding = false,
                                 navigationBarPadding = false,
@@ -718,20 +723,46 @@ internal fun HomeContent(
                     }
                 }
             }
-            HomeDestination.Search -> {
+            // Search is inline now; nothing to swap to (legacy branch kept
+            // for exhaustiveness).
+            HomeDestination.Search -> Unit
+        }
+    }
+
+    // Inline search results overlay the current destination (mpvRx-style):
+    // the tab stays mounted underneath with its state intact.
+    if (isSearching) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            if (isOffline) {
+                OfflineSearchPane(
+                    books = offlineBooks,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = onSearchQueryChange,
+                    isGridView = isGridView,
+                    onOpenBook = onOpenOfflineBook,
+                    modifier = Modifier.fillMaxSize(),
+                    showSearchField = false
+                )
+            } else {
                 HomeSearchScreen(
                     api = api,
                     session = session,
                     historyStore = searchHistoryStore,
                     query = searchQuery,
-                    onQueryChange = { searchQuery = it },
+                    onQueryChange = onSearchQueryChange,
                     listState = searchListState,
                     onSelectSeries = { s -> onSelectSeries(s, destination) },
                     onOpenFilteredSeries = onOpenFilteredSeries,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    showSearchBar = false
                 )
             }
         }
+    }
     }
 }
 

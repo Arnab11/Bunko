@@ -48,6 +48,7 @@ import com.bunko.reader.CacheSettingsScreen
 import com.bunko.reader.KavitaSessionStore
 import com.bunko.reader.ReaderSettingsScreen
 import com.bunko.reader.offline.LocalBookRepository
+import com.bunko.reader.update.UpdateController
 import com.bunko.reader.ui.theme.themeToggleModifier
 import kotlinx.coroutines.launch
 
@@ -92,7 +93,8 @@ fun SettingsAdaptiveScreen(
     onConfigureServerDetails: () -> Unit,
     onBack: () -> Unit,
     initialCategory: SettingsCategory? = null,
-    onActiveModeChanged: suspend (String) -> Unit = {}
+    onActiveModeChanged: suspend (String) -> Unit = {},
+    updateController: UpdateController? = null
 ) {
     val configuration = LocalConfiguration.current
     val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -202,7 +204,8 @@ fun SettingsAdaptiveScreen(
                             localRepository = localRepository,
                             sessionStore = sessionStore,
                             onConfigureServerDetails = onConfigureServerDetails,
-                            onActiveModeChanged = onActiveModeChanged
+                            onActiveModeChanged = onActiveModeChanged,
+                            updateController = updateController
                         )
                     }
                 }
@@ -285,7 +288,8 @@ fun SettingsAdaptiveScreen(
                         localRepository = localRepository,
                         sessionStore = sessionStore,
                         onConfigureServerDetails = onConfigureServerDetails,
-                        onActiveModeChanged = onActiveModeChanged
+                        onActiveModeChanged = onActiveModeChanged,
+                        updateController = updateController
                     )
                 }
             }
@@ -301,7 +305,8 @@ private fun SettingsCategoryContent(
     localRepository: LocalBookRepository,
     sessionStore: KavitaSessionStore,
     onConfigureServerDetails: () -> Unit,
-    onActiveModeChanged: suspend (String) -> Unit
+    onActiveModeChanged: suspend (String) -> Unit,
+    updateController: UpdateController? = null
 ) {
     val scope = rememberCoroutineScope()
 
@@ -348,7 +353,7 @@ private fun SettingsCategoryContent(
             )
         }
         SettingsCategory.ABOUT -> {
-            AboutScreen()
+            AboutScreen(updateController = updateController)
         }
     }
 }

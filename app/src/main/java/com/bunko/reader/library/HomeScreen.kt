@@ -138,7 +138,6 @@ import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.browse.BrowsePageScaffold
 import com.bunko.reader.ui.browse.PosterGrid
 import com.bunko.reader.ui.browse.SeriesPosterCard
-import com.bunko.reader.update.AvailableUpdate
 import com.bunko.reader.library.internal.HomeShell
 import com.bunko.reader.library.internal.HomeDestination
 import com.bunko.reader.library.internal.loadLibrarySeriesCounts
@@ -169,9 +168,6 @@ fun LibraryScreen(
     localRepository: LocalBookRepository,
     initialIsOffline: Boolean = false,
     initialSearchQuery: String = "",
-    availableUpdate: AvailableUpdate? = null,
-    onOpenUpdate: (String) -> Unit = {},
-    onUpdateNoticeShown: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenShelf: (HomeShelfKind) -> Unit,
     onOpenBookmarks: () -> Unit,
@@ -246,20 +242,6 @@ fun LibraryScreen(
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
     val wantToReadPagingMutex = remember { Mutex() }
-
-    LaunchedEffect(availableUpdate) {
-        val update = availableUpdate ?: return@LaunchedEffect
-        onUpdateNoticeShown()
-        val result = snackbarHostState.showSnackbar(
-            message = "Bunko ${update.tagName} is available",
-            actionLabel = "View release",
-            withDismissAction = true,
-            duration = SnackbarDuration.Indefinite
-        )
-        if (result == SnackbarResult.ActionPerformed) {
-            onOpenUpdate(update.releaseUrl)
-        }
-    }
 
     var libs by remember { mutableStateOf<List<LibraryDto>>(emptyList()) }
     var librarySeriesCounts by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }

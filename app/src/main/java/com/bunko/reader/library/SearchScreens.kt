@@ -113,7 +113,10 @@ internal fun HomeSearchScreen(
     listState: LazyListState,
     onSelectSeries: (SeriesDto) -> Unit,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // mpvRx-style inline mode: the query field lives in the top bar, so the
+    // results list renders without its own SearchBar item.
+    showSearchBar: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
     val recentQueries by historyStore.recentQueries.collectAsState(initial = emptyList())
@@ -156,8 +159,9 @@ internal fun HomeSearchScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp)
     ) {
-        item {
-            SearchBar(
+        if (showSearchBar) {
+            item {
+                SearchBar(
                 inputField = {
                     SearchBarDefaults.InputField(
                         query = query,
@@ -182,7 +186,8 @@ internal fun HomeSearchScreen(
                 expanded = false,
                 onExpandedChange = {},
                 modifier = Modifier.fillMaxWidth(),
-            ) {}
+                ) {}
+            }
         }
 
         if (query.isBlank()) {

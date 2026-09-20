@@ -31,6 +31,9 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
@@ -65,6 +68,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.WideNavigationRailDefaults
 import androidx.compose.material3.WideNavigationRailItem
 import androidx.compose.material3.WideNavigationRailValue
@@ -81,12 +86,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -187,11 +196,22 @@ internal fun HomeShell(
     ) {
         mutableStateOf(
             when {
-                initialDestination != null -> initialDestination
-                initialSearchQuery.isNotBlank() -> HomeDestination.Search
+                initialDestination != null && initialDestination != HomeDestination.Search -> initialDestination
                 else -> HomeDestination.Home
             }
         )
+    }
+
+    // mpvRx-style inline search: the query field lives in the top bar and the
+    // results overlay the current tab, which stays mounted underneath.
+    var searchQuery by rememberSaveable(initialSearchQuery) { mutableStateOf(initialSearchQuery) }
+    var isSearching by rememberSaveable(initialSearchQuery, initialDestination) {
+        mutableStateOf(initialSearchQuery.isNotBlank() || initialDestination == HomeDestination.Search)
+    }
+    // One-time migration off the retired Search page (e.g. restored state).
+    if (destination == HomeDestination.Search) {
+        destination = HomeDestination.Home
+        isSearching = true
     }
 
     var reselectionCount by remember { mutableIntStateOf(0) }
@@ -205,6 +225,10 @@ internal fun HomeShell(
     var selectedShelf by remember { mutableStateOf<HomeShelfKind?>(null) }
 
     LaunchedEffect(initialDestination) {
+        if (initialDestination == HomeDestination.Search) {
+            isSearching = true
+            return@LaunchedEffect
+        }
         if (initialDestination != null && initialDestination != destination) {
             destination = initialDestination
             browseDrilldown = null
@@ -243,6 +267,20 @@ internal fun HomeShell(
     }
     BackHandler(enabled = browseDrilldown == null && selectedLibrary == null && selectedShelf == null && destination != HomeDestination.Home) {
         selectDestination(HomeDestination.Home)
+    }
+    // Registered last so exiting search wins over every destination handler.
+    BackHandler(enabled = isSearching) {
+        isSearching = false
+        searchQuery = ""
+    }
+
+    fun openInlineSearch() {
+        isSearching = true
+    }
+
+    fun closeInlineSearch() {
+        isSearching = false
+        searchQuery = ""
     }
 
     val topBarActions: @Composable RowScope.() -> Unit = {
@@ -392,8 +430,11 @@ internal fun HomeShell(
                     showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
                     isOffline = isOffline,
                     onOpenSettings = onOpenSettings,
-                    onSearch = { selectDestination(HomeDestination.Search) },
-                    isSearchActive = destination == HomeDestination.Search,
+                    onSearch = ::openInlineSearch,
+                    isSearchActive = isSearching,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    onCloseSearch = ::closeInlineSearch,
                     onSwitchMode = onToggleLibraryMode,
                     onToggleTheme = onToggleTheme,
                     actions = topBarActions
@@ -431,7 +472,10 @@ internal fun HomeShell(
                         downloaded = downloaded,
                         api = api,
                         searchHistoryStore = searchHistoryStore,
-                        initialSearchQuery = initialSearchQuery,
+                        searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    isSearching = isSearching,
+                    onOpenInlineSearch = ::openInlineSearch,
                         selectedLibrary = selectedLibrary,
                         onSelectLibraryChange = { selectedLibrary = it },
                         selectedShelf = selectedShelf,
@@ -503,8 +547,11 @@ internal fun HomeShell(
                         showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
                         isOffline = isOffline,
                         onOpenSettings = onOpenSettings,
-                        onSearch = { selectDestination(HomeDestination.Search) },
-                        isSearchActive = destination == HomeDestination.Search,
+                        onSearch = ::openInlineSearch,
+                        isSearchActive = isSearching,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { searchQuery = it },
+                        onCloseSearch = ::closeInlineSearch,
                         onSwitchMode = onToggleLibraryMode,
                         onToggleTheme = onToggleTheme,
                         actions = topBarActions
@@ -533,7 +580,10 @@ internal fun HomeShell(
                         downloaded = downloaded,
                         api = api,
                         searchHistoryStore = searchHistoryStore,
-                        initialSearchQuery = initialSearchQuery,
+                        searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    isSearching = isSearching,
+                    onOpenInlineSearch = ::openInlineSearch,
                         selectedLibrary = selectedLibrary,
                         onSelectLibraryChange = { selectedLibrary = it },
                         selectedShelf = selectedShelf,
@@ -604,8 +654,11 @@ internal fun HomeShell(
                     showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
                     isOffline = isOffline,
                     onOpenSettings = onOpenSettings,
-                    onSearch = { selectDestination(HomeDestination.Search) },
-                    isSearchActive = destination == HomeDestination.Search,
+                    onSearch = ::openInlineSearch,
+                    isSearchActive = isSearching,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    onCloseSearch = ::closeInlineSearch,
                     onSwitchMode = onToggleLibraryMode,
                     onToggleTheme = onToggleTheme,
                     actions = topBarActions
@@ -634,7 +687,10 @@ internal fun HomeShell(
                     downloaded = downloaded,
                     api = api,
                     searchHistoryStore = searchHistoryStore,
-                    initialSearchQuery = initialSearchQuery,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    isSearching = isSearching,
+                    onOpenInlineSearch = ::openInlineSearch,
                     selectedLibrary = selectedLibrary,
                     onSelectLibraryChange = { selectedLibrary = it },
                     selectedShelf = selectedShelf,
@@ -709,6 +765,9 @@ internal fun HomeTopBar(
     onOpenSettings: () -> Unit,
     onSearch: (() -> Unit)? = null,
     isSearchActive: Boolean = false,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    onCloseSearch: () -> Unit = {},
     onSwitchMode: (() -> Unit)? = null,
     onToggleTheme: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
@@ -719,6 +778,15 @@ internal fun HomeTopBar(
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
+        // mpvRx-style: searching swaps the whole top bar for an inline field;
+        // the tab underneath stays mounted.
+        if (isSearchActive && onSearch != null) {
+            HomeSearchTopBar(
+                query = searchQuery,
+                onQueryChange = onSearchQueryChange,
+                onClose = onCloseSearch
+            )
+        } else {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -855,6 +923,79 @@ internal fun HomeTopBar(
                 )
             }
         }
+        }
+    }
+}
+
+/** Inline query field that replaces the top bar while searching (mpvRx-style). */
+@Composable
+internal fun HomeSearchTopBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = {
+                keyboardController?.hide()
+                onClose()
+            }
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Close search",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        TextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focusRequester),
+            placeholder = { Text("Search") },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Clear search",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            shape = CircleShape,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = { keyboardController?.hide() }
+            ),
+            colors = TextFieldDefaults.colors(
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            )
+        )
     }
 }
 

@@ -128,7 +128,6 @@ import com.bunko.reader.ui.browse.PagingFooter
 import com.bunko.reader.ui.browse.PosterGrid
 import com.bunko.reader.ui.browse.SeriesPosterCard
 import com.bunko.reader.ui.theme.BunkoBackground
-import com.bunko.reader.update.AvailableUpdate
 
 @Composable
 internal fun SeriesShelfScreen(
