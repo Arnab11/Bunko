@@ -17,6 +17,7 @@ import org.junit.Assert.*
 class ExampleInstrumentedTest {
     @Test
     fun useAppContext() {
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         assertTrue(appContext.packageName.startsWith("com.bunko.reader"))
     }
 }
