@@ -820,7 +820,7 @@ internal fun HomeTopBar(
                 Text(
                     text = buildAnnotatedString {
                         append(title)
-                        if (BuildConfig.IS_PREVIEW_BUILD) {
+                        if (BuildConfig.IS_PREVIEW_BUILD && title.startsWith("Bunko", ignoreCase = true)) {
                             withStyle(
                                 SpanStyle(
                                     fontSize = MaterialTheme.typography.labelSmall.fontSize,
