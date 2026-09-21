@@ -101,7 +101,7 @@ internal fun SeriesDetailSummary(
     api: KavitaApi,
     isAdmin: Boolean,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
-    onPick: (chapterId: Int, volumeId: Int) -> Unit,
+    onPick: (chapterId: Int, volumeId: Int, initialPage: Int?) -> Unit,
     onMessage: (String) -> Unit
 ) {
     val summary = metadata?.summary?.takeIf { it.isNotBlank() }
@@ -118,10 +118,15 @@ internal fun SeriesDetailSummary(
         val title = tag.title?.trim().orEmpty()
         if (title.isBlank()) null else id to title
     }
-    val continueItem = continueChapter?.let { chapter ->
-        chapterCards.firstOrNull { it.chapter.id == chapter.id }
-    } ?: chapterCards.firstOrNull()
     val continueButtonText = series.primaryReadActionText()
+    val isReread = continueButtonText == "Re-Read"
+    val continueItem = if (isReread) {
+        chapterCards.firstOrNull()
+    } else {
+        continueChapter?.let { chapter ->
+            chapterCards.firstOrNull { it.chapter.id == chapter.id }
+        } ?: chapterCards.firstOrNull()
+    }
     val continueButtonColor = series.coverActionColor()
     val summaryActionColor = continueButtonColor.readableAccentOn(BunkoBackground)
     var summaryExpanded by remember(summary) { mutableStateOf(false) }
@@ -135,7 +140,7 @@ internal fun SeriesDetailSummary(
                 series = series,
                 api = api,
                 isAdmin = isAdmin,
-                onRead = { onPick(item.chapter.id, item.volume.id) },
+                onRead = { onPick(item.chapter.id, item.volume.id, if (isReread) 0 else null) },
                 onMessage = onMessage,
                 modifier = Modifier.fillMaxWidth()
             )

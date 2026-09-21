@@ -36,6 +36,9 @@ A single, shared, non-redundant reader engine powering both local files and remo
 ---
 
 ### 🎨 Reading Ergonomics & UI
+- **Bookmark System**: One-tap quick bookmarking with auto-captured text excerpts, timestamps, and an interactive modal bottom sheet to view, jump to, and delete saved bookmarks.
+- **Offline Chapter Navigation & TOC**: Seamless table of contents tree and offline chapter switching for both local files (EPUB, MOBI, FB2) and downloaded Kavita series.
+- **Re-Read Support**: Instant restart from the very beginning (first chapter, page 0) when revisiting completed series and books.
 - **PlayCurl 3D OpenGL Page Turn**: Pure Kotlin Jetpack Compose 3D curl physics with Bezier shadows and instant zero-delay consecutive turns.
 - **Continuous Webtoon Scroll**: Seamless vertical scrolling with tap-to-scroll viewport jumping (75%) and adjustable side margins.
 - **Auto Webtoon Detection**: Automatic manhwa/webtoon identification via title heuristics, ComicInfo tags, and aspect ratio analysis.
@@ -44,7 +47,7 @@ A single, shared, non-redundant reader engine powering both local files and remo
 - **Smart Invert & E-Paper Modes**: Inverts mostly-white pages for comfortable night reading while preserving color illustrations (configurable white-pixel threshold).
 - **Customizable Tap Navigation**: Flexible tap zones (Default, L-shaped, Kindle-ish, Edge, Right & Left) with inversion options.
 - **Image Scaling & Border Crop**: Fit Screen, Stretch, Fit Width, Fit Height, Original, Smart Fit, and automatic border whitespace removal.
-- **E-Book Typography**: Dynamic font size, custom fonts (Serif, Sans-serif, Monospace), text alignment, and chapter TOC tree.
+- **E-Book Typography & Images**: Dynamic font size, custom fonts (Serif, Sans-serif, Monospace), text alignment, chapter TOC tree, and aspect-ratio-aware reflow image rendering.
 
 ---
 
@@ -95,7 +98,7 @@ Bunko is built with open source and stands on the shoulders of incredible projec
 
 | Project | Author / Team | License | Role in Bunko |
 | :--- | :--- | :--- | :--- |
-| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | PalmDOC LZ77 decompression, EXTH metadata, and streaming MOBI/AZW record parser (`LibreraMobiParser`, `ByteArrayBuffer`). |
+| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | PalmDOC LZ77 decompression, EXTH metadata, streaming MOBI/AZW record parser (`LibreraMobiParser`, `ByteArrayBuffer`), and bookmark management paradigms. |
 | **[PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl)** | [Darkaxt](https://github.com/Darkaxt) / [karankalsi](https://github.com/karankalsi) | MIT | 3D OpenGL page-curl physics engine migrated to Kotlin Compose with instant turn rendering. |
 | **[Mihon](https://github.com/mihonapp/mihon)** | [Mihon Open Source Project](https://github.com/mihonapp) | Apache-2.0 | Tap navigation zones, tap inversion modes, scale types, scan border cropping, and webtoon continuous scrolling ergonomics. |
 | **[Kavita](https://www.kavitareader.com/)** | [Kavita Team](https://github.com/Kareadita/Kavita) | GPL-3.0 | Self-hosted digital library server and REST API specification. |

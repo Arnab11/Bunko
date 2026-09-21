@@ -345,7 +345,8 @@ fun AppRoot(
             BunkoLog.i("Successfully indexed incoming book: ${book.id} - ${book.title}")
             onConsumeIncomingUri()
             localRepository.setStartupCompleted(true)
-            nav.navigate("local-reader/${book.id}?page=${book.lastReadPage}") {
+            val startPage = if (book.isCompleted) 0 else book.lastReadPage
+            nav.navigate("local-reader/${book.id}?page=$startPage") {
                 launchSingleTop = true
             }
         } else {
@@ -507,7 +508,8 @@ fun AppRoot(
                         nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}?fromTab=${tab.name}")
                     },
                     onOpenOfflineBook = { book ->
-                        nav.navigate("local-reader/${book.id}?page=${book.lastReadPage}")
+                        val startPage = if (book.isCompleted) 0 else book.lastReadPage
+                        nav.navigate("local-reader/${book.id}?page=$startPage")
                     },
                     onRequireLogin = {
                         nav.navigate("login")
@@ -668,8 +670,9 @@ fun AppRoot(
                         }
                     },
                     navigationBarStyle = appSettings.navigationBarStyle
-                ) { chapterId, volumeId, incognito ->
-                    nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=$incognito")
+                ) { chapterId, volumeId, incognito, initialPage ->
+                    val pageParam = if (initialPage != null && initialPage >= 0) "&page=$initialPage" else ""
+                    nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=$incognito$pageParam")
                 }
             }
 

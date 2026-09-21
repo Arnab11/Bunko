@@ -36,6 +36,9 @@
 ---
 
 ### 🎨 読書体験とエルゴノミクス
+- **ブックマーク機能**: ワンタップでの素早いブックマーク登録、テキスト抜粋プレビュー、タイムスタンプ記録、一覧ボトムシートからのジャンプ・削除に対応。
+- **オフライン目次 & チャプター移動**: ローカル電子書籍 (EPUB, MOBI, FB2) およびダウンロード済み Kavita シリーズの目次ツリー表示とシームレスな章切り替え。
+- **Re-Read (最初から再読)**: 読了済み書籍やシリーズを第1話・先頭ページから即座に再読開始。
 - **PlayCurl 3D OpenGL リアルページめくり**: Pure Kotlin Jetpack Compose による 3D カール物理と遅延ゼロの連続めくり。
 - **Webtoon 連続縦スクロール**: 75% 画面高タップスクロールおよび左右余白設定に対応。
 - **Auto Webtoon 自動判定**: ComicInfo タグ、タイトルキーワード、画像アスペクト比による縦スクロール自動切り替え。
@@ -44,7 +47,7 @@
 - **Smart Invert (おまかせ白黒反転)**: カラー口絵や挿絵を維持したまま、本文の白背景のみを反転 (しきい値調整可能)。
 - **多彩なタップゾーン**: Default, L-shaped, Kindle-ish, Edge, Right & Left から選択可能。
 - **画像スケーリングと余白クロップ**: Fit Screen, Stretch, Fit Width, Fit Height, Original, Smart Fit および自動白線トリミング。
-- **タイポグラフィ設定**: フォントサイズ、明朝 (Serif) / ゴシック (Sans) / 等幅 (Monospace) 切り替え、テキスト配置。
+- **タイポグラフィと挿絵レンダリング**: フォントサイズ、明朝 (Serif) / ゴシック (Sans) / 等幅 (Monospace) 切り替え、テキスト配置、アスペクト比を維持した最適な挿絵配置。
 
 ---
 
@@ -54,7 +57,7 @@ Bunko は数多くの優れたオープンソースプロジェクトと開発�
 
 | プロジェクト | 作者 / チーム | ライセンス | Bunko での役割 |
 | :--- | :--- | :--- | :--- |
-| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | PalmDOC LZ77 伸張、EXTH メタデータ解析、MOBI/AZW ストリーミングレコードパーサー (`LibreraMobiParser`, `ByteArrayBuffer`)。 |
+| **[Librera Reader](https://github.com/foobnix/LibreraReader)** | [foobnix](https://github.com/foobnix) | GPL-3.0 | PalmDOC LZ77 伸張、EXTH メタデータ解析、MOBI/AZW ストリーミングレコードパーサー (`LibreraMobiParser`, `ByteArrayBuffer`)、ブックマーク管理設計。 |
 | **[PlayLikeCurl](https://github.com/Darkaxt/PlayLikeCurl)** | [Darkaxt](https://github.com/Darkaxt) / [karankalsi](https://github.com/karankalsi) | MIT | Kotlin Compose へ移植された 3D OpenGL ページカール物理エンジンおよび遅延ゼロめくり描画。 |
 | **[Mihon](https://github.com/mihonapp/mihon)** | [Mihon Open Source Project](https://github.com/mihonapp) | Apache-2.0 | タップゾーン設定、タップ反転、画像スケーリング、余白自動クロップ、Webtoon 縦スクロール設計。 |
 | **[Kavita](https://www.kavitareader.com/)** | [Kavita Team](https://github.com/Kareadita/Kavita) | GPL-3.0 | セルフホスト型デジタルライブラリサーバーおよび API 仕様。 |

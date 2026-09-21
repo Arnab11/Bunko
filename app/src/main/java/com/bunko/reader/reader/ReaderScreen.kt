@@ -573,31 +573,71 @@ fun ReaderScreen(
         }
     }
     fun switchChapter(target: ReaderChapterEntry, openAtLastPage: Boolean) {
-        if (chapterSwitching || target.chapterId == currentChapterId) return
-        val loadedSession = session ?: return
-        val loadedApi = api ?: return
+        if (chapterSwitching) return
+        if (localBookId == null && target.chapterId == currentChapterId) return
         chapterSwitching = true
         showReaderMenu = false
         error = null
+
+        // 1. Local book handling
+        if (localBookId != null) {
+            scope.launch {
+                try {
+                    if (isEpub && epubSubpages.isNotEmpty()) {
+                        val targetSpineIndex = target.chapterId
+                        val targetPage = epubSubpages.indexOfFirst { it.spineIndex == targetSpineIndex }
+                            .takeIf { it >= 0 }
+                            ?: ((targetSpineIndex.toFloat() / epubSpineBlocks.size.coerceAtLeast(1).toFloat()) * pages).toInt().coerceIn(0, (pages - 1).coerceAtLeast(0))
+                        val finalPage = if (openAtLastPage) {
+                            epubSubpages.indexOfLast { it.spineIndex == targetSpineIndex }.takeIf { it >= 0 } ?: targetPage
+                        } else {
+                            targetPage
+                        }
+                        currentChapterId = target.chapterId
+                        currentChapter = target
+                        jumpToPage(finalPage)
+                        verticalRestoreNonce++
+                    }
+                } catch (t: Throwable) {
+                    BunkoLog.w("Could not switch local chapter to ${target.displayName}", t)
+                } finally {
+                    chapterSwitching = false
+                }
+            }
+            return
+        }
+
+        // 2. Kavita (online or offline) handling
         scope.launch {
             try {
+                val loadedSession = session ?: sessionStore.load()
+                val loadedApi = api
                 val local = runCatching {
                     offlineRepository.localChapter(loadedSession, target.chapterId)
                 }.onFailure {
                     BunkoLog.w("Could not load local offline chapter ${target.chapterId}.", it)
                 }.getOrNull()
+
                 var isEpubTarget = false
                 var isPdfTarget = false
-                val chDto = runCatching { loadedApi.seriesChapter(target.chapterId) }.getOrNull()
-                if (chDto?.format == MangaFormat.Epub) {
-                    isEpubTarget = true
-                } else if (chDto?.format == MangaFormat.Pdf) {
-                    isPdfTarget = true
-                } else if (chDto?.format == null) {
-                    val seriesDto = runCatching { loadedApi.series(seriesId) }.getOrNull()
-                    isEpubTarget = seriesDto?.format == MangaFormat.Epub
-                    isPdfTarget = seriesDto?.format == MangaFormat.Pdf
+
+                if (local != null) {
+                    val path = local.record.archivePath
+                    isEpubTarget = path.endsWith(".epub", ignoreCase = true)
+                    isPdfTarget = path.endsWith(".pdf", ignoreCase = true)
+                } else if (loadedApi != null) {
+                    val chDto = runCatching { loadedApi.seriesChapter(target.chapterId) }.getOrNull()
+                    if (chDto?.format == MangaFormat.Epub) {
+                        isEpubTarget = true
+                    } else if (chDto?.format == MangaFormat.Pdf) {
+                        isPdfTarget = true
+                    } else if (chDto?.format == null) {
+                        val seriesDto = runCatching { loadedApi.series(seriesId) }.getOrNull()
+                        isEpubTarget = seriesDto?.format == MangaFormat.Epub
+                        isPdfTarget = seriesDto?.format == MangaFormat.Pdf
+                    }
                 }
+
                 isEpub = isEpubTarget
                 isPdf = isPdfTarget
 
@@ -606,27 +646,51 @@ fun ReaderScreen(
                 if (local != null) {
                     loadedPageCount = local.pages.size
                     loadedDimensions = local.dimensions
-                } else {
+                } else if (loadedApi != null) {
                     val info = loadedApi.chapterInfo(target.chapterId, includeDimensions = true, extractPdf = isPdfTarget)
                     loadedPageCount = info.pages ?: 0
                     loadedDimensions = info.pageDimensions.toPageDimensionMap()
+                } else {
+                    error = "Offline chapter not downloaded."
+                    return@launch
                 }
-                if (loadedPageCount <= 0) {
+
+                if (loadedPageCount <= 0 && !isEpubTarget) {
                     error = "Chapter has no readable pages"
                     return@launch
                 }
-                val landingPage = if (openAtLastPage) loadedPageCount - 1 else 0
+                val landingPage = if (openAtLastPage) (loadedPageCount - 1).coerceAtLeast(0) else 0
 
                 if (isEpubTarget) {
-                    val spineCount = loadedPageCount.coerceAtLeast(1)
-                    val clientHelper = KavitaClient(ctx, sessionStore)
-                    epubSpineBlocks = loadEpubSpines(
-                        chapterId = target.chapterId,
-                        spineCount = spineCount,
-                        loadedApi = loadedApi,
-                        loadedSession = loadedSession,
-                        client = clientHelper
-                    )
+                    if (local != null && File(local.record.archivePath).isFile) {
+                        val parsed = runCatching {
+                            com.bunko.reader.engine.epub.EpubPackageReader.parseEpub(ctx, File(local.record.archivePath))
+                        }.getOrNull()
+                        if (parsed != null) {
+                            val spineBlocks = parsed.spines.map { spine ->
+                                ReaderEpubPaginator.parseHtmlToBlocks(
+                                    html = spine.rawHtml,
+                                    chapterId = spine.spineIndex,
+                                    baseUrl = "",
+                                    apiKey = "",
+                                    bookResourceUrlBuilder = { _, _, _, path -> path }
+                                )
+                            }.filter { it.isNotEmpty() }
+                            epubSpineBlocks = spineBlocks
+                        } else {
+                            epubSpineBlocks = emptyList()
+                        }
+                    } else if (loadedApi != null) {
+                        val spineCount = loadedPageCount.coerceAtLeast(1)
+                        val clientHelper = KavitaClient(ctx, sessionStore)
+                        epubSpineBlocks = loadEpubSpines(
+                            chapterId = target.chapterId,
+                            spineCount = spineCount,
+                            loadedApi = loadedApi,
+                            loadedSession = loadedSession,
+                            client = clientHelper
+                        )
+                    }
                 } else {
                     epubSpineBlocks = emptyList()
                     epubSubpages = emptyList()
@@ -850,6 +914,32 @@ fun ReaderScreen(
                         }
                         epubSpineBlocks = spineBlocks
                         pages = spineBlocks.size
+
+                        val tocChapters = if (document.tableOfContents.isNotEmpty()) {
+                            document.tableOfContents.map { toc ->
+                                ReaderChapterEntry(
+                                    chapterId = toc.spineIndex,
+                                    volumeId = 0,
+                                    volumeName = null,
+                                    chapterName = toc.title
+                                )
+                            }
+                        } else {
+                            document.spines.mapIndexed { idx, spine ->
+                                ReaderChapterEntry(
+                                    chapterId = spine.spineIndex,
+                                    volumeId = 0,
+                                    volumeName = null,
+                                    chapterName = spine.title?.takeIf { it.isNotBlank() } ?: "Chapter ${idx + 1}"
+                                )
+                            }
+                        }
+                        if (tocChapters.isNotEmpty()) {
+                            chapterSequence = tocChapters
+                            currentChapter = tocChapters.first()
+                            currentChapterId = currentChapter.chapterId
+                        }
+
                         val resumePage = if (!hasAppliedInitialPage) {
                             hasAppliedInitialPage = true
                             initialPage ?: book.lastReadPage
@@ -968,10 +1058,32 @@ fun ReaderScreen(
                 val loadedVolumes = runCatching { loadedApi.volumes(seriesId) }
                     .onFailure { BunkoLog.w("Could not load reader chapter sequence for $seriesId.", it) }
                     .getOrDefault(emptyList())
-                chapterSequence = readerChapterSequence(loadedVolumes)
-                readerChapterEntry(loadedVolumes, currentChapterId)?.let {
-                    currentChapter = it
-                    currentVolumeId = it.volumeId
+                val seq = readerChapterSequence(loadedVolumes)
+                if (seq.isNotEmpty()) {
+                    chapterSequence = seq
+                    readerChapterEntry(loadedVolumes, currentChapterId)?.let {
+                        currentChapter = it
+                        currentVolumeId = it.volumeId
+                    }
+                } else {
+                    val offlineRecords = runCatching { offlineRepository.observeDownloaded(loadedSession).first() }.getOrDefault(emptyList())
+                        .filter { it.seriesId == seriesId }
+                        .sortedWith(compareBy<OfflineIssueRecord> { it.volumeId }.thenBy { it.chapterId })
+                    if (offlineRecords.isNotEmpty()) {
+                        val offlineSeq = offlineRecords.map { rec ->
+                            ReaderChapterEntry(
+                                chapterId = rec.chapterId,
+                                volumeId = rec.volumeId,
+                                volumeName = null,
+                                chapterName = rec.issueName
+                            )
+                        }
+                        chapterSequence = offlineSeq
+                        offlineSeq.firstOrNull { it.chapterId == currentChapterId }?.let {
+                            currentChapter = it
+                            currentVolumeId = it.volumeId
+                        }
+                    }
                 }
             }
             val (resolvedDirection, hasExplicitProfile) = try {
@@ -1086,8 +1198,44 @@ fun ReaderScreen(
             verticalRestoreNonce++
         } catch (t: Throwable) {
             BunkoLog.w("Could not initialize Reader for chapter $currentChapterId.", t)
+            if (chapterSequence.isEmpty() && local != null) {
+                val offlineRecords = runCatching { offlineRepository.observeDownloaded(loadedSession).first() }.getOrDefault(emptyList())
+                    .filter { it.seriesId == seriesId }
+                    .sortedWith(compareBy<OfflineIssueRecord> { it.volumeId }.thenBy { it.chapterId })
+                if (offlineRecords.isNotEmpty()) {
+                    val offlineSeq = offlineRecords.map { rec ->
+                        ReaderChapterEntry(
+                            chapterId = rec.chapterId,
+                            volumeId = rec.volumeId,
+                            volumeName = null,
+                            chapterName = rec.issueName
+                        )
+                    }
+                    chapterSequence = offlineSeq
+                    offlineSeq.firstOrNull { it.chapterId == currentChapterId }?.let {
+                        currentChapter = it
+                        currentVolumeId = it.volumeId
+                    }
+                } else {
+                    chapterSequence = listOf(currentChapter)
+                }
+            }
             if (local == null) {
                 error = readerLoadErrorMessage(t)
+            }
+        }
+    }
+
+    LaunchedEffect(page, isEpub, epubSubpages, chapterSequence) {
+        if (isEpub && epubSubpages.isNotEmpty() && chapterSequence.isNotEmpty()) {
+            val activeSpineIndex = epubSubpages.getOrNull(page)?.spineIndex
+            if (activeSpineIndex != null) {
+                val matched = chapterSequence.lastOrNull { it.chapterId <= activeSpineIndex }
+                    ?: chapterSequence.firstOrNull { it.chapterId == activeSpineIndex }
+                if (matched != null && (localBookId != null || matched.chapterId != currentChapterId)) {
+                    currentChapter = matched
+                    currentChapterId = matched.chapterId
+                }
             }
         }
     }
