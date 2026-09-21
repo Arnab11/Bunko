@@ -103,6 +103,8 @@ import com.bunko.reader.ReaderNavigationMode
 import com.bunko.reader.ReaderReadingDirection
 import com.bunko.reader.download.OfflineChapter
 import com.bunko.reader.download.OfflineIssueRepository
+import com.bunko.reader.offline.BookmarkRepository
+import com.bunko.reader.offline.ReaderBookmark
 import com.bunko.reader.MangaFormat
 import com.bunko.reader.SeriesMetadataDto
 import com.bunko.reader.reader.internal.ReaderLoadingScreen
@@ -285,6 +287,13 @@ fun ReaderScreen(
         showStatusBar = showReaderMenu,
         brightness = readerBrightness
     )
+    val bookmarkRepo = remember { BookmarkRepository(ctx) }
+    val currentBookId = localBookId ?: if (seriesId != 0) "series_${seriesId}_vol_${currentVolumeId}" else "remote_${currentChapterId}"
+    val bookBookmarks by bookmarkRepo.getBookmarksForBook(currentBookId).collectAsState(initial = emptyList())
+    val isCurrentPageBookmarked = remember(bookBookmarks, currentChapterId, page) {
+        bookBookmarks.any { it.page == page && (it.chapterId == 0 || it.chapterId == currentChapterId) }
+    }
+
     var sessionPreferenceKey by remember { mutableStateOf<String?>(null) }
     var zoomPan by remember { mutableStateOf(ReaderZoomPanState()) }
     var completingRead by remember { mutableStateOf(false) }
@@ -3597,6 +3606,48 @@ fun ReaderScreen(
                 currentChapterId = currentChapterId,
                 onSelectChapter = { target ->
                     switchChapter(target, false)
+                },
+                bookmarks = bookBookmarks,
+                isBookmarked = isCurrentPageBookmarked,
+                onToggleBookmark = {
+                    scope.launch {
+                        val snippet = if (isEpub) {
+                            val subpage = epubSubpages.getOrNull(page)
+                            subpage?.blocks?.firstNotNullOfOrNull { block ->
+                                when (block) {
+                                    is EpubBlock.TextBlock -> block.text.text.trim().take(160).takeIf { it.isNotBlank() }
+                                    is EpubBlock.ImageBlock -> "[Image]"
+                                    else -> null
+                                }
+                            }
+                        } else {
+                            "Page ${page + 1} of $pages"
+                        }
+                        bookmarkRepo.toggleBookmark(
+                            bookId = currentBookId,
+                            bookTitle = seriesName.ifBlank { currentChapter.displayName },
+                            chapterName = currentChapter.displayName,
+                            chapterId = currentChapterId,
+                            page = page,
+                            pageCount = pages,
+                            previewText = snippet
+                        )
+                    }
+                },
+                onDeleteBookmark = { bookmarkId ->
+                    scope.launch { bookmarkRepo.removeBookmark(bookmarkId) }
+                },
+                onJumpToBookmark = { bm ->
+                    if (bm.chapterId != 0 && bm.chapterId != currentChapterId) {
+                        val targetChapter = chapterSequence.firstOrNull { it.chapterId == bm.chapterId }
+                        if (targetChapter != null) {
+                            switchChapter(targetChapter, false)
+                        }
+                    }
+                    jumpToPage(bm.page)
+                    if (vertical) {
+                        scope.launch { verticalListState.scrollToItem(bm.page + 1) }
+                    }
                 }
             )
             }

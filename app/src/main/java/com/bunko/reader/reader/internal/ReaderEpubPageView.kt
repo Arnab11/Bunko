@@ -4,20 +4,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
@@ -26,8 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -98,6 +97,8 @@ internal fun ReaderEpubPageView(
         )
     )
 
+    val isSingleImagePage = subpage.blocks.size == 1 && subpage.blocks.first() is EpubBlock.ImageBlock
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -105,97 +106,125 @@ internal fun ReaderEpubPageView(
             .ePaperGrain(ePaperMode)
             .padding(effectivePadding)
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(blockSpacingDp)
-        ) {
-            for (block in subpage.blocks) {
-                when (block) {
-                    is EpubBlock.DividerBlock -> {
-                        HorizontalDivider(
-                            color = dividerColor,
-                            thickness = 1.dp,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                    }
-
-                    is EpubBlock.ImageBlock -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f, fill = false),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            AsyncImage(
-                                model = block.url,
-                                imageLoader = imageLoader ?: LocalContext.current.imageLoader,
-                                contentDescription = block.alt,
-                                contentScale = ContentScale.Fit,
-                                colorFilter = imageColorFilter,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp))
+        if (isSingleImagePage) {
+            val imageBlock = subpage.blocks.first() as EpubBlock.ImageBlock
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = imageBlock.url,
+                    imageLoader = imageLoader ?: LocalContext.current.imageLoader,
+                    contentDescription = imageBlock.alt,
+                    contentScale = ContentScale.Fit,
+                    colorFilter = imageColorFilter,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(4.dp))
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(blockSpacingDp)
+            ) {
+                for (block in subpage.blocks) {
+                    when (block) {
+                        is EpubBlock.DividerBlock -> {
+                            HorizontalDivider(
+                                color = dividerColor,
+                                thickness = 1.dp,
+                                modifier = Modifier.padding(vertical = 4.dp)
                             )
                         }
-                    }
 
-                    is EpubBlock.TextBlock -> {
-                        if (block.isHeading) {
-                            val headingScale = when (block.headingLevel) {
-                                1 -> 1.45f
-                                2 -> 1.3f
-                                3 -> 1.2f
-                                else -> 1.1f
-                            }
-                            Text(
-                                text = block.text,
-                                fontSize = (fontSizeSp * headingScale).sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = activeFontFamily,
-                                color = textColor,
-                                textAlign = activeTextAlign,
-                                lineHeight = (fontSizeSp * headingScale * 1.35f).sp,
-                                style = baseTextStyle,
+                        is EpubBlock.ImageBlock -> {
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                            )
-                        } else if (block.isQuote) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    .padding(vertical = 4.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .width(3.dp)
-                                        .height(24.dp)
-                                        .background(quoteBarColor)
+                                val imageModifier = if (block.aspectRatio > 0f) {
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f / block.aspectRatio, matchHeightConstraintsFirst = false)
+                                        .clip(RoundedCornerShape(4.dp))
+                                } else {
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(4.dp))
+                                }
+
+                                AsyncImage(
+                                    model = block.url,
+                                    imageLoader = imageLoader ?: LocalContext.current.imageLoader,
+                                    contentDescription = block.alt,
+                                    contentScale = ContentScale.Fit,
+                                    colorFilter = imageColorFilter,
+                                    modifier = imageModifier
                                 )
+                            }
+                        }
+
+                        is EpubBlock.TextBlock -> {
+                            if (block.isHeading) {
+                                val headingScale = when (block.headingLevel) {
+                                    1 -> 1.45f
+                                    2 -> 1.3f
+                                    3 -> 1.2f
+                                    else -> 1.1f
+                                }
+                                Text(
+                                    text = block.text,
+                                    fontSize = (fontSizeSp * headingScale).sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = activeFontFamily,
+                                    color = textColor,
+                                    textAlign = activeTextAlign,
+                                    lineHeight = (fontSizeSp * headingScale * 1.35f).sp,
+                                    style = baseTextStyle,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                )
+                            } else if (block.isQuote) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(3.dp)
+                                            .height(24.dp)
+                                            .background(quoteBarColor)
+                                    )
+                                    Text(
+                                        text = block.text,
+                                        fontSize = fontSizeSp.sp,
+                                        fontStyle = FontStyle.Italic,
+                                        fontFamily = activeFontFamily,
+                                        color = textColor,
+                                        textAlign = activeTextAlign,
+                                        lineHeight = (fontSizeSp * 1.45f).sp,
+                                        style = baseTextStyle,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            } else {
                                 Text(
                                     text = block.text,
                                     fontSize = fontSizeSp.sp,
-                                    fontStyle = FontStyle.Italic,
                                     fontFamily = activeFontFamily,
                                     color = textColor,
                                     textAlign = activeTextAlign,
                                     lineHeight = (fontSizeSp * 1.45f).sp,
                                     style = baseTextStyle,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                        } else {
-                            Text(
-                                text = block.text,
-                                fontSize = fontSizeSp.sp,
-                                fontFamily = activeFontFamily,
-                                color = textColor,
-                                textAlign = activeTextAlign,
-                                lineHeight = (fontSizeSp * 1.45f).sp,
-                                style = baseTextStyle,
-                                modifier = Modifier.fillMaxWidth()
-                            )
                         }
                     }
                 }

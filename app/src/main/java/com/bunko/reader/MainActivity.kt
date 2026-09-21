@@ -523,6 +523,9 @@ fun AppRoot(
                     onBack = { nav.popBackStack() },
                     onOpenBookmark = { libraryId, seriesId, volumeId, chapterId, page ->
                         nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=false&page=$page")
+                    },
+                    onOpenLocalBookmark = { bookId, page ->
+                        nav.navigate("local-reader/${Uri.encode(bookId)}?page=$page")
                     }
                 )
             }

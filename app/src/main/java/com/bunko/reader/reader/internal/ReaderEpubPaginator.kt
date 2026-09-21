@@ -1,5 +1,6 @@
 package com.bunko.reader.reader.internal
 
+import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.os.Build
 import android.text.Layout
@@ -9,14 +10,72 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import java.io.File
 import java.util.regex.Pattern
 
 object ReaderEpubPaginator {
 
     private val EntityPattern = Pattern.compile("&(#?[a-zA-Z0-9]+);")
+
+    private fun extractImageDimensions(url: String, element: org.jsoup.nodes.Element?): Triple<Int, Int, Float> {
+        var width = 0
+        var height = 0
+
+        // 1. Try decoding local file bounds (fast, header only)
+        val cleanPath = url.removePrefix("file://")
+        val file = File(cleanPath)
+        if (file.exists() && file.isFile && file.length() > 0L) {
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, opts)
+            if (opts.outWidth > 0 && opts.outHeight > 0) {
+                width = opts.outWidth
+                height = opts.outHeight
+            }
+        }
+
+        // 2. Check HTML/SVG tag attributes if file bounds couldn't be decoded
+        if ((width <= 0 || height <= 0) && element != null) {
+            val widthAttr = element.attr("width").ifEmpty {
+                element.parent()?.takeIf { it.tagName().equals("svg", ignoreCase = true) }?.attr("width") ?: ""
+            }
+            val heightAttr = element.attr("height").ifEmpty {
+                element.parent()?.takeIf { it.tagName().equals("svg", ignoreCase = true) }?.attr("height") ?: ""
+            }
+
+            val parsedW = widthAttr.filter { it.isDigit() }.toIntOrNull() ?: 0
+            val parsedH = heightAttr.filter { it.isDigit() }.toIntOrNull() ?: 0
+            if (parsedW > 0) width = parsedW
+            if (parsedH > 0) height = parsedH
+
+            if (width <= 0 || height <= 0) {
+                val viewBox = element.attr("viewBox").ifEmpty {
+                    element.parent()?.takeIf { it.tagName().equals("svg", ignoreCase = true) }?.attr("viewBox") ?: ""
+                }
+                if (viewBox.isNotBlank()) {
+                    val parts = viewBox.trim().split(Regex("[\\s,]+")).mapNotNull { it.toIntOrNull() }
+                    if (parts.size >= 4 && parts[2] > 0 && parts[3] > 0) {
+                        width = parts[2]
+                        height = parts[3]
+                    }
+                }
+            }
+        }
+
+        val aspectRatio = if (width > 0 && height > 0) height.toFloat() / width.toFloat() else 0f
+        return Triple(width, height, aspectRatio)
+    }
+
+    private fun trimAnnotatedString(annotated: AnnotatedString): AnnotatedString {
+        val text = annotated.text
+        val start = text.indexOfFirst { !it.isWhitespace() }
+        if (start == -1) return AnnotatedString("")
+        val end = text.indexOfLast { !it.isWhitespace() } + 1
+        return annotated.subSequence(start, end)
+    }
 
     fun parseHtmlToBlocks(
         html: String,
@@ -32,11 +91,38 @@ object ReaderEpubPaginator {
             val doc = org.jsoup.Jsoup.parse(html)
             val body = doc.body() ?: return blocks
 
-            fun processNode(node: org.jsoup.nodes.Node, currentStyles: List<SpanStyle>): AnnotatedString {
-                val builder = AnnotatedString.Builder()
+            fun resolveImageUrl(src: String): String {
+                return if (src.startsWith("/") || src.startsWith("http://") || src.startsWith("https://") || src.startsWith("file://") || src.startsWith("data:")) {
+                    src
+                } else {
+                    bookResourceUrlBuilder(baseUrl, apiKey, chapterId, src)
+                }
+            }
+
+            fun createImageBlock(el: org.jsoup.nodes.Element): EpubBlock.ImageBlock? {
+                val isSvgImage = el.tagName().equals("image", ignoreCase = true)
+                val rawSrc = if (isSvgImage) {
+                    el.attr("xlink:href").ifEmpty { el.attr("href") }
+                } else {
+                    el.attr("src")
+                }
+                if (rawSrc.isBlank()) return null
+                val fullUrl = resolveImageUrl(rawSrc)
+                val alt = el.attr("alt").ifEmpty { null }
+                val (w, h, ar) = extractImageDimensions(fullUrl, el)
+                return EpubBlock.ImageBlock(
+                    url = fullUrl,
+                    alt = alt,
+                    intrinsicWidth = w,
+                    intrinsicHeight = h,
+                    aspectRatio = ar
+                )
+            }
+
+            fun processInlineNode(node: org.jsoup.nodes.Node, currentStyles: List<SpanStyle>, builder: AnnotatedString.Builder) {
                 when (node) {
                     is org.jsoup.nodes.TextNode -> {
-                        val text = node.text()
+                        val text = decodeHtmlEntities(node.text())
                         if (text.isNotEmpty()) {
                             val start = builder.length
                             builder.append(text)
@@ -54,10 +140,9 @@ object ReaderEpubPaginator {
                             "u" -> newStyles.add(SpanStyle(textDecoration = TextDecoration.Underline))
                             "s", "strike", "del" -> newStyles.add(SpanStyle(textDecoration = TextDecoration.LineThrough))
                             "code", "pre" -> newStyles.add(SpanStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
-                            "sup" -> newStyles.add(SpanStyle(baselineShift = androidx.compose.ui.text.style.BaselineShift.Superscript, fontSize = androidx.compose.ui.unit.TextUnit.Unspecified))
-                            "sub" -> newStyles.add(SpanStyle(baselineShift = androidx.compose.ui.text.style.BaselineShift.Subscript, fontSize = androidx.compose.ui.unit.TextUnit.Unspecified))
+                            "sup" -> newStyles.add(SpanStyle(baselineShift = BaselineShift.Superscript))
+                            "sub" -> newStyles.add(SpanStyle(baselineShift = BaselineShift.Subscript))
                             "ruby" -> {
-                                // Japanese Ruby text: extract base text and rt annotation
                                 val rb = node.select("rb, text()").firstOrNull()?.toString() ?: node.ownText()
                                 val rt = node.select("rt").firstOrNull()?.text() ?: ""
                                 val rubyFormatted = if (rt.isNotEmpty()) "$rb ($rt)" else rb
@@ -66,100 +151,173 @@ object ReaderEpubPaginator {
                                 currentStyles.forEach { style ->
                                     builder.addStyle(style, start, start + rubyFormatted.length)
                                 }
-                                return builder.toAnnotatedString()
+                                return
                             }
                         }
 
                         if (tag == "br") {
                             builder.append("\n")
-                        } else {
+                        } else if (tag != "img" && tag != "image" && tag != "svg") {
                             node.childNodes().forEach { child ->
-                                builder.append(processNode(child, newStyles))
-                            }
-                        }
-                    }
-                }
-                return builder.toAnnotatedString()
-            }
-
-            fun traverseElements(element: org.jsoup.nodes.Element) {
-                element.children().forEach { child ->
-                    val tag = child.tagName().lowercase()
-                    when (tag) {
-                        "h1", "h2", "h3", "h4", "h5", "h6" -> {
-                            val level = tag.substring(1).toIntOrNull() ?: 1
-                            val text = processNode(child, listOf(SpanStyle(fontWeight = FontWeight.Bold)))
-                            if (text.isNotBlank()) {
-                                blocks.add(EpubBlock.TextBlock(text = text, isHeading = true, headingLevel = level))
-                            }
-                        }
-                        "p" -> {
-                            val text = processNode(child, emptyList())
-                            if (text.isNotBlank()) {
-                                blocks.add(EpubBlock.TextBlock(text = text))
-                            }
-                        }
-                        "blockquote" -> {
-                            val text = processNode(child, listOf(SpanStyle(fontStyle = FontStyle.Italic)))
-                            if (text.isNotBlank()) {
-                                blocks.add(EpubBlock.TextBlock(text = text, isQuote = true))
-                            }
-                        }
-                        "ul", "ol" -> {
-                            child.select("> li").forEachIndexed { idx, li ->
-                                val bullet = if (tag == "ol") "${idx + 1}. " else "• "
-                                val liText = processNode(li, emptyList())
-                                if (liText.isNotBlank()) {
-                                    val full = AnnotatedString.Builder(bullet).apply { append(liText) }.toAnnotatedString()
-                                    blocks.add(EpubBlock.TextBlock(text = full))
-                                }
-                            }
-                        }
-                        "hr" -> {
-                            blocks.add(EpubBlock.DividerBlock)
-                        }
-                        "img", "image" -> {
-                            val src = child.attr("src").ifEmpty { child.attr("xlink:href") }.ifEmpty { child.attr("href") }
-                            if (src.isNotBlank()) {
-                                val fullUrl = if (src.startsWith("/") || src.startsWith("http://") || src.startsWith("https://") || src.startsWith("file://")) {
-                                    src
-                                } else {
-                                    bookResourceUrlBuilder(baseUrl, apiKey, chapterId, src)
-                                }
-                                val alt = child.attr("alt").ifEmpty { null }
-                                blocks.add(EpubBlock.ImageBlock(url = fullUrl, alt = alt))
-                            }
-                        }
-                        "div", "section", "article", "main", "body" -> {
-                            // If it has direct text or children
-                            if (child.children().isEmpty()) {
-                                val text = processNode(child, emptyList())
-                                if (text.isNotBlank()) {
-                                    blocks.add(EpubBlock.TextBlock(text = text))
-                                }
-                            } else {
-                                traverseElements(child)
-                            }
-                        }
-                        else -> {
-                            val text = processNode(child, emptyList())
-                            if (text.isNotBlank()) {
-                                blocks.add(EpubBlock.TextBlock(text = text))
+                                processInlineNode(child, newStyles, builder)
                             }
                         }
                     }
                 }
             }
 
-            traverseElements(body)
+            fun processContainer(
+                container: org.jsoup.nodes.Element,
+                isHeading: Boolean = false,
+                headingLevel: Int = 0,
+                isQuote: Boolean = false,
+                initialStyles: List<SpanStyle> = emptyList()
+            ) {
+                var runningBuilder = AnnotatedString.Builder()
 
-            // If empty (e.g. text directly inside body without container tags)
-            if (blocks.isEmpty() && body.text().isNotBlank()) {
-                val direct = processNode(body, emptyList())
-                if (direct.isNotBlank()) {
-                    blocks.add(EpubBlock.TextBlock(text = direct))
+                fun flushRunningText(trimEdges: Boolean = false) {
+                    var str = runningBuilder.toAnnotatedString()
+                    if (trimEdges) {
+                        str = trimAnnotatedString(str)
+                    }
+                    if (str.text.isNotBlank()) {
+                        blocks.add(
+                            EpubBlock.TextBlock(
+                                text = str,
+                                isHeading = isHeading,
+                                headingLevel = headingLevel,
+                                isQuote = isQuote
+                            )
+                        )
+                    }
+                    runningBuilder = AnnotatedString.Builder()
                 }
+
+                container.childNodes().forEach { child ->
+                    when (child) {
+                        is org.jsoup.nodes.TextNode -> {
+                            val txt = child.text()
+                            if (txt.isNotBlank() || (runningBuilder.length > 0 && txt.isNotEmpty())) {
+                                processInlineNode(child, initialStyles, runningBuilder)
+                            }
+                        }
+                        is org.jsoup.nodes.Element -> {
+                            val tag = child.tagName().lowercase()
+                            when (tag) {
+                                "img", "image" -> {
+                                    flushRunningText()
+                                    createImageBlock(child)?.let { blocks.add(it) }
+                                }
+                                "svg" -> {
+                                    flushRunningText()
+                                    val imageChild = child.select("image").firstOrNull()
+                                    if (imageChild != null) {
+                                        createImageBlock(imageChild)?.let { blocks.add(it) }
+                                    }
+                                }
+                                "hr" -> {
+                                    flushRunningText(trimEdges = true)
+                                    blocks.add(EpubBlock.DividerBlock)
+                                }
+                                "h1", "h2", "h3", "h4", "h5", "h6" -> {
+                                    flushRunningText(trimEdges = true)
+                                    val lvl = tag.substring(1).toIntOrNull() ?: 1
+                                    val builder = AnnotatedString.Builder()
+                                    processInlineNode(child, listOf(SpanStyle(fontWeight = FontWeight.Bold)), builder)
+                                    val trimmed = trimAnnotatedString(builder.toAnnotatedString())
+                                    if (trimmed.text.isNotBlank()) {
+                                        blocks.add(EpubBlock.TextBlock(text = trimmed, isHeading = true, headingLevel = lvl))
+                                    }
+                                }
+                                "blockquote" -> {
+                                    flushRunningText(trimEdges = true)
+                                    val hasSpecial = child.select("img, image, svg, hr").isNotEmpty()
+                                    if (hasSpecial) {
+                                        processContainer(child, isQuote = true, initialStyles = listOf(SpanStyle(fontStyle = FontStyle.Italic)))
+                                    } else {
+                                        val builder = AnnotatedString.Builder()
+                                        processInlineNode(child, listOf(SpanStyle(fontStyle = FontStyle.Italic)), builder)
+                                        val trimmed = trimAnnotatedString(builder.toAnnotatedString())
+                                        if (trimmed.text.isNotBlank()) {
+                                            blocks.add(EpubBlock.TextBlock(text = trimmed, isQuote = true))
+                                        }
+                                    }
+                                }
+                                "ul", "ol" -> {
+                                    flushRunningText(trimEdges = true)
+                                    child.select("> li").forEachIndexed { idx, li ->
+                                        val bullet = if (tag == "ol") "${idx + 1}. " else "• "
+                                        val liBuilder = AnnotatedString.Builder(bullet)
+                                        processInlineNode(li, emptyList(), liBuilder)
+                                        val liStr = trimAnnotatedString(liBuilder.toAnnotatedString())
+                                        if (liStr.text.isNotBlank()) {
+                                            blocks.add(EpubBlock.TextBlock(text = liStr))
+                                        }
+                                        li.select("img, image").forEach { liImg ->
+                                            createImageBlock(liImg)?.let { blocks.add(it) }
+                                        }
+                                    }
+                                }
+                                "figure" -> {
+                                    flushRunningText(trimEdges = true)
+                                    val figImg = child.select("img, image, svg image").firstOrNull()
+                                    if (figImg != null) {
+                                        createImageBlock(figImg)?.let { blocks.add(it) }
+                                    }
+                                    val caption = child.select("figcaption").firstOrNull()
+                                    if (caption != null) {
+                                        val capBuilder = AnnotatedString.Builder()
+                                        processInlineNode(caption, listOf(SpanStyle(fontStyle = FontStyle.Italic)), capBuilder)
+                                        val capStr = trimAnnotatedString(capBuilder.toAnnotatedString())
+                                        if (capStr.text.isNotBlank()) {
+                                            blocks.add(EpubBlock.TextBlock(text = capStr, isQuote = true))
+                                        }
+                                    }
+                                }
+                                "p", "div", "section", "article", "main", "center" -> {
+                                    val hasSpecial = child.select("img, image, svg, hr, h1, h2, h3, h4, h5, h6, blockquote, figure, ul, ol").isNotEmpty()
+                                    if (hasSpecial) {
+                                        flushRunningText(trimEdges = true)
+                                        processContainer(child, isHeading, headingLevel, isQuote, initialStyles)
+                                    } else {
+                                        flushRunningText(trimEdges = true)
+                                        val pBuilder = AnnotatedString.Builder()
+                                        processInlineNode(child, initialStyles, pBuilder)
+                                        val pStr = trimAnnotatedString(pBuilder.toAnnotatedString())
+                                        if (pStr.text.isNotBlank()) {
+                                            blocks.add(
+                                                EpubBlock.TextBlock(
+                                                    text = pStr,
+                                                    isHeading = isHeading,
+                                                    headingLevel = headingLevel,
+                                                    isQuote = isQuote
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                                "a", "span" -> {
+                                    val hasSpecial = child.select("img, image, svg").isNotEmpty()
+                                    if (hasSpecial) {
+                                        flushRunningText()
+                                        processContainer(child, isHeading, headingLevel, isQuote, initialStyles)
+                                    } else {
+                                        processInlineNode(child, initialStyles, runningBuilder)
+                                    }
+                                }
+                                else -> {
+                                    processInlineNode(child, initialStyles, runningBuilder)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                flushRunningText(trimEdges = true)
             }
+
+            processContainer(body)
+
         } catch (t: Throwable) {
             com.bunko.reader.BunkoLog.w("Failed to parse HTML to blocks", t)
         }
@@ -237,9 +395,8 @@ object ReaderEpubPaginator {
         val blockSpacingPx = with(density) { 10.dp.roundToPx() }
         val headingSpacingPx = with(density) { 18.dp.roundToPx() }
         val dividerHeightPx = with(density) { 24.dp.roundToPx() }
-        val minImageHeightPx = with(density) { 160.dp.roundToPx() }
-        val defaultImageHeightPx = (availableHeightPx * 0.55f).toInt().coerceAtLeast(minImageHeightPx)
-        // Safety buffer to prevent rounding and subpixel wrapping discrepancies from causing the last line to overflow
+        val minImageHeightPx = with(density) { 120.dp.roundToPx() }
+        val maxImageHeightPx = (availableHeightPx - with(density) { 20.dp.roundToPx() }).coerceAtLeast(minImageHeightPx)
         val bottomSafetyBufferPx = (fontSizePx * 0.35f).toInt().coerceAtLeast(6)
 
         fun startNewPage() {
@@ -261,12 +418,41 @@ object ReaderEpubPaginator {
                 }
 
                 is EpubBlock.ImageBlock -> {
-                    val requiredHeight = defaultImageHeightPx + blockSpacingPx
-                    if (remainingHeightPx < requiredHeight && currentSubpageBlocks.isNotEmpty()) {
-                        startNewPage()
+                    val isStandaloneOrFullPage = run {
+                        if (blocks.size == 1) true
+                        else if (block.aspectRatio >= 1.15f && (availableWidthPx * block.aspectRatio) >= (availableHeightPx * 0.7f)) true
+                        else false
                     }
-                    currentSubpageBlocks.add(block)
-                    remainingHeightPx -= requiredHeight
+
+                    val computedImageHeightPx = when {
+                        isStandaloneOrFullPage -> availableHeightPx
+                        block.aspectRatio > 0f -> {
+                            val scaled = (availableWidthPx * block.aspectRatio).toInt()
+                            scaled.coerceIn(minImageHeightPx, maxImageHeightPx)
+                        }
+                        block.intrinsicHeight > 0 && block.intrinsicWidth > 0 -> {
+                            val scaled = (block.intrinsicHeight.toFloat() / block.intrinsicWidth.toFloat() * availableWidthPx).toInt()
+                            scaled.coerceIn(minImageHeightPx, maxImageHeightPx)
+                        }
+                        else -> {
+                            (availableHeightPx * 0.5f).toInt().coerceIn(minImageHeightPx, maxImageHeightPx)
+                        }
+                    }
+
+                    if (isStandaloneOrFullPage) {
+                        if (currentSubpageBlocks.isNotEmpty()) {
+                            startNewPage()
+                        }
+                        currentSubpageBlocks.add(block)
+                        startNewPage()
+                    } else {
+                        val requiredHeight = computedImageHeightPx + blockSpacingPx
+                        if (remainingHeightPx < requiredHeight && currentSubpageBlocks.isNotEmpty()) {
+                            startNewPage()
+                        }
+                        currentSubpageBlocks.add(block)
+                        remainingHeightPx -= requiredHeight
+                    }
                 }
 
                 is EpubBlock.TextBlock -> {
@@ -298,8 +484,6 @@ object ReaderEpubPaginator {
                         if (totalLines == 0) break
 
                         val totalHeight = layout.height
-
-                        // If the whole text block fits on the current page with safety margin
                         val effectiveRemaining = if (currentSubpageBlocks.isEmpty()) remainingHeightPx else remainingHeightPx - bottomSafetyBufferPx
                         if (totalHeight + extraSpacing <= effectiveRemaining) {
                             currentSubpageBlocks.add(
@@ -309,7 +493,6 @@ object ReaderEpubPaginator {
                             break
                         }
 
-                        // Text doesn't fit entirely; find how many lines fit on the current page
                         var fittingLine = -1
                         for (line in 0 until totalLines) {
                             val lineBottom = layout.getLineBottom(line)
@@ -339,11 +522,9 @@ object ReaderEpubPaginator {
                             }
                             startNewPage()
                         } else {
-                            // If not even a single line fits and there's already content on the page, start a new page
                             if (currentSubpageBlocks.isNotEmpty()) {
                                 startNewPage()
                             } else {
-                                // First item on an empty page doesn't fit completely; take at least 1 line
                                 val splitIndex = layout.getLineEnd(0).coerceIn(0, textStr.length)
                                 val fittingChunk = remainingAnnotated.subSequence(0, splitIndex)
                                 currentSubpageBlocks.add(
@@ -455,31 +636,6 @@ object ReaderEpubPaginator {
         }
     }
 
-    private fun extractBodyContent(html: String): String {
-        val lower = html.lowercase()
-        val bodyStart = lower.indexOf("<body")
-        val bodyEnd = lower.lastIndexOf("</body>")
-        val extracted = if (bodyStart != -1 && bodyEnd != -1 && bodyEnd > bodyStart) {
-            val startClose = html.indexOf('>', bodyStart)
-            if (startClose != -1) html.substring(startClose + 1, bodyEnd) else html
-        } else {
-            html
-        }
-        // Remove style and script tags
-        return extracted
-            .replace(Regex("(?s)<style.*?</style>"), "")
-            .replace(Regex("(?s)<script.*?</script>"), "")
-    }
-
-    private fun extractAttribute(attrs: String, attrName: String): String? {
-        val pattern = Pattern.compile("""(?i)\b$attrName\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""")
-        val matcher = pattern.matcher(attrs)
-        if (matcher.find()) {
-            return matcher.group(1) ?: matcher.group(2) ?: matcher.group(3)
-        }
-        return null
-    }
-
     private fun decodeHtmlEntities(input: String): String {
         val matcher = EntityPattern.matcher(input)
         val sb = StringBuffer()
@@ -513,20 +669,4 @@ object ReaderEpubPaginator {
         matcher.appendTail(sb)
         return sb.toString()
     }
-
-    private fun removeActiveStyle(list: MutableList<ActiveStyle>, key: Any) {
-        val idx = list.indexOfLast { it.key == key }
-        if (idx != -1) list.removeAt(idx)
-    }
-
-    private data class StyleSpan(
-        val style: SpanStyle,
-        val start: Int,
-        val end: Int
-    )
-
-    private data class ActiveStyle(
-        val style: SpanStyle,
-        val key: Any
-    )
 }

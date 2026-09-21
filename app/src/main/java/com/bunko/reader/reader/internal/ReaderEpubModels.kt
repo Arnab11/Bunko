@@ -13,7 +13,10 @@ sealed interface EpubBlock {
 
     data class ImageBlock(
         val url: String,
-        val alt: String? = null
+        val alt: String? = null,
+        val intrinsicWidth: Int = 0,
+        val intrinsicHeight: Int = 0,
+        val aspectRatio: Float = 0f
     ) : EpubBlock
 
     object DividerBlock : EpubBlock

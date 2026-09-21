@@ -51,20 +51,31 @@ object Fb2DocumentReader {
 
         // 2. Extract embedded binary images
         var coverPath: String? = null
-        val coverId = doc.select("description > title-info > coverpage > image").firstOrNull()?.attr("l:href")
-            ?.removePrefix("#")
+        val coverId = doc.select("description > title-info > coverpage > image, coverpage > image").firstOrNull()?.let {
+            it.attr("l:href").ifEmpty { it.attr("xlink:href") }.ifEmpty { it.attr("href") }.removePrefix("#")
+        }
+
+        val imageFileMap = mutableMapOf<String, File>()
 
         doc.select("binary").forEach { binaryEl ->
-            val id = binaryEl.attr("id")
+            val id = binaryEl.attr("id").trim()
             val base64Data = binaryEl.text().replace("\n", "").replace("\r", "").trim()
             if (id.isNotBlank() && base64Data.isNotBlank()) {
                 try {
                     val bytes = Base64.decode(base64Data, Base64.DEFAULT)
-                    val imgFile = File(resourceDir, "$id.jpg")
+                    val safeId = id.replace('/', '_')
+                    val imgFile = if (safeId.contains('.')) File(resourceDir, safeId) else File(resourceDir, "$safeId.jpg")
                     if (!imgFile.exists() || imgFile.length() == 0L) {
                         imgFile.writeBytes(bytes)
                     }
-                    if (id == coverId || coverPath == null) {
+                    imageFileMap[id] = imgFile
+                    imageFileMap[id.lowercase()] = imgFile
+                    imageFileMap[id.removePrefix("#")] = imgFile
+                    imageFileMap[id.removePrefix("#").lowercase()] = imgFile
+                    imageFileMap["$id.jpg"] = imgFile
+                    imageFileMap["$id.jpg".lowercase()] = imgFile
+
+                    if (id == coverId || id.removePrefix("#") == coverId || coverPath == null) {
                         coverPath = imgFile.absolutePath
                     }
                 } catch (t: Throwable) {
@@ -73,59 +84,79 @@ object Fb2DocumentReader {
             }
         }
 
+        fun rewriteImageTags(element: org.jsoup.nodes.Element) {
+            element.select("image, img").forEach { img ->
+                val href = img.attr("l:href")
+                    .ifEmpty { img.attr("xlink:href") }
+                    .ifEmpty { img.attr("href") }
+                    .ifEmpty { img.attr("src") }
+                    .removePrefix("#")
+                val matchedFile = imageFileMap[href]
+                    ?: imageFileMap[href.lowercase()]
+                    ?: File(resourceDir, "$href.jpg").takeIf { it.exists() }
+                    ?: File(resourceDir, href).takeIf { it.exists() }
+                if (matchedFile != null) {
+                    img.tagName("img")
+                    img.attr("src", matchedFile.absolutePath)
+                }
+            }
+        }
+
         // 3. Sections / Bodies
         val spines = mutableListOf<ReflowSpine>()
         val toc = mutableListOf<TocItem>()
+
+        if (coverPath != null) {
+            val coverHtml = "<html><head><title>Cover</title></head><body><div class=\"coverpage\"><img src=\"$coverPath\" alt=\"Cover\"/></div></body></html>"
+            spines.add(
+                ReflowSpine(
+                    id = "fb2_cover",
+                    spineIndex = 0,
+                    title = "Cover",
+                    rawHtml = coverHtml
+                )
+            )
+            toc.add(TocItem("Cover", 0))
+        }
 
         val mainBody = doc.select("body").firstOrNull()
         val sections = mainBody?.select("> section") ?: emptyList()
 
         if (sections.isNotEmpty()) {
             sections.forEachIndexed { idx, sec ->
+                val spineIdx = spines.size
                 val sectionTitle = sec.select("> title").firstOrNull()?.text()
                     ?.takeIf { it.isNotBlank() } ?: "Section ${idx + 1}"
-                
-                // Rewrite image links
-                sec.select("image").forEach { img ->
-                    val href = img.attr("l:href").removePrefix("#")
-                    val localImg = File(resourceDir, "$href.jpg")
-                    if (localImg.exists()) {
-                        img.tagName("img")
-                        img.attr("src", localImg.absolutePath)
-                    }
-                }
+
+                rewriteImageTags(sec)
 
                 val html = "<html><head><title>$sectionTitle</title></head><body>${sec.html()}</body></html>"
                 spines.add(
                     ReflowSpine(
-                        id = "fb2_section_$idx",
-                        spineIndex = idx,
+                        id = "fb2_section_$spineIdx",
+                        spineIndex = spineIdx,
                         title = sectionTitle,
                         rawHtml = html
                     )
                 )
-                toc.add(TocItem(sectionTitle, idx))
+                toc.add(TocItem(sectionTitle, spineIdx))
             }
         } else {
             // No sections, whole body as one spine
-            mainBody?.select("image")?.forEach { img ->
-                val href = img.attr("l:href").removePrefix("#")
-                val localImg = File(resourceDir, "$href.jpg")
-                if (localImg.exists()) {
-                    img.tagName("img")
-                    img.attr("src", localImg.absolutePath)
-                }
+            val spineIdx = spines.size
+            if (mainBody != null) {
+                rewriteImageTags(mainBody)
             }
             val html = "<html><head><title>$title</title></head><body>${mainBody?.html() ?: ""}</body></html>"
             spines.add(
                 ReflowSpine(
-                    id = "fb2_section_0",
-                    spineIndex = 0,
+                    id = "fb2_section_$spineIdx",
+                    spineIndex = spineIdx,
                     title = title,
                     rawHtml = html
                 )
             )
-            toc.add(TocItem(title, 0))
+            toc.add(TocItem(title, spineIdx))
         }
 
         ParsedFb2(

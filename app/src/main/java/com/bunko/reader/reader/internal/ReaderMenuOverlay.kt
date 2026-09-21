@@ -52,10 +52,13 @@ import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.NightlightRound
@@ -122,6 +125,7 @@ import com.bunko.reader.ReaderImageScaleType
 import com.bunko.reader.ReaderNavigationMode
 import com.bunko.reader.ReaderReadingDirection
 import com.bunko.reader.ReaderTappingInvertMode
+import com.bunko.reader.offline.ReaderBookmark
 import com.bunko.reader.ui.ValueBubbleSlider
 import kotlin.math.roundToInt
 
@@ -194,7 +198,12 @@ internal fun ReaderMenuOverlay(
     onSetEpubTextAlign: ((EpubTextAlign) -> Unit)? = null,
     chapters: List<ReaderChapterEntry> = emptyList(),
     currentChapterId: Int = 0,
-    onSelectChapter: ((ReaderChapterEntry) -> Unit)? = null
+    onSelectChapter: ((ReaderChapterEntry) -> Unit)? = null,
+    bookmarks: List<ReaderBookmark> = emptyList(),
+    isBookmarked: Boolean = false,
+    onToggleBookmark: (() -> Unit)? = null,
+    onDeleteBookmark: ((String) -> Unit)? = null,
+    onJumpToBookmark: ((ReaderBookmark) -> Unit)? = null
 ) {
     val rightToLeft = readingDirection == ReaderReadingDirection.RightToLeft
     val safePageCount = pages.coerceAtLeast(1)
@@ -335,6 +344,17 @@ internal fun ReaderMenuOverlay(
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Bookmark Toggle Button
+            IconButton(
+                onClick = { onToggleBookmark?.invoke() }
+            ) {
+                Icon(
+                    imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                    contentDescription = if (isBookmarked) "Remove bookmark" else "Add bookmark",
+                    tint = if (isBookmarked) MaterialTheme.colorScheme.primary else onBar
                 )
             }
 
@@ -1509,8 +1529,9 @@ internal fun ReaderMenuOverlay(
             }
         }
 
-        // CHAPTERS MODAL BOTTOM SHEET
+        // CHAPTERS & BOOKMARKS MODAL BOTTOM SHEET
         if (showChapterList) {
+            var chapterSheetTab by remember { mutableIntStateOf(0) }
             ModalBottomSheet(
                 onDismissRequest = { showChapterList = false },
                 containerColor = dialogSurfaceBg,
@@ -1523,47 +1544,162 @@ internal fun ReaderMenuOverlay(
                         .navigationBarsPadding()
                         .padding(bottom = 16.dp)
                 ) {
-                    Text(
-                        text = "Chapters",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = onBar,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                    )
-                    HorizontalDivider(color = dividerColor)
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 420.dp)
+                    TabRow(
+                        selectedTabIndex = chapterSheetTab,
+                        containerColor = Color.Transparent,
+                        contentColor = onBar,
+                        divider = { HorizontalDivider(color = dividerColor) }
                     ) {
-                        items(chapters) { entry ->
-                            val isCurrent = entry.chapterId == currentChapterId
-                            Row(
+                        Tab(
+                            selected = chapterSheetTab == 0,
+                            onClick = { chapterSheetTab = 0 },
+                            text = {
+                                Text(
+                                    "Chapters (${chapters.size})",
+                                    fontWeight = if (chapterSheetTab == 0) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        )
+                        Tab(
+                            selected = chapterSheetTab == 1,
+                            onClick = { chapterSheetTab = 1 },
+                            text = {
+                                Text(
+                                    "Bookmarks (${bookmarks.size})",
+                                    fontWeight = if (chapterSheetTab == 1) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        )
+                    }
+
+                    if (chapterSheetTab == 0) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 420.dp)
+                        ) {
+                            items(chapters) { entry ->
+                                val isCurrent = entry.chapterId == currentChapterId
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            showChapterList = false
+                                            onSelectChapter?.invoke(entry)
+                                        }
+                                        .background(if (isCurrent) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else Color.Transparent)
+                                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = entry.displayName,
+                                        color = if (isCurrent) MaterialTheme.colorScheme.onSecondaryContainer else onBar,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (isCurrent) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Current Chapter",
+                                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        if (bookmarks.isEmpty()) {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        showChapterList = false
-                                        onSelectChapter?.invoke(entry)
-                                    }
-                                    .background(if (isCurrent) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else Color.Transparent)
-                                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(horizontal = 24.dp, vertical = 32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text(
-                                    text = entry.displayName,
-                                    color = if (isCurrent) MaterialTheme.colorScheme.onSecondaryContainer else onBar,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                    modifier = Modifier.weight(1f)
+                                Icon(
+                                    imageVector = Icons.Filled.BookmarkBorder,
+                                    contentDescription = null,
+                                    tint = onBarVariant,
+                                    modifier = Modifier.size(40.dp)
                                 )
-                                if (isCurrent) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "Current Chapter",
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    text = "No bookmarks yet",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = onBar,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "Tap the bookmark icon in the top bar to save pages.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = onBarVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 420.dp)
+                            ) {
+                                items(bookmarks, key = { it.id }) { bm ->
+                                    val isCurrentPage = bm.page == page && (bm.chapterId == 0 || bm.chapterId == currentChapterId)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                showChapterList = false
+                                                onJumpToBookmark?.invoke(bm)
+                                            }
+                                            .background(if (isCurrentPage) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else Color.Transparent)
+                                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Bookmark,
+                                                    contentDescription = null,
+                                                    tint = if (isCurrentPage) MaterialTheme.colorScheme.primary else onBarVariant,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Text(
+                                                    text = "Page ${bm.page + 1}" + (if (bm.pageCount > 0) " of ${bm.pageCount}" else "") + (if (bm.chapterName != null && bm.chapterName.isNotBlank()) " • ${bm.chapterName}" else ""),
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isCurrentPage) MaterialTheme.colorScheme.onSecondaryContainer else onBar
+                                                )
+                                            }
+                                            if (!bm.previewText.isNullOrBlank()) {
+                                                Spacer(Modifier.height(4.dp))
+                                                Text(
+                                                    text = bm.previewText,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = onBarVariant,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { onDeleteBookmark?.invoke(bm.id) },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.DeleteOutline,
+                                                contentDescription = "Delete bookmark",
+                                                tint = onBarVariant,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

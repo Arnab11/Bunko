@@ -71,40 +71,40 @@ object MobiDocumentReader {
         val rawHtml = parser.getTextContent()
         val doc = Jsoup.parse(rawHtml)
 
-        // Rewrite <img> tags to point to extracted resource files
+        // Rewrite <img> and <image> tags to point to extracted resource files
         var imgTagCounter = 1
-        doc.select("img, image, mbp\\:pagebreak").forEach { el ->
-            if (el.tagName().equals("img", ignoreCase = true)) {
-                val jpgFile = File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.jpg")
-                val pngFile = File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.png")
-                val gifFile = File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.gif")
-                val webpFile = File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.webp")
-
-                val actual = when {
-                    jpgFile.exists() -> jpgFile
-                    pngFile.exists() -> pngFile
-                    gifFile.exists() -> gifFile
-                    webpFile.exists() -> webpFile
-                    else -> null
-                }
-                if (actual != null) {
-                    el.attr("src", actual.absolutePath)
-                }
-                imgTagCounter++
+        doc.select("img, image").forEach { el ->
+            val recindexAttr = el.attr("recindex").filter { it.isDigit() }.toIntOrNull()
+            val imgIdx = recindexAttr ?: imgTagCounter
+            val candidates = listOf("jpg", "png", "gif", "webp", "jpeg").mapNotNull { ext ->
+                File(resourceDir, "image_${String.format("%04d", imgIdx)}.$ext").takeIf { it.exists() && it.length() > 0 }
             }
+            val actual = candidates.firstOrNull() ?: run {
+                listOf("jpg", "png", "gif", "webp", "jpeg").mapNotNull { ext ->
+                    File(resourceDir, "image_${String.format("%04d", imgTagCounter)}.$ext").takeIf { it.exists() && it.length() > 0 }
+                }.firstOrNull()
+            }
+            if (actual != null) {
+                el.tagName("img")
+                el.attr("src", actual.absolutePath)
+            }
+            imgTagCounter++
         }
 
+        val processedHtml = doc.body()?.html() ?: doc.html()
+
         // 4. Split chapters by pagebreaks or headings
-        val chapters = rawHtml.split(Regex("(?i)<mbp:pagebreak[^>]*>|(?i)<div class=[\"']chapter[\"']>"))
+        val chapters = processedHtml.split(Regex("(?i)<mbp:pagebreak[^>]*>|(?i)<div class=[\"']chapter[\"']>"))
         if (chapters.size > 1) {
             chapters.forEachIndexed { idx, chunk ->
                 if (chunk.isNotBlank()) {
+                    val cleanChunk = "<html><body>$chunk</body></html>"
                     spines.add(
                         ReflowSpine(
                             id = "mobi_spine_$idx",
                             spineIndex = idx,
                             title = "Chapter ${idx + 1}",
-                            rawHtml = chunk
+                            rawHtml = cleanChunk
                         )
                     )
                     toc.add(TocItem("Chapter ${idx + 1}", idx))

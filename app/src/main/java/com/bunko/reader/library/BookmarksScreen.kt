@@ -36,6 +36,14 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material3.Icon
+import com.bunko.reader.offline.BookmarkRepository
+import com.bunko.reader.offline.ReaderBookmark
 import com.bunko.reader.BookmarkDto
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaClient
@@ -61,12 +69,15 @@ internal fun BookmarksScreen(
         volumeId: Int,
         chapterId: Int,
         page: Int
-    ) -> Unit
+    ) -> Unit,
+    onOpenLocalBookmark: ((bookId: String, page: Int) -> Unit)? = null
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val bookmarkRepo = remember { BookmarkRepository(ctx) }
     var session by remember { mutableStateOf(KavitaSession()) }
     var bookmarks by remember { mutableStateOf<List<BookmarkDto>>(emptyList()) }
+    var localBookmarks by remember { mutableStateOf<List<ReaderBookmark>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableIntStateOf(0) }
@@ -77,23 +88,28 @@ internal fun BookmarksScreen(
         if (initialLoad) loading = true else refreshing = true
         if (initialLoad) error = null
         try {
+            localBookmarks = bookmarkRepo.getAllBookmarks()
             val loadedSession = sessionStore.load()
             session = loadedSession
-            val (api, _) = KavitaClient(ctx, sessionStore).buildApi()
-            bookmarks = api.allBookmarks()
-                .filter { it.seriesId > 0 && it.chapterId > 0 }
-                .sortedWith(
-                    compareBy<BookmarkDto> { it.series?.name.orEmpty() }
-                        .thenBy { it.volumeId }
-                        .thenBy { it.chapterId }
-                        .thenBy { it.page }
-                )
+            if (loadedSession.baseUrl.isNotBlank()) {
+                val (api, _) = KavitaClient(ctx, sessionStore).buildApi()
+                bookmarks = api.allBookmarks()
+                    .filter { it.seriesId > 0 && it.chapterId > 0 }
+                    .sortedWith(
+                        compareBy<BookmarkDto> { it.series?.name.orEmpty() }
+                            .thenBy { it.volumeId }
+                            .thenBy { it.chapterId }
+                            .thenBy { it.page }
+                    )
+            }
             error = null
         } catch (c: CancellationException) {
             throw c
         } catch (t: Throwable) {
             BunkoLog.w("Could not load bookmarks.", t)
-            if (bookmarks.isEmpty()) error = t.message ?: t.toString()
+            if (bookmarks.isEmpty() && localBookmarks.isEmpty()) {
+                error = t.message ?: t.toString()
+            }
         } finally {
             if (initialLoad) loading = false else refreshing = false
         }
@@ -118,8 +134,17 @@ internal fun BookmarksScreen(
                 state = pullRefreshState,
                 indicator = { BunkoPullToRefreshIndicator(pullRefreshState, refreshing) }
             ) {
-                if (bookmarks.isEmpty()) {
+                if (bookmarks.isEmpty() && localBookmarks.isEmpty()) {
                     DarkMessageState("Bookmarks", "No bookmarked pages yet.")
+                } else if (localBookmarks.isNotEmpty() && bookmarks.isEmpty()) {
+                    PosterGrid(items = localBookmarks, key = { it.id }) { bookmark ->
+                        LocalBookmarkCard(
+                            bookmark = bookmark,
+                            onClick = {
+                                onOpenLocalBookmark?.invoke(bookmark.bookId, bookmark.page)
+                            }
+                        )
+                    }
                 } else {
                     PosterGrid(items = bookmarks, key = { bookmark -> bookmark.id ?: bookmark.stableKey() }) { bookmark ->
                         BookmarkCard(
@@ -137,6 +162,63 @@ internal fun BookmarksScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalBookmarkCard(
+    bookmark: ReaderBookmark,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Bookmark,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = bookmark.bookTitle,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Page ${bookmark.page + 1}" + (if (bookmark.chapterName != null && bookmark.chapterName.isNotBlank()) " • ${bookmark.chapterName}" else ""),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!bookmark.previewText.isNullOrBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = bookmark.previewText,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

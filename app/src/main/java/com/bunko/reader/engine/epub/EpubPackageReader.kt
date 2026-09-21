@@ -32,6 +32,8 @@ object EpubPackageReader {
         val resourceDir = File(context.cacheDir, cacheKey).apply { if (!exists()) mkdirs() }
 
         ZipFile(epubFile).use { zip ->
+            val resourceFileIndex = mutableMapOf<String, File>()
+
             // 1. Extract all images and resources to cacheDir
             zip.entries().asSequence().forEach { entry ->
                 val ext = entry.name.substringAfterLast('.', "").lowercase()
@@ -42,7 +44,54 @@ object EpubPackageReader {
                             dest.outputStream().use { output -> input.copyTo(output) }
                         }
                     }
+                    val rawName = entry.name
+                    val decodedName = runCatching { java.net.URLDecoder.decode(rawName, "UTF-8") }.getOrDefault(rawName)
+                    val baseName = rawName.substringAfterLast('/')
+                    val decodedBaseName = decodedName.substringAfterLast('/')
+
+                    resourceFileIndex[rawName] = dest
+                    resourceFileIndex[rawName.lowercase()] = dest
+                    resourceFileIndex[decodedName] = dest
+                    resourceFileIndex[decodedName.lowercase()] = dest
+                    resourceFileIndex[baseName] = dest
+                    resourceFileIndex[baseName.lowercase()] = dest
+                    resourceFileIndex[decodedBaseName] = dest
+                    resourceFileIndex[decodedBaseName.lowercase()] = dest
                 }
+            }
+
+            fun findExtractedFile(baseDir: String, rawHref: String): File? {
+                val cleanHref = rawHref.substringBefore('#').substringBefore('?').trim()
+                if (cleanHref.isEmpty()) return null
+                val decodedHref = runCatching { java.net.URLDecoder.decode(cleanHref, "UTF-8") }.getOrDefault(cleanHref)
+
+                val resolved = resolvePath(baseDir, decodedHref)
+                val resolvedClean = resolvePath(baseDir, cleanHref)
+
+                val candidateKeys = listOf(
+                    resolved,
+                    resolvedClean,
+                    resolved.lowercase(),
+                    resolvedClean.lowercase(),
+                    decodedHref,
+                    cleanHref,
+                    decodedHref.substringAfterLast('/'),
+                    cleanHref.substringAfterLast('/'),
+                    decodedHref.substringAfterLast('/').lowercase(),
+                    cleanHref.substringAfterLast('/').lowercase()
+                )
+
+                for (k in candidateKeys) {
+                    resourceFileIndex[k]?.let { if (it.exists() && it.length() > 0) return it }
+                }
+
+                val directDest = File(resourceDir, resolved.replace('/', '_'))
+                if (directDest.exists() && directDest.length() > 0) return directDest
+
+                val fallbackFile = File(resourceDir, decodedHref.substringAfterLast('/'))
+                if (fallbackFile.exists() && fallbackFile.length() > 0) return fallbackFile
+
+                return null
             }
 
             // 2. Find container.xml and OPF path
@@ -100,7 +149,7 @@ object EpubPackageReader {
                 coverHref = manifestMap.values.firstOrNull { it.contains("cover", ignoreCase = true) && isImageExt(it) }
             }
             val coverFile = coverHref?.let { href ->
-                File(resourceDir, href.replace('/', '_')).takeIf { it.exists() && it.length() > 0 }
+                findExtractedFile(opfDir, href)
             }
 
             // 7. Table of Contents
@@ -124,14 +173,23 @@ object EpubPackageReader {
 
                     // Clean & rewrite relative image paths to local file paths
                     val doc = Jsoup.parse(rawHtml)
-                    doc.select("img, image").forEach { img ->
-                        val src = if (img.tagName() == "image") img.attr("xlink:href").ifEmpty { img.attr("href") } else img.attr("src")
-                        if (src.isNotEmpty() && !src.startsWith("http://") && !src.startsWith("https://")) {
-                            val resolved = resolvePath(currentEntryDir, src)
-                            val cachedFile = File(resourceDir, resolved.replace('/', '_'))
-                            val finalPath = if (cachedFile.exists()) cachedFile.absolutePath else File(resourceDir, src.substringAfterLast('/')).absolutePath
-                            if (img.tagName() == "image") {
+                    doc.select("img, image, svg image").forEach { img ->
+                        val isImageTag = img.tagName().equals("image", ignoreCase = true)
+                        val src = if (isImageTag) {
+                            img.attr("xlink:href").ifEmpty { img.attr("href") }
+                        } else {
+                            img.attr("src")
+                        }
+                        if (src.isNotEmpty() && !src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("data:")) {
+                            val matchedFile = findExtractedFile(currentEntryDir, src)
+                            val finalPath = matchedFile?.absolutePath ?: run {
+                                val resolved = resolvePath(currentEntryDir, src)
+                                val cachedFile = File(resourceDir, resolved.replace('/', '_'))
+                                if (cachedFile.exists()) cachedFile.absolutePath else File(resourceDir, src.substringAfterLast('/')).absolutePath
+                            }
+                            if (isImageTag) {
                                 img.attr("xlink:href", finalPath)
+                                img.attr("href", finalPath)
                             } else {
                                 img.attr("src", finalPath)
                             }
