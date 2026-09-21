@@ -88,8 +88,11 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class MainActivity : ComponentActivity() {
     var volumeKeyHandler: ((Int) -> Boolean)? = null
-    private val _incomingFileUri = MutableStateFlow<Uri?>(null)
-    val incomingFileUri: StateFlow<Uri?> = _incomingFileUri.asStateFlow()
+
+    data class IncomingFile(val uri: Uri, val mimeType: String?)
+
+    private val _incomingFile = MutableStateFlow<IncomingFile?>(null)
+    val incomingFile: StateFlow<IncomingFile?> = _incomingFile.asStateFlow()
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -97,12 +100,31 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
     }
 
+    @Suppress("DEPRECATION")
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
-        if (intent.action == Intent.ACTION_VIEW) {
-            val uri = intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
-            if (uri != null) {
-                _incomingFileUri.value = uri
+        when (intent.action) {
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data
+                    ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+                    ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                    }
+                if (uri != null) {
+                    _incomingFile.value = IncomingFile(uri, intent.type)
+                }
+            }
+            Intent.ACTION_SEND -> {
+                val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                } ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+                if (uri != null) {
+                    _incomingFile.value = IncomingFile(uri, intent.type)
+                }
             }
         }
     }
@@ -219,8 +241,8 @@ class MainActivity : ComponentActivity() {
                         sessionStore = sessionStore,
                         settingsStore = settingsStore,
                         loginDefaults = loginDefaults,
-                        incomingFileUri = incomingFileUri,
-                        onConsumeIncomingUri = { _incomingFileUri.value = null },
+                        incomingFile = incomingFile,
+                        onConsumeIncomingFile = { _incomingFile.value = null },
                         onToggleTheme = toggleTheme
                     )
                 }
@@ -238,8 +260,8 @@ fun AppRoot(
     sessionStore: KavitaSessionStore,
     settingsStore: AppSettingsStore,
     loginDefaults: LoginDefaults = LoginDefaults(),
-    incomingFileUri: StateFlow<Uri?> = MutableStateFlow(null),
-    onConsumeIncomingUri: () -> Unit = {},
+    incomingFile: StateFlow<MainActivity.IncomingFile?> = MutableStateFlow(null),
+    onConsumeIncomingFile: () -> Unit = {},
     onToggleTheme: () -> Unit = {},
 ) {
     val nav = rememberNavController()
@@ -336,22 +358,32 @@ fun AppRoot(
         return
     }
 
-    val pendingIncomingUri by incomingFileUri.collectAsState()
-    LaunchedEffect(pendingIncomingUri) {
-        val uri = pendingIncomingUri ?: return@LaunchedEffect
+    val pendingIncomingFile by incomingFile.collectAsState()
+    LaunchedEffect(pendingIncomingFile) {
+        val incoming = pendingIncomingFile ?: return@LaunchedEffect
+        val uri = incoming.uri
         BunkoLog.i("Processing incoming file URI: $uri")
-        val book = localRepository.getOrCreateBookForUri(uri)
+        val book = localRepository.getOrCreateBookForUri(uri, incoming.mimeType)
         if (book != null) {
             BunkoLog.i("Successfully indexed incoming book: ${book.id} - ${book.title}")
-            onConsumeIncomingUri()
+            // Order matters: consuming first changes this effect's key and cancels it
+            // at the next suspension point, which on cold start dropped the navigate
+            // below (the app opened but the book didn't; retry worked). Navigate
+            // synchronously first, then consume.
             localRepository.setStartupCompleted(true)
             val startPage = if (book.isCompleted) 0 else book.lastReadPage
             nav.navigate("local-reader/${book.id}?page=$startPage") {
                 launchSingleTop = true
             }
+            onConsumeIncomingFile()
         } else {
             BunkoLog.w("Could not index incoming book from URI: $uri")
-            onConsumeIncomingUri()
+            onConsumeIncomingFile()
+            android.widget.Toast.makeText(
+                ctx,
+                "Couldn't open this file in Bunko",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
         }
     }
 

@@ -192,6 +192,44 @@
                 <data android:pathPattern=".*\\.md" />
                 <data android:pathPattern=".*\\.MD" />
             </intent-filter>
+
+            <!-- Shared files (ACTION_SEND from file managers, browsers, chat apps).
+                 SEND carries the file in EXTRA_STREAM with the type on the intent,
+                 so match on MIME types (plus octet-stream: the type is re-verified
+                 by content sniffing before anything opens). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/x-epub" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/x-cbr" />
+                <data android:mimeType="application/x-cb7" />
+                <data android:mimeType="application/x-cbt" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+                <data android:mimeType="application/vnd.comicbook-rar" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/x-rar-compressed" />
+                <data android:mimeType="application/rar" />
+                <data android:mimeType="application/x-7z-compressed" />
+                <data android:mimeType="application/x-tar" />
+                <data android:mimeType="application/x-mobipocket-ebook" />
+                <data android:mimeType="application/vnd.amazon.mobi8-ebook" />
+                <data android:mimeType="application/x-mobi" />
+                <data android:mimeType="application/x-azw" />
+                <data android:mimeType="application/x-azw3" />
+                <data android:mimeType="application/x-prc" />
+                <data android:mimeType="application/x-fb2" />
+                <data android:mimeType="application/fb2" />
+                <data android:mimeType="text/fb2+xml" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/x-pdf" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
         </activity>
 
         <provider

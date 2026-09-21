@@ -97,7 +97,7 @@ class LocalBookRepository(context: Context) {
         return getSavedBooks().firstOrNull { it.id == bookId }
     }
 
-    suspend fun getOrCreateBookForUri(uri: Uri): LocalBook? = withContext(Dispatchers.IO) {
+    suspend fun getOrCreateBookForUri(uri: Uri, mimeType: String? = null): LocalBook? = withContext(Dispatchers.IO) {
         val uriStr = uri.toString()
         val existing = getSavedBooks().firstOrNull { it.uriString == uriStr || it.id == LocalBookScanner.hashUri(uriStr) }
         if (existing != null) {
@@ -112,7 +112,7 @@ class LocalBookRepository(context: Context) {
             return@withContext existing
         }
 
-        val created = LocalBookScanner.createBookFromSingleUri(appContext, uri) ?: return@withContext null
+        val created = LocalBookScanner.createBookFromSingleUri(appContext, uri, mimeType) ?: return@withContext null
         appContext.localBooksDataStore.edit { prefs ->
             val currentBooks = decodeBooks(prefs[KEY_BOOKS_JSON]).toMutableList()
             val idx = currentBooks.indexOfFirst { it.id == created.id || it.uriString == created.uriString }
