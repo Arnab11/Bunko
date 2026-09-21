@@ -71,17 +71,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
-            buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
-        }
-        create("preview") {
-            initWith(getByName("release"))
-            signingConfig = null
-            buildConfigField("boolean", "IS_PREVIEW_BUILD", "true")
-            versionNameSuffix = "-beta.r${getCommitCount()}"
-        }
         release {
             buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
             isMinifyEnabled = true
@@ -95,6 +84,17 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
+        }
+        create("preview") {
+            initWith(getByName("release"))
+            signingConfig = null
+            buildConfigField("boolean", "IS_PREVIEW_BUILD", "true")
+            versionNameSuffix = "-beta.r${getCommitCount()}"
         }
     }
 
