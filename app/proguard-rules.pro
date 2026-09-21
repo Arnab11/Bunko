@@ -46,3 +46,9 @@
 -keep class com.bunko.reader.offline.** { *; }
 -keepclassmembers enum com.bunko.reader.offline.** { *; }
 -keep class com.bunko.reader.engine.** { *; }
+
+# Compose & Reader stability
+-dontoptimize
+-dontwarn androidx.compose.**
+-keepclassmembers class * extends androidx.compose.runtime.RecomposeScopeImpl { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
