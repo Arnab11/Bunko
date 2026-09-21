@@ -1466,7 +1466,6 @@ internal fun ReaderMenuOverlay(
                         onValueChange = { value ->
                             val newPage = sliderValueToPage(value)
                             jumpPage = newPage
-                            onJumpToPage(newPage)
                         },
                         onValueChangeFinished = {
                             onJumpToPage(jumpPage)

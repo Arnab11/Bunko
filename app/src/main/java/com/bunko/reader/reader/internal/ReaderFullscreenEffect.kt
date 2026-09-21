@@ -38,9 +38,11 @@ internal fun ReaderFullscreenEffect(
                     val lp = act.window.attributes
                     lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     act.window.attributes = lp
+                    WindowInsetsControllerCompat(act.window, act.window.decorView).apply {
+                        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                        show(WindowInsetsCompat.Type.systemBars())
+                    }
                 }
-                WindowInsetsControllerCompat(activity.window, view).show(WindowInsetsCompat.Type.systemBars())
-                WindowCompat.setDecorFitsSystemWindows(activity.window, true)
             }
         }
     }
@@ -76,7 +78,7 @@ internal fun ReaderFullscreenEffect(
     }
 }
 
-private tailrec fun Context.findActivity(): Activity? {
+internal tailrec fun Context.findActivity(): Activity? {
     return when (this) {
         is Activity -> this
         is ContextWrapper -> baseContext.findActivity()

@@ -52,7 +52,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import kotlin.math.sin
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 
 private val SliderThumbWidth = 4.dp
 private val ValueIndicatorMinWidth = 40.dp
@@ -101,9 +102,6 @@ internal fun ValueBubbleSlider(
 
     BoxWithConstraints(modifier = modifier) {
         val effectiveThumbWidth = if (roundThumb) 16.dp else SliderThumbWidth
-        val thumbCenter = effectiveThumbWidth / 2 + (maxWidth - effectiveThumbWidth).coerceAtLeast(0.dp) * fraction
-        val indicatorOffset = (thumbCenter - ValueIndicatorMinWidth / 2)
-            .coerceIn(0.dp, (maxWidth - ValueIndicatorMinWidth).coerceAtLeast(0.dp))
         val sliderModifier = Modifier
             .fillMaxWidth()
             .pointerInput(enabled) {
@@ -119,7 +117,14 @@ internal fun ValueBubbleSlider(
         AnimatedVisibility(
             visible = bubbleVisible,
             modifier = Modifier
-                .offset(x = indicatorOffset, y = (-34).dp)
+                .offset {
+                    val maxWidthPx = maxWidth.toPx()
+                    val thumbWidthPx = effectiveThumbWidth.toPx()
+                    val indicatorWidthPx = ValueIndicatorMinWidth.toPx()
+                    val thumbCenterPx = thumbWidthPx / 2f + (maxWidthPx - thumbWidthPx).coerceAtLeast(0f) * fraction
+                    val xOffset = (thumbCenterPx - indicatorWidthPx / 2f).coerceIn(0f, (maxWidthPx - indicatorWidthPx).coerceAtLeast(0f))
+                    IntOffset(xOffset.roundToInt(), (-34.dp).roundToPx())
+                }
                 .align(Alignment.TopStart),
             enter = fadeIn(animationSpec = tween(durationMillis = 110)) +
                 scaleIn(
@@ -225,26 +230,41 @@ internal fun ValueBubbleSlider(
                         }
                     }
 
-                    // 2. Active Material Expressive wavy track (static wave)
+                    // 2. Active Material Expressive wavy track (GPU-accelerated cubic Bézier curves)
                     if (activeWidth > 2f) {
-                        val path = Path()
                         val startX = if (reverseTrackColors) width - activeWidth else 0f
                         val endX = if (reverseTrackColors) width else activeWidth
-                        val stepPx = 2f
-
+                        val halfWave = waveLengthPx / 2f
+                        val path = Path()
                         path.moveTo(startX, centerY)
-                        var currentX = startX
-                        while (currentX <= endX) {
-                            val relX = if (reverseTrackColors) (endX - currentX) else (currentX - startX)
-                            val edgeTaper = minOf(
-                                relX / (waveLengthPx * 0.4f),
-                                (activeWidth - relX) / (waveLengthPx * 0.4f)
-                            ).coerceIn(0f, 1f)
-                            val currentAmp = amplitudePx * edgeTaper
 
-                            val y = centerY + currentAmp * sin((relX / waveLengthPx) * 2 * Math.PI)
-                            path.lineTo(currentX, y.toFloat())
-                            currentX += stepPx
+                        var currentX = startX
+                        var waveIndex = 0
+                        while (currentX < endX) {
+                            val nextX = minOf(currentX + halfWave, endX)
+                            val actualHalfWave = nextX - currentX
+                            val actualCtrlOffset = actualHalfWave * 0.3642f
+
+                            val midPoint = (currentX + nextX) / 2f
+                            val relX = if (reverseTrackColors) (endX - midPoint) else (midPoint - startX)
+                            val edgeTaper = minOf(
+                                relX / (waveLengthPx * 0.5f),
+                                (activeWidth - relX) / (waveLengthPx * 0.5f)
+                            ).coerceIn(0f, 1f)
+
+                            val sign = if (waveIndex % 2 == 0) 1f else -1f
+                            val currentAmp = amplitudePx * edgeTaper * sign
+
+                            path.cubicTo(
+                                currentX + actualCtrlOffset,
+                                centerY + currentAmp,
+                                nextX - actualCtrlOffset,
+                                centerY + currentAmp,
+                                nextX,
+                                centerY
+                            )
+                            currentX = nextX
+                            waveIndex++
                         }
 
                         drawPath(

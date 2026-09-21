@@ -105,13 +105,18 @@ import com.bunko.reader.download.OfflineChapter
 import com.bunko.reader.download.OfflineIssueRepository
 import com.bunko.reader.offline.BookmarkRepository
 import com.bunko.reader.offline.ReaderBookmark
+import com.bunko.reader.BookmarkDto
 import com.bunko.reader.MangaFormat
+import android.view.WindowManager
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.bunko.reader.SeriesMetadataDto
 import com.bunko.reader.reader.internal.ReaderLoadingScreen
 import com.bunko.reader.reader.internal.readerLoadErrorMessage
 import com.bunko.reader.reader.internal.ReaderInvertCacheKey
 import com.bunko.reader.reader.internal.ReaderPrefetchTarget
 import com.bunko.reader.reader.internal.ReaderFullscreenEffect
+import com.bunko.reader.reader.internal.findActivity
 import com.bunko.reader.reader.internal.ReaderBottomStatusBar
 import com.bunko.reader.reader.internal.ReaderChapterBoundary
 import com.bunko.reader.reader.internal.ReaderChapterBoundaryScreen
@@ -372,6 +377,18 @@ fun ReaderScreen(
     }
 
     val handleBack = {
+        val activity = ctx.findActivity()
+        if (activity != null) {
+            val lp = activity.window.attributes
+            if (lp.screenBrightness != WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) {
+                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                activity.window.attributes = lp
+            }
+            WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
         if (localBookId != null && localRepository != null && pages > 0) {
             ReaderExitWriteScope.launch {
                 localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
@@ -1084,6 +1101,30 @@ fun ReaderScreen(
                             currentVolumeId = it.volumeId
                         }
                     }
+                }
+            }
+            if (seriesId > 0) {
+                launch {
+                    runCatching {
+                        val serverBookmarks = loadedApi.allBookmarks()
+                            .filter { it.seriesId == seriesId }
+                        for (bm in serverBookmarks) {
+                            bookmarkRepo.addBookmark(
+                                ReaderBookmark(
+                                    id = "kavita_${bm.seriesId}_${bm.chapterId}_${bm.page}",
+                                    bookId = seriesId.toString(),
+                                    bookTitle = bm.series?.name ?: seriesName,
+                                    chapterName = bm.chapterTitle,
+                                    chapterId = bm.chapterId,
+                                    page = bm.page,
+                                    pageCount = 0,
+                                    progressPercent = 0f,
+                                    previewText = "Page ${bm.page + 1}",
+                                    timestamp = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                    }.onFailure { BunkoLog.w("Could not sync server bookmarks for $seriesId.", it) }
                 }
             }
             val (resolvedDirection, hasExplicitProfile) = try {
@@ -3771,7 +3812,7 @@ fun ReaderScreen(
                         } else {
                             "Page ${page + 1} of $pages"
                         }
-                        bookmarkRepo.toggleBookmark(
+                        val wasAdded = bookmarkRepo.toggleBookmark(
                             bookId = currentBookId,
                             bookTitle = seriesName.ifBlank { currentChapter.displayName },
                             chapterName = currentChapter.displayName,
@@ -3780,10 +3821,42 @@ fun ReaderScreen(
                             pageCount = pages,
                             previewText = snippet
                         )
+                        if (s != null && s.baseUrl.isNotBlank() && seriesId > 0 && currentChapterId > 0) {
+                            runCatching {
+                                val (kApi, _) = client.buildApi()
+                                val dto = BookmarkDto(
+                                    seriesId = seriesId,
+                                    volumeId = currentVolumeId,
+                                    chapterId = currentChapterId,
+                                    page = page
+                                )
+                                if (wasAdded) {
+                                    kApi.bookmark(dto)
+                                } else {
+                                    kApi.unBookmark(dto)
+                                }
+                            }.onFailure { BunkoLog.w("Failed to sync bookmark with Kavita server", it) }
+                        }
                     }
                 },
                 onDeleteBookmark = { bookmarkId ->
-                    scope.launch { bookmarkRepo.removeBookmark(bookmarkId) }
+                    scope.launch {
+                        val targetBm = bookBookmarks.firstOrNull { it.id == bookmarkId }
+                        bookmarkRepo.removeBookmark(bookmarkId)
+                        if (targetBm != null && s != null && s.baseUrl.isNotBlank() && seriesId > 0 && targetBm.chapterId > 0) {
+                            runCatching {
+                                val (kApi, _) = client.buildApi()
+                                kApi.unBookmark(
+                                    BookmarkDto(
+                                        seriesId = seriesId,
+                                        volumeId = currentVolumeId,
+                                        chapterId = targetBm.chapterId,
+                                        page = targetBm.page
+                                    )
+                                )
+                            }.onFailure { BunkoLog.w("Failed to remove bookmark from Kavita server", it) }
+                        }
+                    }
                 },
                 onJumpToBookmark = { bm ->
                     if (bm.chapterId != 0 && bm.chapterId != currentChapterId) {

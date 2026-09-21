@@ -2,6 +2,7 @@ package com.bunko.reader.series
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import com.bunko.reader.series.internal.cleanHtmlDescription
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -197,7 +198,7 @@ private fun IssueDetailContent(
                     }
                 }
             }
-            chapter.summary?.trim()?.takeIf { it.isNotBlank() }?.let { summary ->
+            chapter.summary?.cleanHtmlDescription()?.takeIf { it.isNotBlank() }?.let { summary ->
                 item {
                     Text(
                         text = summary,

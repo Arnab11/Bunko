@@ -1,6 +1,7 @@
 package com.bunko.reader.series.internal
 
 import android.net.Uri
+import androidx.core.text.HtmlCompat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -89,7 +90,21 @@ import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.seriesCoverUrl
 import com.bunko.reader.ui.seriesInitial
 import com.bunko.reader.ui.theme.BunkoBackground
+
+internal fun String.cleanHtmlDescription(): String {
+    if (isBlank()) return ""
+    if (!contains('<') && !contains('&')) return trim()
+    return try {
+        HtmlCompat.fromHtml(this, HtmlCompat.FROM_HTML_MODE_COMPACT)
+            .toString()
+            .trim()
+    } catch (_: Throwable) {
+        replace(Regex("<[^>]*>"), "").trim()
+    }
+}
+
 /** Internal to series, not for external use. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun SeriesDetailSummary(
     series: SeriesDto,
@@ -104,7 +119,9 @@ internal fun SeriesDetailSummary(
     onPick: (chapterId: Int, volumeId: Int, initialPage: Int?) -> Unit,
     onMessage: (String) -> Unit
 ) {
-    val summary = metadata?.summary?.takeIf { it.isNotBlank() }
+    val summary = remember(metadata?.summary) {
+        metadata?.summary?.cleanHtmlDescription()?.takeIf { it.isNotBlank() }
+    }
     val creditChips = metadata.creditChips()
     val publisherChips = metadata?.publishers.orEmpty().personChips()
     val imprintChips = metadata?.imprints.orEmpty().personChips()
