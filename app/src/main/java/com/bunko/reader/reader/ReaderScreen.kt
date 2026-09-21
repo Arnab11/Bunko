@@ -124,6 +124,7 @@ import com.bunko.reader.reader.internal.ReaderChapterEntry
 import com.bunko.reader.reader.internal.ReaderMenuOverlay
 import com.bunko.reader.reader.internal.ReaderOverviewGallery
 import com.bunko.reader.reader.internal.readerOverviewCursors
+import com.bunko.reader.reader.internal.readerOverviewIndexForCursor
 import com.bunko.reader.reader.internal.ReaderPageView
 import com.bunko.reader.reader.internal.ReaderTapLayer
 import com.bunko.reader.reader.internal.ReaderTapZoneOverlay
@@ -1492,7 +1493,23 @@ fun ReaderScreen(
     // status-bar and nav-bar inset strips (which the gallery card never covers) are
     // always the same shade as the reader — no animated colour transition means no
     // visible dark bar either during zoom-out or zoom-in.
-    val screenBgColor = defaultReaderBg
+    // For PDF, the root must match the page letterbox exactly: in dark system theme
+    // with a light paper choice the generic default is Black while the letterbox is
+    // paper beige — that mismatch flashed black bars around the card on every
+    // overview open/slide. Inverted PDFs render dark (via colorFilter), so they
+    // need a dark paper to match the inverted bitmap.
+    val pdfPaperColor = if (invertMode != InvertMode.Off) {
+        if (settings.reader.usePurePageBackgroundColors) Color.Black else Color(0xFF101010)
+    } else {
+        // Respect the lighting / page-background setting so Dark/White/Theme/Paper
+        // visibly change the PDF surround, same logic as the normal letterbox.
+        readerPageBackgroundColor(
+            darkPaper = settings.reader.pageBackground == PageBackground.Dark,
+            usePureColors = settings.reader.usePurePageBackgroundColors,
+            themePaperColor = if (isLightMode) MaterialTheme.colorScheme.background else null
+        )
+    }
+    val screenBgColor = if (isPdf) pdfPaperColor else defaultReaderBg
 
     BoxWithConstraints(Modifier.fillMaxSize().background(screenBgColor)) {
         val pageLayoutMode = settings.reader.pageLayoutMode
@@ -1832,25 +1849,29 @@ fun ReaderScreen(
             themePaperColor = themePaperColor
         )
         // Every rendering branch letterboxes with the selected paper colour.
-        val readerPageBackground = curlBackPageColor
+        // For PDF this is the lighting-aware pdfPaperColor above (Dark/White/
+        // Theme/Paper all apply; dark when inverted) and the root background was
+        // already unified with it, so overview open/slide never flashes a
+        // mismatched root colour around the card.
+        val readerPageBackground = if (isPdf) pdfPaperColor else curlBackPageColor
         val portraitBackPageContentAlpha = readerPortraitBackPageContentAlpha(
             showContent = settings.reader.showPortraitPageBackContent
         )
         val portraitCurlConfig = rememberPageCurlConfig(
-            backPageColor = curlBackPageColor,
+            backPageColor = readerPageBackground,
             backPageContentAlpha = portraitBackPageContentAlpha
         )
         val spreadCurlConfig = rememberPageCurlConfig(
-            backPageColor = curlBackPageColor,
+            backPageColor = readerPageBackground,
             backPageContentAlpha = 0.96f,
             dragInteraction = PageCurlConfig.StartEndDragInteraction(
                 pointerBehavior = PageCurlConfig.DragInteraction.PointerBehavior.PageEdge
             )
         )
-        LaunchedEffect(curlBackPageColor, portraitBackPageContentAlpha) {
-            portraitCurlConfig.backPageColor = curlBackPageColor
+        LaunchedEffect(readerPageBackground, portraitBackPageContentAlpha) {
+            portraitCurlConfig.backPageColor = readerPageBackground
             portraitCurlConfig.backPageContentAlpha = portraitBackPageContentAlpha
-            spreadCurlConfig.backPageColor = curlBackPageColor
+            spreadCurlConfig.backPageColor = readerPageBackground
         }
         fun prefetchTargetsFor(
             indices: List<Int>,
@@ -2720,6 +2741,46 @@ fun ReaderScreen(
             }
         }
 
+        // Offline PDFs decode on demand through a single renderer mutex: when the
+        // overview opens, warm the adjacent gallery spreads up front (and refresh
+        // their cache recency) so sliding the carousel lands on cached bitmaps
+        // instead of flashing paper placeholders. Cache hits here are cheap and
+        // also protect the neighbors from eviction by each other's decodes.
+        LaunchedEffect(isOverviewMenuOpen, page, pages, portrait, pageDimensions, offlineChapter) {
+            if (!isOverviewMenuOpen || !isPdf || pages <= 0 || offlineChapter == null) return@LaunchedEffect
+            val cursors = readerOverviewCursors(
+                pageCount = pages,
+                portrait = portrait,
+                pageDimensions = pageDimensions,
+                isEpub = isEpub
+            )
+            if (cursors.size <= 1) return@LaunchedEffect
+            val center = readerOverviewIndexForCursor(cursors, page)
+            val neighborCursors = listOfNotNull(
+                cursors.getOrNull(center - 2),
+                cursors.getOrNull(center - 1),
+                cursors.getOrNull(center + 1),
+                cursors.getOrNull(center + 2)
+            )
+            if (neighborCursors.isEmpty()) return@LaunchedEffect
+            val indices = neighborCursors
+                .flatMap { cursor ->
+                    readerVisiblePageIndices(
+                        page = cursor,
+                        pageCount = pages,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions
+                    )
+                }
+                .distinct()
+            if (indices.isEmpty()) return@LaunchedEffect
+            prefetchReaderPages(
+                context = ctx,
+                imageLoader = activeImageLoader,
+                targets = prefetchTargetsFor(indices)
+            )
+        }
+
         if (error != null) {
             Text("Error: $error", color = Color.Red, modifier = Modifier.padding(12.dp))
         }
@@ -2896,7 +2957,7 @@ fun ReaderScreen(
                         rightToLeft = rtl,
                         viewportWidthPx = viewportWidthPx,
                         viewportHeightPx = viewportHeightPx,
-                        paperColor = curlBackPageColor,
+                        paperColor = readerPageBackground,
                         pageModel = ::pageModel,
                         imageLoader = activeImageLoader,
                         pageDimensions = pageDimensions,
@@ -2975,7 +3036,7 @@ fun ReaderScreen(
                             ePaperMode = ePaperMode,
                             whiteThreshold = settings.reader.invertWhiteThreshold,
                             invertDecisionCache = invertDecisionCache,
-                            pageBackground = curlBackPageColor,
+                            pageBackground = readerPageBackground,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -3028,7 +3089,7 @@ fun ReaderScreen(
                                     ePaperMode = ePaperMode,
                                     whiteThreshold = settings.reader.invertWhiteThreshold,
                                     invertDecisionCache = invertDecisionCache,
-                                    pageBackground = curlBackPageColor,
+                                    pageBackground = readerPageBackground,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -3064,7 +3125,7 @@ fun ReaderScreen(
                                             ePaperMode = ePaperMode,
                                             whiteThreshold = settings.reader.invertWhiteThreshold,
                                             invertDecisionCache = invertDecisionCache,
-                                            pageBackground = curlBackPageColor,
+                                            pageBackground = readerPageBackground,
                                             singlePageAlignmentOverride = backPageAlignment,
                                             modifier = Modifier.fillMaxSize()
                                         )
@@ -3098,7 +3159,7 @@ fun ReaderScreen(
                             ePaperMode = ePaperMode,
                             whiteThreshold = settings.reader.invertWhiteThreshold,
                             invertDecisionCache = invertDecisionCache,
-                            pageBackground = curlBackPageColor,
+                            pageBackground = readerPageBackground,
                             modifier = Modifier.fillMaxSize()
                         )
                     }

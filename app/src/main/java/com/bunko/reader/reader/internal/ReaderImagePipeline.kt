@@ -4,6 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -18,6 +21,7 @@ import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -38,6 +42,7 @@ import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.platform.LocalContext
@@ -65,6 +70,8 @@ import com.bunko.reader.BunkoLog
 import com.bunko.reader.download.OfflinePage
 import com.bunko.reader.download.decodeOfflinePage
 import com.bunko.reader.download.getCachedOfflinePage
+import com.bunko.reader.engine.pdf.PdfDocumentEngine
+import java.io.File
 import kotlin.math.max
 import kotlin.math.min
 
@@ -595,6 +602,23 @@ private fun RowScope.PageImage(
             }
         }
         val resolvedModel = (pageModelState as? PageModelState.Ready)?.model
+        // Pin the bitmap backing a mounted PDF page: neighbor prefetch decodes can
+        // otherwise LRU-evict a still-visible page, and the next lookup misses and
+        // flashes the paper placeholder mid-slide or mid-overview-scroll. Unpinned
+        // on dispose (page turns, carousel recycling), so only mounted pages are held.
+        val pdfPinPage = model as? OfflinePage.PdfPage
+        val pdfPinBitmap = resolvedModel as? Bitmap
+        DisposableEffect(pdfPinPage, pdfPinBitmap) {
+            if (pdfPinPage != null && pdfPinBitmap != null && !pdfPinBitmap.isRecycled) {
+                val pinFile = File(pdfPinPage.pdfPath)
+                PdfDocumentEngine.pinBitmap(pinFile, pdfPinPage.index, pdfPinBitmap)
+                onDispose {
+                    PdfDocumentEngine.unpinBitmap(pinFile, pdfPinPage.index, pdfPinBitmap)
+                }
+            } else {
+                onDispose {}
+            }
+        }
         val cacheKey = resolvedModel?.let { ReaderInvertCacheKey(it, whiteThreshold) }
         val cachedInvertDecision = cacheKey?.let(invertDecisionCache::get)
         var loadedDrawable by remember(resolvedModel, imageLoader) {
@@ -675,16 +699,41 @@ private fun RowScope.PageImage(
             PageModelState.Unavailable -> ReaderPageUnavailablePlaceholder()
             is PageModelState.Ready -> {
                 if (resolvedModel is Bitmap) {
-                    Image(
-                        bitmap = resolvedModel.asImageBitmap(),
-                        contentDescription = label,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .ePaperGrain(ePaperMode),
-                        alignment = alignment,
-                        contentScale = if (contentScale != ContentScale.Fit) contentScale else readerContentScale(imageScaleType),
-                        colorFilter = readerColorFilter(ePaperMode, shouldInvert == true)
-                    )
+                    // Hold the opaque paper background until the Smart decision lands —
+                    // otherwise a white PDF bitmap flashes white for a frame before
+                    // flipping to its inverted black form on every overview open/slide.
+                    if (invertMode == InvertMode.Smart && shouldInvert == null) {
+                        ReaderPageLoadingPlaceholder()
+                    } else {
+                        // Offline pages (PDF/archive) decode asynchronously through a
+                        // shared mutex, so a newly visible page (slide target, overview
+                        // card) briefly shows the paper background before its bitmap
+                        // arrives. Fade cold loads in instead of popping: bitmaps that
+                        // were already cached draw instantly with no animation.
+                        // The fade value is read only in draw phase (graphicsLayer),
+                        // so it never recomposes the reader per frame.
+                        val coldLoad = remember(model) { pageModelState !is PageModelState.Ready }
+                        val bitmapFade = remember(model) { Animatable(0f) }
+                        val bitmapVisible = invertMode != InvertMode.Smart || shouldInvert != null
+                        LaunchedEffect(resolvedModel, bitmapVisible) {
+                            if (coldLoad && bitmapVisible) {
+                                bitmapFade.animateTo(1f, tween(160, easing = LinearEasing))
+                            }
+                        }
+                        Image(
+                            bitmap = resolvedModel.asImageBitmap(),
+                            contentDescription = label,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = if (coldLoad) bitmapFade.value else 1f
+                                }
+                                .ePaperGrain(ePaperMode),
+                            alignment = alignment,
+                            contentScale = if (contentScale != ContentScale.Fit) contentScale else readerContentScale(imageScaleType),
+                            colorFilter = readerColorFilter(ePaperMode, shouldInvert == true)
+                        )
+                    }
                 } else {
                     val imageRequest = remember(resolvedModel, cropBorders, ctx) {
                         if (resolvedModel == null) null

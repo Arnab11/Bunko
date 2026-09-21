@@ -27,6 +27,16 @@ object PdfDocumentEngine {
         }
     }
 
+    // Strong refs for bitmaps backing currently-mounted pages (reader viewport,
+    // slide-transition layers, overview cards). A 10-18MB PDF bitmap is easily
+    // LRU-evicted by neighbor prefetch decodes while still on screen; the next
+    // cache lookup then misses and the page flashes its paper placeholder before
+    // popping back in — on every slide. Pinning is refcounted because the reader,
+    // the transition and the overview center card can share one instance, and it
+    // is consulted by [getCachedBitmap] so a pinned page always resolves instantly.
+    private val pinLock = Any()
+    private val pinnedBitmaps = mutableMapOf<String, Pair<Bitmap, Int>>()
+
     private class ActiveSession(
         val filePath: String,
         val pfd: ParcelFileDescriptor,
@@ -69,9 +79,41 @@ object PdfDocumentEngine {
         pageIndex: Int
     ): Bitmap? {
         val key = cacheKey(file, pageIndex)
+        synchronized(pinLock) {
+            val pinned = pinnedBitmaps[key]
+            if (pinned != null && !pinned.first.isRecycled) return pinned.first
+        }
         synchronized(pageBitmapCache) {
             val cached = pageBitmapCache.get(key)
             return if (cached != null && !cached.isRecycled) cached else null
+        }
+    }
+
+    fun pinBitmap(file: File, pageIndex: Int, bitmap: Bitmap) {
+        if (bitmap.isRecycled) return
+        val key = cacheKey(file, pageIndex)
+        synchronized(pinLock) {
+            val current = pinnedBitmaps[key]
+            pinnedBitmaps[key] = if (current != null && current.first === bitmap) {
+                current.copy(second = current.second + 1)
+            } else {
+                // Stale pin for a previous instance (evicted + re-decoded): the old
+                // bitmap is no longer displayed, replace the entry.
+                Pair(bitmap, 1)
+            }
+        }
+    }
+
+    fun unpinBitmap(file: File, pageIndex: Int, bitmap: Bitmap) {
+        val key = cacheKey(file, pageIndex)
+        synchronized(pinLock) {
+            val current = pinnedBitmaps[key] ?: return
+            if (current.first !== bitmap) return
+            if (current.second > 1) {
+                pinnedBitmaps[key] = current.copy(second = current.second - 1)
+            } else {
+                pinnedBitmaps.remove(key)
+            }
         }
     }
 
@@ -111,16 +153,10 @@ object PdfDocumentEngine {
         targetHeight: Int = 0
     ): Bitmap? = withContext(Dispatchers.IO) {
         val key = cacheKey(file, pageIndex)
-        synchronized(pageBitmapCache) {
-            val cached = pageBitmapCache.get(key)
-            if (cached != null && !cached.isRecycled) return@withContext cached
-        }
+        getCachedBitmap(file, pageIndex)?.let { return@withContext it }
 
         rendererMutex.withLock {
-            synchronized(pageBitmapCache) {
-                val cached = pageBitmapCache.get(key)
-                if (cached != null && !cached.isRecycled) return@withLock cached
-            }
+            getCachedBitmap(file, pageIndex)?.let { return@withLock it }
 
             try {
                 val renderer = getOrCreateRenderer(file) ?: return@withLock null
