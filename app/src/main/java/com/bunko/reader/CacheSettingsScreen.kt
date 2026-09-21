@@ -1,5 +1,6 @@
 package com.bunko.reader
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,9 +13,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
+import com.bunko.reader.crash.DebugLogsActivity
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -147,6 +150,29 @@ fun CacheSettingsScreen(
                             subtitle = "Recalculate cache sizes currently stored on device",
                             trailingText = "Refresh",
                             onClick = ::refresh
+                        )
+                    }
+                }
+
+                // Diagnostics & Logs Section
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Diagnostics & Logs",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        ClickableSettingRow(
+                            icon = Icons.Filled.BugReport,
+                            title = "App Logs",
+                            subtitle = "View, filter, and export real-time debug logs",
+                            trailingText = "View",
+                            onClick = {
+                                ctx.startActivity(Intent(ctx, DebugLogsActivity::class.java))
+                            }
                         )
                     }
                 }

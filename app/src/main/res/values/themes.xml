@@ -10,4 +10,7 @@
         <item name="android:statusBarColor">#161A18</item>
         <item name="android:navigationBarColor">#161A18</item>
     </style>
+    <style name="leak_canary_LeakCanary.Base" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="android:fitsSystemWindows">true</item>
+    </style>
 </resources>

@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
+        android:name=".BunkoApp"
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -231,6 +232,18 @@
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".crash.CrashActivity"
+            android:process=":crash"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Bunko" />
+
+        <activity
+            android:name=".crash.DebugLogsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Bunko" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
