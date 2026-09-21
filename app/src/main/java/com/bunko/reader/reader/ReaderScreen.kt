@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -245,8 +246,8 @@ fun ReaderScreen(
 
     var session by remember { mutableStateOf<KavitaSession?>(null) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
-    var currentChapterId by remember { mutableIntStateOf(chapterId) }
-    var currentVolumeId by remember { mutableIntStateOf(volumeId) }
+    var currentChapterId by rememberSaveable { mutableIntStateOf(chapterId) }
+    var currentVolumeId by rememberSaveable { mutableIntStateOf(volumeId) }
     var chapterSequence by remember { mutableStateOf<List<ReaderChapterEntry>>(emptyList()) }
     var currentChapter by remember {
         mutableStateOf(
@@ -265,7 +266,8 @@ fun ReaderScreen(
     var boundaryDragProgress by remember { mutableFloatStateOf(0f) }
     var pages by remember { mutableIntStateOf(0) }
     var pageDimensions by remember { mutableStateOf<Map<Int, FileDimensionDto>>(emptyMap()) }
-    var page by remember { mutableIntStateOf(0) }
+    var page by rememberSaveable { mutableIntStateOf(initialPage ?: 0) }
+    var hasAppliedInitialPage by rememberSaveable { mutableStateOf(false) }
     var readerReady by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showReaderMenu by remember { mutableStateOf(false) }
@@ -647,6 +649,7 @@ fun ReaderScreen(
                     )
                     readingDirection = nextDirection
                 }
+                hasAppliedInitialPage = true
                 page = landingPage
                 verticalRestoreNonce++
                 completingRead = false
@@ -734,6 +737,13 @@ fun ReaderScreen(
                         }
                         pages = resolvedPages.size
                         pageDimensions = dimensionsDtoMap
+                        val resumePage = if (!hasAppliedInitialPage) {
+                            hasAppliedInitialPage = true
+                            initialPage ?: book.lastReadPage
+                        } else {
+                            page
+                        }
+                        page = resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
                         offlineChapter = OfflineChapter(
                             record = OfflineIssueRecord(
                                 serverKey = "local",
@@ -745,7 +755,7 @@ fun ReaderScreen(
                                 issueName = book.title,
                                 downloadId = 0L,
                                 archivePath = file.absolutePath,
-                                localPage = initialPage ?: book.lastReadPage,
+                                localPage = page,
                                 pageCount = resolvedPages.size
                             ),
                             pages = resolvedPages,
@@ -766,7 +776,6 @@ fun ReaderScreen(
                             )
                         }
                         readingDirection = effectiveDirection
-                        page = (initialPage ?: book.lastReadPage).coerceIn(0, (pages - 1).coerceAtLeast(0))
                         readerReady = pages > 0
                         verticalRestoreNonce++
                     }
@@ -787,6 +796,13 @@ fun ReaderScreen(
                         }
                         pages = resolvedPages.size
                         pageDimensions = dimensionsDtoMap
+                        val resumePage = if (!hasAppliedInitialPage) {
+                            hasAppliedInitialPage = true
+                            initialPage ?: book.lastReadPage
+                        } else {
+                            page
+                        }
+                        page = resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
                         offlineChapter = OfflineChapter(
                             record = OfflineIssueRecord(
                                 serverKey = "local",
@@ -798,13 +814,12 @@ fun ReaderScreen(
                                 issueName = book.title,
                                 downloadId = 0L,
                                 archivePath = file.absolutePath,
-                                localPage = initialPage ?: book.lastReadPage,
+                                localPage = page,
                                 pageCount = resolvedPages.size
                             ),
                             pages = resolvedPages,
                             dimensions = dimensionsDtoMap
                         )
-                        page = (initialPage ?: book.lastReadPage).coerceIn(0, (pages - 1).coerceAtLeast(0))
                         readerReady = pages > 0
                         verticalRestoreNonce++
                     }
@@ -826,7 +841,13 @@ fun ReaderScreen(
                         }
                         epubSpineBlocks = spineBlocks
                         pages = spineBlocks.size
-                        page = (initialPage ?: book.lastReadPage)
+                        val resumePage = if (!hasAppliedInitialPage) {
+                            hasAppliedInitialPage = true
+                            initialPage ?: book.lastReadPage
+                        } else {
+                            page
+                        }
+                        page = resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
                         readerReady = true
                         verticalRestoreNonce++
                     }
@@ -889,7 +910,13 @@ fun ReaderScreen(
                     seriesName = local.record.seriesName
                 )
             }
-            page = (initialPage ?: local.record.localPage).coerceIn(0, (pages - 1).coerceAtLeast(0))
+            val resumePage = if (!hasAppliedInitialPage) {
+                hasAppliedInitialPage = true
+                initialPage ?: local.record.localPage
+            } else {
+                page
+            }
+            page = resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
             if (!local.record.progressPending) {
                 lastRemoteProgressPages[currentChapterId] = page
             }
@@ -992,8 +1019,14 @@ fun ReaderScreen(
                 val pageCount = info.pages ?: 0
                 pages = pageCount
                 pageDimensions = info.pageDimensions.toPageDimensionMap()
-                val savedPage = initialPage ?: loadedApi.getProgress(currentChapterId).pageNum
-                page = if (pages > 0) savedPage.coerceIn(0, pages - 1) else 0
+                val savedPage = loadedApi.getProgress(currentChapterId).pageNum
+                val resumePage = if (!hasAppliedInitialPage) {
+                    hasAppliedInitialPage = true
+                    initialPage ?: savedPage
+                } else {
+                    page
+                }
+                page = if (pages > 0) resumePage.coerceIn(0, pages - 1) else 0
                 lastRemoteProgressPages[currentChapterId] = page
 
                 if (isEpubChapter) {
@@ -1015,11 +1048,15 @@ fun ReaderScreen(
                         )
                     }
                     .getOrNull()
-                val landingPage = initialPage ?: savedPage
-                if (landingPage != null) {
-                    page = landingPage.coerceIn(0, pages - 1)
-                    lastRemoteProgressPages[currentChapterId] = page
+                val targetPage = savedPage ?: local.record.localPage
+                val resumePage = if (!hasAppliedInitialPage) {
+                    hasAppliedInitialPage = true
+                    initialPage ?: targetPage
+                } else {
+                    page
                 }
+                page = resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
+                lastRemoteProgressPages[currentChapterId] = page
             }
             chapterMetadataJob.join()
             val effectiveDirection = if (isEpubChapter) {
@@ -1352,7 +1389,18 @@ fun ReaderScreen(
                 val contentHeightPx = (viewportHeightPx.toInt() - verticalPaddingPx).coerceAtLeast(100)
                 val fontSizePx = with(density) { epubFontSizeSp.sp.toPx() }
 
+                val anchorSubpage = epubSubpages.getOrNull(page)
+                val anchorSpineIndex = anchorSubpage?.spineIndex
+                val anchorProgressRatio = anchorSubpage?.progressRatio
+                val anchorSnippet = anchorSubpage?.blocks?.firstNotNullOfOrNull { block ->
+                    when (block) {
+                        is EpubBlock.TextBlock -> block.text.text.take(40).takeIf { it.isNotBlank() }
+                        is EpubBlock.ImageBlock -> block.url.takeIf { it.isNotBlank() }
+                        else -> null
+                    }
+                }
                 val oldProgressRatio = if (pages > 1) page.toFloat() / (pages - 1).toFloat() else 0f
+
                 val allSubpages = withContext(Dispatchers.Default) {
                     epubSpineBlocks.indices.map { spineIndex ->
                         async {
@@ -1371,16 +1419,48 @@ fun ReaderScreen(
                 val total = allSubpages.size.coerceAtLeast(1)
                 epubSubpages = allSubpages
                 pages = total
-                var targetPage = if (oldProgressRatio == 0f && page > 0) {
-                    page.coerceIn(0, total - 1)
+
+                val targetPage = if (anchorSpineIndex != null) {
+                    val spineSubpagesWithIndex = allSubpages.mapIndexed { idx, subpage -> idx to subpage }
+                        .filter { it.second.spineIndex == anchorSpineIndex }
+
+                    if (spineSubpagesWithIndex.isNotEmpty()) {
+                        val snippetMatch = if (anchorSnippet != null) {
+                            spineSubpagesWithIndex.firstOrNull { (_, subpage) ->
+                                subpage.blocks.any { block ->
+                                    when (block) {
+                                        is EpubBlock.TextBlock -> block.text.text.contains(anchorSnippet)
+                                        is EpubBlock.ImageBlock -> block.url == anchorSnippet
+                                        else -> false
+                                    }
+                                }
+                            }?.first
+                        } else null
+
+                        snippetMatch ?: run {
+                            val targetRatio = anchorProgressRatio ?: 0f
+                            spineSubpagesWithIndex.minByOrNull { (_, subpage) ->
+                                kotlin.math.abs(subpage.progressRatio - targetRatio)
+                            }?.first ?: spineSubpagesWithIndex.first().first
+                        }
+                    } else {
+                        (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+                    }
                 } else {
-                    (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+                    if (oldProgressRatio == 0f && page > 0 && page < epubSpineBlocks.size) {
+                        allSubpages.indexOfFirst { it.spineIndex == page }.takeIf { it >= 0 }
+                            ?: (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+                    } else {
+                        (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+                    }
                 }
-                if (!portrait && targetPage % 2 != 0 && targetPage > 0) {
-                    targetPage -= 1
+
+                var resolvedTargetPage = targetPage.coerceIn(0, total - 1)
+                if (!portrait && resolvedTargetPage % 2 != 0 && resolvedTargetPage > 0) {
+                    resolvedTargetPage -= 1
                 }
-                page = targetPage
-                lastRemoteProgressPages[currentChapterId] = targetPage
+                page = resolvedTargetPage
+                lastRemoteProgressPages[currentChapterId] = resolvedTargetPage
                 readerReady = true
             }
         }

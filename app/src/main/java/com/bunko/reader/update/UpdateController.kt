@@ -45,6 +45,8 @@ class UpdateController internal constructor(
         private set
     var isDownloading: Boolean by mutableStateOf(false)
         private set
+    var downloadError: String? by mutableStateOf(null)
+        private set
     var autoCheckEnabled: Boolean by mutableStateOf(manager.isAutoCheckEnabled())
         private set
     var updateChannel: UpdateChannel by mutableStateOf(manager.storedChannel())
@@ -63,6 +65,8 @@ class UpdateController internal constructor(
         manager.storeChannel(next)
         updateChannel = next
         manager.clearCache()
+        downloadProgress = 0f
+        downloadError = null
         state = UpdateState.Idle
         checkForUpdate(manual = true)
     }
@@ -75,8 +79,13 @@ class UpdateController internal constructor(
                 val release = manager.checkForUpdate(channel = updateChannel, forceShow = manual)
                 state = if (release != null) {
                     if (manager.getApkFile(release) != null) {
+                        downloadProgress = 100f
                         UpdateState.ReadyToInstall(release)
                     } else {
+                        val existingProgress = manager.getExistingProgress(release)
+                        if (existingProgress > 0f) {
+                            downloadProgress = existingProgress
+                        }
                         UpdateState.Available(release)
                     }
                 } else if (manual) {
@@ -94,6 +103,8 @@ class UpdateController internal constructor(
     }
 
     fun downloadUpdate(release: BunkoRelease) {
+        if (isDownloading) return
+        downloadError = null
         scope.launch {
             isDownloading = true
             try {
@@ -101,13 +112,16 @@ class UpdateController internal constructor(
                     downloadProgress = progress
                 }
                 isDownloading = false
+                downloadError = null
                 state = UpdateState.ReadyToInstall(release)
             } catch (cancelled: CancellationException) {
+                isDownloading = false
                 throw cancelled
             } catch (t: Exception) {
                 BunkoLog.w("Update download failed.", t)
                 isDownloading = false
-                state = UpdateState.Error
+                downloadError = "Download paused. Tap Resume to continue."
+                state = UpdateState.Available(release)
             }
         }
     }
@@ -129,6 +143,8 @@ class UpdateController internal constructor(
 
     fun dismiss() {
         manager.clearCache()
+        downloadProgress = 0f
+        downloadError = null
         state = UpdateState.Idle
     }
 
@@ -140,6 +156,8 @@ class UpdateController internal constructor(
 
     fun ignoreVersion(version: String) {
         manager.ignoreVersion(version, updateChannel)
+        downloadProgress = 0f
+        downloadError = null
         state = UpdateState.Idle
     }
 }

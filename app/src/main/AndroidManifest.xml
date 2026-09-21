@@ -23,6 +23,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:label="@string/app_name"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode"
             android:theme="@style/Theme.Bunko">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

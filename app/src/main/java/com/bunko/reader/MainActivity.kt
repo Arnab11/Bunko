@@ -747,6 +747,7 @@ fun AppRoot(
                     progress = updateController.downloadProgress,
                     isInstallReady = updateState is UpdateState.ReadyToInstall,
                     currentVersion = currentVersionName,
+                    downloadError = updateController.downloadError,
                     onDismiss = { updateController.dismiss() },
                     onAction = {
                         if (updateState is UpdateState.ReadyToInstall) {

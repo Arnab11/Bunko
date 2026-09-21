@@ -49,6 +49,7 @@ fun UpdateSheet(
     progress: Float,
     isInstallReady: Boolean,
     currentVersion: String,
+    downloadError: String? = null,
     onDismiss: () -> Unit,
     onAction: () -> Unit,
     onIgnore: () -> Unit
@@ -103,8 +104,8 @@ fun UpdateSheet(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            if (isDownloading) {
-                DownloadProgressSection(progress = progress)
+            if (isDownloading || progress > 0f || downloadError != null) {
+                DownloadProgressSection(progress = progress, errorMessage = downloadError)
             }
 
             Row(
@@ -125,7 +126,13 @@ fun UpdateSheet(
                         Text("Cancel")
                     }
                     Button(onClick = onAction) {
-                        Text(if (isInstallReady) "Install" else "Download")
+                        Text(
+                            when {
+                                isInstallReady -> "Install"
+                                downloadError != null || progress > 0f -> "Resume"
+                                else -> "Download"
+                            }
+                        )
                     }
                 }
             }
@@ -248,30 +255,41 @@ private fun MetaItem(
 }
 
 @Composable
-private fun DownloadProgressSection(progress: Float) {
+private fun DownloadProgressSection(
+    progress: Float,
+    errorMessage: String? = null
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "Downloading",
+                text = if (errorMessage != null) "Download paused" else "Downloading",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (errorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = "${progress.toInt()}%",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
+                color = if (errorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
         LinearProgressIndicator(
             progress = { if (progress >= 0) progress / 100f else 0f },
             modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.primary,
+            color = if (errorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
+        if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = errorMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         Spacer(modifier = Modifier.height(8.dp))
     }
 }
