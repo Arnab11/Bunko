@@ -102,7 +102,13 @@ internal object PlayLikeCurlGeometry {
     }
 
     private fun leftX(column: Int, curlPosition: Float): Float {
-        val percentage = (1f - curlPosition / PlayLikeCurlModel.GRID) * 0.75f
+        // The travel factor parks the inactive previous page fully off-screen
+        // (right edge <= 0 at RIGHT_ENDPOINT_POSITION): with 0.75f the edge sat
+        // at +0.03, leaking a strip of previous-page content down the left side
+        // of every portrait turn tail. 0.80f lands it at -0.02 with margin while
+        // keeping GRID mapped exactly onto [0, 1], so the backward sweep stays
+        // continuous from the parked position.
+        val percentage = (1f - curlPosition / PlayLikeCurlModel.GRID) * 0.80f
         val radius = resolvedRadius(percentage)
         return column / PlayLikeCurlModel.GRID.toFloat() * (1f - radius) - percentage
     }
