@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
@@ -284,19 +285,18 @@ fun UnifiedPosterCard(
                         )
                     }
                 }
+                CoverProgressBadge(
+                    progress = item.progress,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                )
             }
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(seriesPosterLabelHeight())
             ) {
-                SeriesReadingProgressBar(
-                    progress = item.progress,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .fillMaxWidth()
-                        .height(3.dp)
-                )
                 Text(
                     text = item.title,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -456,19 +456,18 @@ internal fun SeriesPosterCard(
                 } else {
                     SeriesCoverPlaceholder(seriesName = series.name)
                 }
+                CoverProgressBadge(
+                    progress = series.readingProgress(),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                )
             }
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(seriesPosterLabelHeight())
             ) {
-                SeriesReadingProgressBar(
-                    progress = series.readingProgress(),
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .fillMaxWidth()
-                        .height(3.dp)
-                )
                 Text(
                     text = series.name,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -706,6 +705,34 @@ private fun SeriesReadingProgressBar(progress: Float?, modifier: Modifier = Modi
                 .fillMaxHeight()
                 .fillMaxWidth(boundedProgress)
                 .background(fillColor)
+        )
+    }
+}
+
+/**
+ * Percentage pill overlaid on top of a grid cover (e.g. "42%", "100%").
+ * Grid cards use this instead of the thin progress bar shown in list rows.
+ */
+@Composable
+fun CoverProgressBadge(
+    progress: Float?,
+    modifier: Modifier = Modifier
+) {
+    if (progress == null || progress <= 0f) return
+    val bounded = progress.coerceIn(0f, 1f)
+    val percent = (bounded * 100f).roundToInt().coerceIn(1, 100)
+    val background = if (bounded >= 1f) ReadingProgressRead else Color.Black.copy(alpha = 0.65f)
+    Surface(
+        color = background,
+        shape = CircleShape,
+        modifier = modifier
+    ) {
+        Text(
+            text = "$percent%",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
         )
     }
 }

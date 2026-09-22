@@ -36,7 +36,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -63,9 +62,8 @@ import com.bunko.reader.offline.LocalBook
 import com.bunko.reader.offline.LocalBookFormat
 import com.bunko.reader.offline.LocalFolder
 import com.bunko.reader.ui.KavitaCoverAspectRatio
+import com.bunko.reader.ui.browse.CoverProgressBadge
 import com.bunko.reader.ui.browse.PosterGrid
-import com.bunko.reader.ui.theme.ReadingProgressInProgress
-import com.bunko.reader.ui.theme.ReadingProgressTrack
 import java.io.File
 import kotlin.math.absoluteValue
 
@@ -1366,15 +1364,12 @@ fun LocalBookPosterCard(
                 }
             }
 
-            if (book.lastReadPage > 0) {
-                LinearProgressIndicator(
-                    progress = { book.progressFraction },
+            if (book.lastReadPage > 0 || book.isCompleted) {
+                CoverProgressBadge(
+                    progress = book.progressFraction,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp)
-                        .align(Alignment.BottomCenter),
-                    color = ReadingProgressInProgress,
-                    trackColor = ReadingProgressTrack
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
                 )
             }
         }

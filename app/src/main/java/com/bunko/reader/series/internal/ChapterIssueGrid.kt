@@ -55,9 +55,7 @@ import com.bunko.reader.KavitaSession
 import com.bunko.reader.VolumeDto
 import com.bunko.reader.series.chapterCoverUrl
 import com.bunko.reader.ui.KavitaCoverAspectRatio
-import com.bunko.reader.ui.theme.ReadingProgressInProgress
-import com.bunko.reader.ui.theme.ReadingProgressRead
-import com.bunko.reader.ui.theme.ReadingProgressTrack
+import com.bunko.reader.ui.browse.CoverProgressBadge
 
 import com.bunko.reader.NavigationBarStyle
 import androidx.compose.ui.platform.LocalContext
@@ -231,40 +229,43 @@ internal fun ChapterGridCard(
                     )
                 }
 
-                // Download badge
-                if (isDownloading) {
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.7f),
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(6.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(4.dp)
-                                .size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                // Download badge + progress percentage stacked at the top of the cover
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    if (isDownloading) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.7f),
+                            shape = CircleShape
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .padding(4.dp)
+                                    .size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else if (isDownloaded) {
+                        Surface(
+                            color = Color(0xFF2E7D32).copy(alpha = 0.9f),
+                            shape = CircleShape
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.FileDownloadDone,
+                                contentDescription = "Downloaded",
+                                tint = Color.White,
+                                modifier = Modifier
+                                    .padding(4.dp)
+                                    .size(14.dp)
+                            )
+                        }
                     }
-                } else if (isDownloaded) {
-                    Surface(
-                        color = Color(0xFF2E7D32).copy(alpha = 0.9f),
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.FileDownloadDone,
-                            contentDescription = "Downloaded",
-                            tint = Color.White,
-                            modifier = Modifier
-                                .padding(4.dp)
-                                .size(14.dp)
-                        )
-                    }
+                    CoverProgressBadge(progress = progress)
                 }
 
                 // Options menu button on cover
@@ -356,13 +357,7 @@ internal fun ChapterGridCard(
                 }
             }
 
-            // Progress bar and Labels
-            ReadingProgressBar(
-                progress = progress,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-            )
+            // Labels
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -390,19 +385,5 @@ internal fun ChapterGridCard(
     }
 }
 
-/** Internal to series, not for external use. */
-@Composable
-internal fun ReadingProgressBar(progress: Float?, modifier: Modifier = Modifier) {
-    if (progress == null || progress <= 0f) return
-    val boundedProgress = progress.coerceIn(0f, 1f)
-    val fillColor = if (boundedProgress >= 1f) ReadingProgressRead else ReadingProgressInProgress
-    Box(modifier = modifier.background(ReadingProgressTrack)) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(boundedProgress)
-                .background(fillColor)
-        )
-    }
-}
+
 
