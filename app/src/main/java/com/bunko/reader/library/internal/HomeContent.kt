@@ -489,7 +489,7 @@ internal fun HomeContent(
             return@Column
         }
 
-        val displayOnDeck = remember(onDeck, kavitaSort) { onDeck.sortedForLibrary(kavitaSort) }
+        val displayOnDeck = remember(onDeck) { onDeck }
         val displayRecentlyUpdated = remember(recentlyUpdated, kavitaSort) { recentlyUpdated.sortedForLibrary(kavitaSort) }
         val displayNewlyAdded = remember(newlyAdded, kavitaSort) { newlyAdded.sortedForLibrary(kavitaSort) }
         val displayWantToRead = remember(wantToRead, kavitaSort) { wantToRead.sortedForLibrary(kavitaSort) }

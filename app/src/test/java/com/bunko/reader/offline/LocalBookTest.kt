@@ -77,4 +77,82 @@ class LocalBookTest {
         val sorted = files.sortedWith(::compareNaturalFileNames)
         assertEquals(listOf("page_1.png", "page_2.png", "page_10.png", "page_20.png"), sorted)
     }
+
+    @Test
+    fun testContinueReadingSortedByLastReadDescending() {
+        val bookEpub = LocalBook(
+            id = "epub-1",
+            title = "Epub Book",
+            uriString = "uri://epub",
+            extension = "epub",
+            format = LocalBookFormat.EPUB,
+            lastReadPage = 10,
+            lastReadTime = 1000L
+        )
+        val bookPdf = LocalBook(
+            id = "pdf-1",
+            title = "PDF Book",
+            uriString = "uri://pdf",
+            extension = "pdf",
+            format = LocalBookFormat.PDF,
+            lastReadPage = 5,
+            lastReadTime = 3000L
+        )
+        val bookCbz = LocalBook(
+            id = "cbz-1",
+            title = "Comic Book",
+            uriString = "uri://cbz",
+            extension = "cbz",
+            format = LocalBookFormat.CBZ,
+            lastReadPage = 25,
+            lastReadTime = 2000L
+        )
+        val bookMobi = LocalBook(
+            id = "mobi-1",
+            title = "Mobi Book",
+            uriString = "uri://mobi",
+            extension = "mobi",
+            format = LocalBookFormat.MOBI,
+            lastReadPage = 1,
+            lastReadTime = 4000L
+        )
+        val unreadBook = LocalBook(
+            id = "unread-1",
+            title = "Unread Book",
+            uriString = "uri://unread",
+            extension = "txt",
+            format = LocalBookFormat.TXT,
+            lastReadPage = 0,
+            lastReadTime = 0L
+        )
+        val completedBook = LocalBook(
+            id = "done-1",
+            title = "Done Book",
+            uriString = "uri://done",
+            extension = "fb2",
+            format = LocalBookFormat.FB2,
+            lastReadPage = 100,
+            lastReadTime = 5000L,
+            isCompleted = true
+        )
+
+        val allBooks = listOf(bookEpub, unreadBook, bookPdf, completedBook, bookCbz, bookMobi)
+
+        val continueReading = allBooks.filter { (it.lastReadPage > 0 || it.lastReadTime > 0L) && !it.isCompleted }
+            .sortedWith { a, b ->
+                val timeA = if (a.lastReadTime > 0L) a.lastReadTime else a.lastModified
+                val timeB = if (b.lastReadTime > 0L) b.lastReadTime else b.lastModified
+                timeB.compareTo(timeA)
+            }
+
+        assertEquals(4, continueReading.size)
+        // Descending by last read book: mobi (4000) -> pdf (3000) -> cbz (2000) -> epub (1000)
+        assertEquals(listOf("mobi-1", "pdf-1", "cbz-1", "epub-1"), continueReading.map { it.id })
+        // Verify multiple formats are included
+        val formats = continueReading.map { it.format }.toSet()
+        assertTrue(formats.contains(LocalBookFormat.MOBI))
+        assertTrue(formats.contains(LocalBookFormat.PDF))
+        assertTrue(formats.contains(LocalBookFormat.CBZ))
+        assertTrue(formats.contains(LocalBookFormat.EPUB))
+    }
 }

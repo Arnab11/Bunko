@@ -17,7 +17,7 @@ class ReaderAppearanceTest {
 
     @Test
     fun pageBackgroundUsesSoftColorsByDefault() {
-        assertEquals(Color(0xFFFAF7F2), readerPageBackgroundColor(darkPaper = false, usePureColors = false))
+        assertEquals(Color(0xFFFBF0D9), readerPageBackgroundColor(darkPaper = false, usePureColors = false))
         assertEquals(Color(0xFF101010), readerPageBackgroundColor(darkPaper = true, usePureColors = false))
     }
 

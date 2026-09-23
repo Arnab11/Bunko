@@ -98,7 +98,7 @@ internal fun OfflineHomePane(
         books.filter { !it.isExternalFile }
     }
 
-    if (libraryBooks.isEmpty()) {
+    if (books.isEmpty()) {
         EmptyLibraryState(
             hasBooksOverall = false,
             onChooseFolder = onChangeFolder,
@@ -107,9 +107,13 @@ internal fun OfflineHomePane(
         return
     }
 
-    val continueReading = remember(libraryBooks) {
-        libraryBooks.filter { it.lastReadPage > 0 && !it.isCompleted }
-            .sortedByDescending { it.lastReadPage }
+    val continueReading = remember(books) {
+        books.filter { (it.lastReadPage > 0 || it.lastReadTime > 0L) && !it.isCompleted }
+            .sortedWith { a, b ->
+                val timeA = if (a.lastReadTime > 0L) a.lastReadTime else a.lastModified
+                val timeB = if (b.lastReadTime > 0L) b.lastReadTime else b.lastModified
+                timeB.compareTo(timeA)
+            }
     }
     val recentlyAdded = remember(libraryBooks) {
         libraryBooks.sortedByDescending { it.lastModified }
@@ -311,22 +315,30 @@ internal fun OfflineHistoryPane(
     modifier: Modifier = Modifier
 ) {
     val libraryHistory = remember(books, sort) {
-        val libraryOnly = books.filter { !it.isExternalFile && it.lastReadPage > 0 }
+        val libraryOnly = books.filter { !it.isExternalFile && (it.lastReadPage > 0 || it.lastReadTime > 0L) }
         val inProgress = libraryOnly.filter { !it.isCompleted }
         val targetList = if (inProgress.isNotEmpty()) inProgress else libraryOnly
         when (sort) {
             LocalBookSort.Title -> targetList.sortedBy { it.title.lowercase() }
-            LocalBookSort.Recent -> targetList.sortedByDescending { it.lastReadPage }
+            LocalBookSort.Recent -> targetList.sortedWith { a, b ->
+                val timeA = if (a.lastReadTime > 0L) a.lastReadTime else a.lastModified
+                val timeB = if (b.lastReadTime > 0L) b.lastReadTime else b.lastModified
+                timeB.compareTo(timeA)
+            }
             LocalBookSort.Modified -> targetList.sortedByDescending { it.lastModified }
             LocalBookSort.Size -> targetList.sortedByDescending { it.sizeBytes }
         }
     }
 
     val openedFiles = remember(books, sort) {
-        val externalList = books.filter { it.isExternalFile }
+        val externalList = books.filter { it.isExternalFile && (it.lastReadPage > 0 || it.lastReadTime > 0L) }
         when (sort) {
             LocalBookSort.Title -> externalList.sortedBy { it.title.lowercase() }
-            LocalBookSort.Recent -> externalList.sortedByDescending { if (it.lastReadPage > 0) it.lastReadPage.toLong() else it.lastModified }
+            LocalBookSort.Recent -> externalList.sortedWith { a, b ->
+                val timeA = if (a.lastReadTime > 0L) a.lastReadTime else a.lastModified
+                val timeB = if (b.lastReadTime > 0L) b.lastReadTime else b.lastModified
+                timeB.compareTo(timeA)
+            }
             LocalBookSort.Modified -> externalList.sortedByDescending { it.lastModified }
             LocalBookSort.Size -> externalList.sortedByDescending { it.sizeBytes }
         }
@@ -528,7 +540,11 @@ internal fun OfflineBrowsePane(
         libraryBooks.sortedWith { left, right ->
             when (sort) {
                 LocalBookSort.Title -> left.title.lowercase().compareTo(right.title.lowercase())
-                LocalBookSort.Recent -> right.lastReadPage.compareTo(left.lastReadPage)
+                LocalBookSort.Recent -> {
+                    val timeA = if (left.lastReadTime > 0L) left.lastReadTime else if (left.lastReadPage > 0) left.lastModified else 0L
+                    val timeB = if (right.lastReadTime > 0L) right.lastReadTime else if (right.lastReadPage > 0) right.lastModified else 0L
+                    timeB.compareTo(timeA)
+                }
                 LocalBookSort.Size -> right.sizeBytes.compareTo(left.sizeBytes)
                 LocalBookSort.Modified -> right.lastModified.compareTo(left.lastModified)
             }

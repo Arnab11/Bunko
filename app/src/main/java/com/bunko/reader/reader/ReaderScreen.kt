@@ -779,6 +779,7 @@ fun ReaderScreen(
         nightLightIntensity = persistedReaderSettings.nightLightIntensity
 
         if (localBookId != null && localRepository != null) {
+            localRepository.touchLastRead(localBookId)
             val prefKey = "local:$localBookId"
             sessionPreferenceKey = prefKey
             ReaderSessionPreferenceCache.load(ctx.cacheDir, System.currentTimeMillis())

@@ -122,10 +122,11 @@ class LocalBookRepository(context: Context) {
                     pageCount = if (existingItem.pageCount > 0) existingItem.pageCount else created.pageCount,
                     lastReadPage = existingItem.lastReadPage,
                     isCompleted = existingItem.isCompleted,
-                    coverPath = if (existingItem.hasCover) existingItem.coverPath else created.coverPath
+                    coverPath = if (existingItem.hasCover) existingItem.coverPath else created.coverPath,
+                    lastReadTime = existingItem.lastReadTime
                 )
             } else {
-                currentBooks.add(0, created)
+                currentBooks.add(0, created.copy(lastReadTime = System.currentTimeMillis()))
             }
             prefs[KEY_BOOKS_JSON] = encodeBooks(currentBooks)
         }
@@ -245,7 +246,8 @@ class LocalBookRepository(context: Context) {
                             pageCount = if (scanned.pageCount > 0) scanned.pageCount else existing.pageCount,
                             lastReadPage = existing.lastReadPage,
                             isCompleted = existing.isCompleted,
-                            coverPath = if (existing.hasCover) existing.coverPath else ""
+                            coverPath = if (existing.hasCover) existing.coverPath else "",
+                            lastReadTime = existing.lastReadTime
                         )
                     } else {
                         scanned
@@ -277,7 +279,23 @@ class LocalBookRepository(context: Context) {
         }
     }
 
+    suspend fun touchLastRead(bookId: String) {
+        val now = System.currentTimeMillis()
+        appContext.localBooksDataStore.edit { prefs ->
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON])
+            val updated = books.map { book ->
+                if (book.id == bookId) {
+                    book.copy(lastReadTime = now)
+                } else {
+                    book
+                }
+            }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(updated)
+        }
+    }
+
     suspend fun saveProgress(bookId: String, page: Int, totalPages: Int = 0, isCompleted: Boolean = false) {
+        val now = System.currentTimeMillis()
         appContext.localBooksDataStore.edit { prefs ->
             val books = decodeBooks(prefs[KEY_BOOKS_JSON])
             val updated = books.map { book ->
@@ -285,7 +303,8 @@ class LocalBookRepository(context: Context) {
                     book.copy(
                         lastReadPage = page.coerceAtLeast(0),
                         pageCount = if (totalPages > 0) totalPages else book.pageCount,
-                        isCompleted = isCompleted || (totalPages > 0 && page >= totalPages - 1)
+                        isCompleted = isCompleted || (totalPages > 0 && page >= totalPages - 1),
+                        lastReadTime = now
                     )
                 } else {
                     book
@@ -296,13 +315,15 @@ class LocalBookRepository(context: Context) {
     }
 
     suspend fun markCompleted(bookId: String, isCompleted: Boolean) {
+        val now = System.currentTimeMillis()
         appContext.localBooksDataStore.edit { prefs ->
             val books = decodeBooks(prefs[KEY_BOOKS_JSON])
             val updated = books.map { book ->
                 if (book.id == bookId) {
                     book.copy(
                         isCompleted = isCompleted,
-                        lastReadPage = if (isCompleted) (book.pageCount - 1).coerceAtLeast(0) else 0
+                        lastReadPage = if (isCompleted) (book.pageCount - 1).coerceAtLeast(0) else 0,
+                        lastReadTime = if (isCompleted) now else book.lastReadTime
                     )
                 } else {
                     book

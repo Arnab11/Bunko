@@ -55,7 +55,7 @@ interface KavitaApi {
     suspend fun onDeck(
         @Query("PageNumber") pageNumber: Int? = 0,
         @Query("PageSize") pageSize: Int? = 12,
-        @Query("libraryId") libraryId: Int? = 0
+        @Query("libraryId") libraryId: Int? = null
     ): List<SeriesDto>
 
     @POST("api/Series/recently-added-v2")
