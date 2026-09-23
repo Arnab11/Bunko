@@ -63,9 +63,22 @@ internal fun ReaderEpubPageView(
     blockSpacingDp: Dp = 10.dp
 ) {
     val isDark = pageBackground.luminance() < 0.5f
-    val textColor = if (isDark) Color(0xFFEDEDED) else Color(0xFF141414)
-    val dividerColor = if (isDark) Color(0xFF333333) else Color(0xFFDCD7CC)
-    val quoteBarColor = if (isDark) Color(0xFF666666) else Color(0xFF9E988D)
+    val isSepia = !isDark && pageBackground != Color.White
+    val textColor = when {
+        isDark -> Color(0xFFEDEDED)
+        isSepia -> Color(0xFF423224)
+        else -> Color(0xFF141414)
+    }
+    val dividerColor = when {
+        isDark -> Color(0xFF333333)
+        isSepia -> Color(0xFFD6C8B4)
+        else -> Color(0xFFDCD7CC)
+    }
+    val quoteBarColor = when {
+        isDark -> Color(0xFF666666)
+        isSepia -> Color(0xFF8D7B68)
+        else -> Color(0xFF9E988D)
+    }
     val imageColorFilter = readerColorFilter(ePaperMode, invertMode == InvertMode.Always)
     val activeFontFamily = when (epubFontFamily.lowercase()) {
         "sans", "sansserif", "sans-serif" -> FontFamily.SansSerif

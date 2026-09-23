@@ -1,5 +1,6 @@
 package com.bunko.reader.reader.internal
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -233,9 +235,14 @@ internal fun ReaderOverviewGallery(
         val isPortrait = screenHeight > screenWidth
 
         // Background tap layer behind the pager to dismiss overview when tapping the margins
+        val overviewBackground = MaterialTheme.colorScheme.background
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    alpha = progressState.value
+                }
+                .background(overviewBackground)
                 .pointerInput(pagerState.currentPage, cursors, currentCursor) {
                     detectTapGestures(onTap = {
                         val cursor = cursors.getOrNull(pagerState.currentPage)

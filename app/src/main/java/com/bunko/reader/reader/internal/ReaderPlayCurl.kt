@@ -765,9 +765,22 @@ private suspend fun renderEpubSubpageToBitmap(
         val g = (style.paperArgb shr 8) and 0xFF
         val b = style.paperArgb and 0xFF
         val isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 128
-        val textColor = if (isDark) 0xFFEDEDED.toInt() else 0xFF141414.toInt()
-        val dividerColor = if (isDark) 0xFF333333.toInt() else 0xFFDCD7CC.toInt()
-        val quoteBarColor = if (isDark) 0xFF666666.toInt() else 0xFF9E988D.toInt()
+        val isSepia = !isDark && (style.paperArgb != 0xFFFFFFFF.toInt())
+        val textColor = when {
+            isDark -> 0xFFEDEDED.toInt()
+            isSepia -> 0xFF423224.toInt()
+            else -> 0xFF141414.toInt()
+        }
+        val dividerColor = when {
+            isDark -> 0xFF333333.toInt()
+            isSepia -> 0xFFD6C8B4.toInt()
+            else -> 0xFFDCD7CC.toInt()
+        }
+        val quoteBarColor = when {
+            isDark -> 0xFF666666.toInt()
+            isSepia -> 0xFF8D7B68.toInt()
+            else -> 0xFF9E988D.toInt()
+        }
 
         val activeTypeface = when (style.epubFontFamily.lowercase()) {
             "sans", "sansserif", "sans-serif" -> Typeface.SANS_SERIF

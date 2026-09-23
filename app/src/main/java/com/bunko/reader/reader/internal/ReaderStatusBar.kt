@@ -141,7 +141,12 @@ internal fun ReaderBottomStatusBar(
     val progressPercent = ((displayPage.toFloat() / safePages) * 100).roundToInt()
 
     val isLightBg = pageBackground.luminance() > 0.5f
-    val textColor = if (isLightBg) Color(0x99000000) else Color(0x99FFFFFF)
+    val isSepia = isLightBg && pageBackground != Color.White
+    val textColor = when {
+        isSepia -> Color(0x99423224)
+        isLightBg -> Color(0x99000000)
+        else -> Color(0x99FFFFFF)
+    }
     val shadowColor = if (isLightBg) Color(0x33FFFFFF) else Color(0x55000000)
 
     val style = TextStyle(

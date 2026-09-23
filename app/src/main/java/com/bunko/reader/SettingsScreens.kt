@@ -1249,14 +1249,9 @@ fun ReaderSettingsScreen(
                     )
 
                     SettingsSectionCard {
-                        val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
                         val swatches = listOf(
                             Triple("White", Color.White, Color(0xFF141414)),
-                            Triple(
-                                "Theme",
-                                if (isLightMode) MaterialTheme.colorScheme.background else Color(0xFFFAF7F2),
-                                if (isLightMode) MaterialTheme.colorScheme.onBackground else Color(0xFF2A2218)
-                            ),
+                            Triple("Sepia", Color(0xFFFBF0D9), Color(0xFF423224)),
                             Triple("Dark", Color(0xFF181818), Color(0xFFE6E6E6)),
                             Triple("Black", Color.Black, Color.White)
                         )
@@ -1270,7 +1265,7 @@ fun ReaderSettingsScreen(
                                 val isSelected = when (name) {
                                     "White" -> settings.reader.pageBackground == PageBackground.Paper &&
                                         settings.reader.usePurePageBackgroundColors
-                                    "Theme" -> settings.reader.pageBackground == PageBackground.Paper &&
+                                    "Sepia", "Theme", "Paper" -> settings.reader.pageBackground == PageBackground.Paper &&
                                         !settings.reader.usePurePageBackgroundColors
                                     "Dark" -> settings.reader.pageBackground == PageBackground.Dark &&
                                         !settings.reader.usePurePageBackgroundColors
@@ -1288,7 +1283,7 @@ fun ReaderSettingsScreen(
                                                     settingsStore.setPageBackground(PageBackground.Paper)
                                                     settingsStore.setUsePurePageBackgroundColors(true)
                                                 }
-                                                "Theme" -> {
+                                                "Sepia", "Theme", "Paper" -> {
                                                     settingsStore.setPageBackground(PageBackground.Paper)
                                                     settingsStore.setUsePurePageBackgroundColors(false)
                                                 }

@@ -1108,7 +1108,7 @@ internal fun ReaderMenuOverlay(
                                     )
                                     val themes = listOf(
                                         Triple("White", Color.White, Color(0xFF141414)),
-                                        Triple("Theme", if (isLightMode) MaterialTheme.colorScheme.background else Color(0xFFFAF7F2), if (isLightMode) MaterialTheme.colorScheme.onBackground else Color(0xFF2A2218)),
+                                        Triple("Sepia", Color(0xFFFBF0D9), Color(0xFF423224)),
                                         Triple("Dark", Color(0xFF181818), Color(0xFFE6E6E6)),
                                         Triple("Black", Color.Black, Color.White)
                                     )
@@ -1119,7 +1119,7 @@ internal fun ReaderMenuOverlay(
                                         themes.forEach { (name, bg, fg) ->
                                             val isSelected = when (name) {
                                                 "White" -> pageBackground == PageBackground.Paper && usePureColors
-                                                "Theme", "Paper" -> pageBackground == PageBackground.Paper && !usePureColors
+                                                "Sepia", "Theme", "Paper" -> pageBackground == PageBackground.Paper && !usePureColors
                                                 "Dark" -> pageBackground == PageBackground.Dark && !usePureColors
                                                 "Black" -> pageBackground == PageBackground.Dark && usePureColors
                                                 else -> false
@@ -1133,7 +1133,7 @@ internal fun ReaderMenuOverlay(
                                                             onSetPageBackground(PageBackground.Paper)
                                                             onSetUsePureColors(true)
                                                         }
-                                                        "Theme", "Paper" -> {
+                                                        "Sepia", "Theme", "Paper" -> {
                                                             onSetPageBackground(PageBackground.Paper)
                                                             onSetUsePureColors(false)
                                                         }
