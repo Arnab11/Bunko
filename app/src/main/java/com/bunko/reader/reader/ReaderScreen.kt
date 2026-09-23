@@ -119,6 +119,7 @@ import com.bunko.reader.reader.internal.ReaderPrefetchTarget
 import com.bunko.reader.reader.internal.ReaderFullscreenEffect
 import com.bunko.reader.reader.internal.findActivity
 import com.bunko.reader.reader.internal.ReaderBottomStatusBar
+import com.bunko.reader.reader.internal.ReaderTopHeaderBar
 import com.bunko.reader.reader.internal.ReaderChapterBoundary
 import com.bunko.reader.reader.internal.ReaderChapterBoundaryScreen
 import com.bunko.reader.reader.internal.ReaderChapterEntry
@@ -1532,10 +1533,17 @@ fun ReaderScreen(
 
         val stableInsets = WindowInsets.navigationBars.union(WindowInsets.displayCutout).asPaddingValues()
         val layoutDirection = LocalLayoutDirection.current
-        val safeTopPadding = (stableInsets.calculateTopPadding() + 16.dp).coerceAtLeast(28.dp)
-        val safeBottomPadding = (stableInsets.calculateBottomPadding() + 36.dp).coerceAtLeast(48.dp)
-        val safeStartPadding = stableInsets.calculateStartPadding(layoutDirection).coerceAtLeast(20.dp)
-        val safeEndPadding = stableInsets.calculateEndPadding(layoutDirection).coerceAtLeast(20.dp)
+        val statusTopInsetDp = maxOf(
+            WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+            stableInsets.calculateTopPadding()
+        )
+        val navBottomInsetDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+
+        val safeTopPadding = (statusTopInsetDp + 38.dp).coerceAtLeast(44.dp)
+        val safeBottomPadding = (navBottomInsetDp + 42.dp).coerceAtLeast(50.dp)
+        val safeStartPadding = (stableInsets.calculateStartPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp)
+        val safeEndPadding = (stableInsets.calculateEndPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp)
 
         // Compute the gallery card scale and center-offset using the SAME formula as
         // ReaderOverviewGallery, so the reader viewport can mirror the card's transform
@@ -1573,8 +1581,8 @@ fun ReaderScreen(
             end = safeEndPadding,
             bottom = safeBottomPadding
         )
-        val landscapeOuterMargin = maxOf(safeStartPadding, safeEndPadding).coerceIn(20.dp, 32.dp)
-        val landscapeInnerMargin = 16.dp
+        val landscapeOuterMargin = maxOf(safeStartPadding, safeEndPadding).coerceIn(24.dp, 36.dp)
+        val landscapeInnerMargin = 20.dp
         val landscapeLeftPadding = PaddingValues(
             start = landscapeOuterMargin,
             top = safeTopPadding,
@@ -3667,6 +3675,16 @@ fun ReaderScreen(
                 hasError = error != null,
                 onContinue = ::continueFromChapterBoundary,
                 onBackToSeries = handleBack
+            )
+        }
+
+        // Top reading header bar: book title (only for text-based formats)
+        if (!isOverviewActive && isEpub) {
+            ReaderTopHeaderBar(
+                bookTitle = seriesName.ifBlank { currentChapter.displayName },
+                pageBackground = readerPageBackground,
+                visible = !showReaderMenu && readerReady && error == null && chapterBoundary == null,
+                modifier = Modifier.align(Alignment.TopCenter)
             )
         }
 
