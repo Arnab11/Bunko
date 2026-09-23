@@ -62,6 +62,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
@@ -1728,53 +1729,76 @@ fun ReaderScreen(
                         )
                     } else {
                         val spread = spreadPagesFor(cursor, rightToLeft)
-                        Row(modifier.fillMaxSize().background(pageBackground)) {
-                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                if (spread.leftPage in epubSubpages.indices) {
-                                    ReaderEpubPageView(
-                                        subpage = epubSubpages[spread.leftPage],
-                                        fontSizeSp = effectiveEpubFontSizeSp,
-                                        pageBackground = pageBackground,
-                                        invertMode = invertMode,
-                                        ePaperMode = ePaperMode,
-                                        epubFontFamily = settings.reader.epubFontFamily,
-                                        epubTextAlign = settings.reader.epubTextAlign,
-                                        imageLoader = imageLoader,
-                                        contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
-                                        blockSpacingDp = effectiveBlockSpacing,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(pageBackground)
-                                    )
+                        Box(modifier = modifier.fillMaxSize()) {
+                            Row(modifier = Modifier.fillMaxSize().background(pageBackground)) {
+                                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                    if (spread.leftPage in epubSubpages.indices) {
+                                        ReaderEpubPageView(
+                                            subpage = epubSubpages[spread.leftPage],
+                                            fontSizeSp = effectiveEpubFontSizeSp,
+                                            pageBackground = pageBackground,
+                                            invertMode = invertMode,
+                                            ePaperMode = ePaperMode,
+                                            epubFontFamily = settings.reader.epubFontFamily,
+                                            epubTextAlign = settings.reader.epubTextAlign,
+                                            imageLoader = imageLoader,
+                                            contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
+                                            blockSpacingDp = effectiveBlockSpacing,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(pageBackground)
+                                        )
+                                    }
+                                }
+                                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                    if (spread.rightPage in epubSubpages.indices) {
+                                        ReaderEpubPageView(
+                                            subpage = epubSubpages[spread.rightPage],
+                                            fontSizeSp = effectiveEpubFontSizeSp,
+                                            pageBackground = pageBackground,
+                                            invertMode = invertMode,
+                                            ePaperMode = ePaperMode,
+                                            epubFontFamily = settings.reader.epubFontFamily,
+                                            epubTextAlign = settings.reader.epubTextAlign,
+                                            imageLoader = imageLoader,
+                                            contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
+                                            blockSpacingDp = effectiveBlockSpacing,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(pageBackground)
+                                        )
+                                    }
                                 }
                             }
-                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                if (spread.rightPage in epubSubpages.indices) {
-                                    ReaderEpubPageView(
-                                        subpage = epubSubpages[spread.rightPage],
-                                        fontSizeSp = effectiveEpubFontSizeSp,
-                                        pageBackground = pageBackground,
-                                        invertMode = invertMode,
-                                        ePaperMode = ePaperMode,
-                                        epubFontFamily = settings.reader.epubFontFamily,
-                                        epubTextAlign = settings.reader.epubTextAlign,
-                                        imageLoader = imageLoader,
-                                        contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
-                                        blockSpacingDp = effectiveBlockSpacing,
-                                        modifier = Modifier.fillMaxSize()
+                            // Center book spine crease shadow between left and right pages
+                            val isDark = pageBackground.luminance() < 0.5f
+                            val shadowCenter = if (isDark) Color.Black.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.12f)
+                            val shadowMid = if (isDark) Color.Black.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.05f)
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .fillMaxHeight()
+                                    .width(32.dp)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                Color.Transparent,
+                                                shadowMid,
+                                                shadowCenter,
+                                                shadowMid,
+                                                Color.Transparent
+                                            )
+                                        )
                                     )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(pageBackground)
-                                    )
-                                }
-                            }
+                            )
                         }
                     }
                 } else {
