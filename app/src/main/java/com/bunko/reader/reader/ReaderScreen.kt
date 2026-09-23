@@ -1483,11 +1483,14 @@ fun ReaderScreen(
     // gesture (overviewProgress 1.0 → 0.75) so they retreat off-screen immediately as the user
     // zooms into the page, rather than lingering until the page has completely zoomed in.
     // Kept as State and read only in draw phase (see overviewProgressState).
-    val overviewMenuFractionState: State<Float> = remember {
-        derivedStateOf {
-            if (isOverviewDisabled) {
-                1f
-            } else {
+    // NOTE: keyed on isOverviewDisabled because derivedStateOf only tracks State
+    // reads — a plain Boolean capture would go stale and leave the header/footer
+    // at alpha 0 after toggling overview off (fixed here by recreating the State).
+    val overviewMenuFractionState: State<Float> = remember(isOverviewDisabled) {
+        if (isOverviewDisabled) {
+            mutableStateOf(1f)
+        } else {
+            derivedStateOf {
                 ((overviewProgressAnim.value - 0.75f) / 0.25f).coerceIn(0f, 1f)
             }
         }
