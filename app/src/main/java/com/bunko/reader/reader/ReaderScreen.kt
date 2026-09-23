@@ -347,6 +347,9 @@ fun ReaderScreen(
     var epubSpineBlocks by remember { mutableStateOf<List<List<EpubBlock>>>(emptyList()) }
     var epubSubpages by remember { mutableStateOf<List<EpubSubpage>>(emptyList()) }
     val epubFontSizeSp = settings.reader.epubFontSizeSp
+    var pinchBaseFontSize by remember { mutableFloatStateOf(18f) }
+    var pinchAccumulatedScale by remember { mutableFloatStateOf(1f) }
+    var isPinchChangingFontSize by remember { mutableStateOf(false) }
 
     suspend fun loadEpubSpines(
         chapterId: Int,
@@ -3516,68 +3519,89 @@ fun ReaderScreen(
                 },
                 onTransform = { zoomChange, panChange, focalPoint ->
                     zoomAnimationJob?.cancel()
-                    val candidate = zoomPan.withTransform(
-                        zoomChange = zoomChange,
-                        panChange = panChange,
-                        focalPoint = focalPoint,
-                        baseZoomScale = baseZoomScale,
-                        viewportWidthPx = viewportWidthPx,
-                        viewportHeightPx = viewportHeightPx
-                    )
-                    when {
-                        // ── Overview already open: pinch-out (spread) → dismiss it ───
-                        isOverviewMenuOpen && zoomChange > 1f + ReaderZoomEpsilon -> {
-                            // On the FIRST frame of the dismiss gesture, overviewDragProgress
-                            // is 0f (it stays 0 when overview was opened via button, not gesture).
-                            // Seed it to 1f so the drag has the full 1→0 range to work with.
-                            val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
-                            val delta = (zoomChange - 1f) * 4f
-                            val next = (startProgress - delta).coerceIn(0f, 1f)
-                            isDraggingOverview = true
-                            overviewDragProgress = next
-                            zoomPan = initialZoomPanState
-                            scope.launch { overviewProgressAnim.snapTo(next) }
+                    if (isEpub && !isOverviewMenuOpen) {
+                        // For text-based formats (EPUB), pinch-to-zoom scales the text size (like Kindle)
+                        if (!isPinchChangingFontSize) {
+                            pinchBaseFontSize = epubFontSizeSp
+                            pinchAccumulatedScale = 1f
+                            isPinchChangingFontSize = true
                         }
-                        // ── At 1× zoom: pinch-in → enter overview ──────────────────────
-                        // Stay in drag mode if isDraggingOverview is already true, even
-                        // when zoomChange oscillates near 1f on slow pinches — only exit
-                        // on a clear pinch-OUT (zoomChange > 1+ε, handled above/in else).
-                        !isOverviewDisabled &&
-                        !isOverviewMenuOpen &&
-                        candidate.userScale <= 1f + ReaderZoomEpsilon &&
-                        (isDraggingOverview || zoomChange < 1f - ReaderZoomEpsilon) -> {
-                            val delta = (1f - zoomChange).coerceAtLeast(0f) * 4f
-                            val next = (overviewDragProgress + delta).coerceIn(0f, 1f)
-                            isDraggingOverview = true
-                            overviewDragProgress = next
-                            zoomPan = initialZoomPanState
-                            scope.launch { overviewProgressAnim.snapTo(next) }
+                        pinchAccumulatedScale *= zoomChange
+                        val newSize = (pinchBaseFontSize * pinchAccumulatedScale).roundToInt().toFloat().coerceIn(12f, 36f)
+                        if (newSize != epubFontSizeSp) {
+                            scope.launch { settingsStore.setEpubFontSizeSp(newSize) }
                         }
-                        // ── Normal zoom / clear reversal ────────────────────────────────
-                        else -> {
-                            if (isDraggingOverview) {
-                                // Only cancel the overview drag when the user clearly
-                                // spreads fingers (zooming IN).  Near-1 zoomChange values
-                                // from a slow pinch must NOT cancel; just hold position.
-                                if (zoomChange > 1f + ReaderZoomEpsilon) {
-                                    isDraggingOverview = false
-                                    overviewDragProgress = 0f
-                                    scope.launch {
-                                        overviewProgressAnim.animateTo(
-                                            0f,
-                                            tween(200, easing = FastOutSlowInEasing)
-                                        )
-                                    }
-                                }
+                        zoomPan = initialZoomPanState
+                    } else {
+                        val candidate = zoomPan.withTransform(
+                            zoomChange = zoomChange,
+                            panChange = panChange,
+                            focalPoint = focalPoint,
+                            baseZoomScale = baseZoomScale,
+                            viewportWidthPx = viewportWidthPx,
+                            viewportHeightPx = viewportHeightPx
+                        )
+                        when {
+                            // ── Overview already open: pinch-out (spread) → dismiss it ───
+                            isOverviewMenuOpen && zoomChange > 1f + ReaderZoomEpsilon -> {
+                                // On the FIRST frame of the dismiss gesture, overviewDragProgress
+                                // is 0f (it stays 0 when overview was opened via button, not gesture).
+                                // Seed it to 1f so the drag has the full 1→0 range to work with.
+                                val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
+                                val delta = (zoomChange - 1f) * 4f
+                                val next = (startProgress - delta).coerceIn(0f, 1f)
+                                isDraggingOverview = true
+                                overviewDragProgress = next
                                 zoomPan = initialZoomPanState
-                                // else: near-1 zoomChange while dragging → hold current progress
-                            } else {
-                                zoomPan = candidate
+                                scope.launch { overviewProgressAnim.snapTo(next) }
+                            }
+                            // ── At 1× zoom: pinch-in → enter overview ──────────────────────
+                            // Stay in drag mode if isDraggingOverview is already true, even
+                            // when zoomChange oscillates near 1f on slow pinches — only exit
+                            // on a clear pinch-OUT (zoomChange > 1+ε, handled above/in else).
+                            !isOverviewDisabled &&
+                            !isOverviewMenuOpen &&
+                            candidate.userScale <= 1f + ReaderZoomEpsilon &&
+                            (isDraggingOverview || zoomChange < 1f - ReaderZoomEpsilon) -> {
+                                val delta = (1f - zoomChange).coerceAtLeast(0f) * 4f
+                                val next = (overviewDragProgress + delta).coerceIn(0f, 1f)
+                                isDraggingOverview = true
+                                overviewDragProgress = next
+                                zoomPan = initialZoomPanState
+                                scope.launch { overviewProgressAnim.snapTo(next) }
+                            }
+                            // ── Normal zoom / clear reversal ────────────────────────────────
+                            else -> {
+                                if (isDraggingOverview) {
+                                    // Only cancel the overview drag when the user clearly
+                                    // spreads fingers (zooming IN).  Near-1 zoomChange values
+                                    // from a slow pinch must NOT cancel; just hold position.
+                                    if (zoomChange > 1f + ReaderZoomEpsilon) {
+                                        isDraggingOverview = false
+                                        overviewDragProgress = 0f
+                                        scope.launch {
+                                            overviewProgressAnim.animateTo(
+                                                0f,
+                                                tween(200, easing = FastOutSlowInEasing)
+                                            )
+                                        }
+                                    }
+                                    zoomPan = initialZoomPanState
+                                    // else: near-1 zoomChange while dragging → hold current progress
+                                } else {
+                                    zoomPan = candidate
+                                }
                             }
                         }
                     }
                 },
                 onTransformEnd = { _ ->
+                    if (isEpub && isPinchChangingFontSize) {
+                        isPinchChangingFontSize = false
+                        pinchAccumulatedScale = 1f
+                        zoomPan = initialZoomPanState
+                        return@ReaderTapLayer
+                    }
                     if (isDraggingOverview) {
                         isDraggingOverview = false
                         val shouldCommit = overviewDragProgress >= 0.35f
