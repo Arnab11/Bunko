@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
@@ -1532,23 +1533,6 @@ fun ReaderScreen(
         val viewportHeightPx = with(density) { maxHeight.toPx() }
         val viewportHeight = maxHeight
 
-        val stableInsets = WindowInsets.navigationBars.union(WindowInsets.displayCutout).asPaddingValues()
-        val layoutDirection = LocalLayoutDirection.current
-        val statusTopInsetDp = maxOf(
-            WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-            stableInsets.calculateTopPadding()
-        )
-        val navBottomInsetDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-
-        val safeTopPadding = (statusTopInsetDp + 38.dp).coerceAtLeast(44.dp)
-        val safeBottomPadding = (navBottomInsetDp + 42.dp).coerceAtLeast(50.dp)
-        val safeStartPadding = (stableInsets.calculateStartPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp)
-        val safeEndPadding = (stableInsets.calculateEndPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp)
-
-        // Compute the gallery card scale and center-offset using the SAME formula as
-        // ReaderOverviewGallery, so the reader viewport can mirror the card's transform
-        // exactly and eliminate both the "black bar" and the "ghost page" issues.
         val context = LocalContext.current
         val resStatusBarHeight = remember(context) {
             val resId = context.resources.getIdentifier("status_bar_height", "dimen", "android")
@@ -1561,9 +1545,19 @@ fun ReaderScreen(
                 .calculateTopPadding(),
             with(density) { resStatusBarHeight.toDp() }
         )
-        val liveStatusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val galleryTopInset = maxOf(stableStatusBarHeight, liveStatusBarHeight)
-        val navBarBottomDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val stableNavInsets = WindowInsets.navigationBarsIgnoringVisibility
+            .union(WindowInsets.displayCutout)
+            .asPaddingValues()
+        val layoutDirection = LocalLayoutDirection.current
+        val navBottomInsetDp = stableNavInsets.calculateBottomPadding()
+
+        val safeTopPadding = (stableStatusBarHeight + 38.dp).coerceAtLeast(44.dp)
+        val safeBottomPadding = (navBottomInsetDp + 42.dp).coerceAtLeast(50.dp)
+        val safeStartPadding = (stableNavInsets.calculateStartPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp)
+        val safeEndPadding = (stableNavInsets.calculateEndPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp)
+
+        val galleryTopInset = stableStatusBarHeight
+        val navBarBottomDp = WindowInsets.navigationBarsIgnoringVisibility.asPaddingValues().calculateBottomPadding()
         val galleryTopInsetPx  = with(density) { (galleryTopInset + 56.dp).toPx() }
         val galleryBotInsetPx  = with(density) { (88.dp + navBarBottomDp).toPx() }
         val galleryPagerHeightPx = viewportHeightPx - galleryTopInsetPx - galleryBotInsetPx
@@ -3685,6 +3679,7 @@ fun ReaderScreen(
                 bookTitle = seriesName.ifBlank { currentChapter.displayName },
                 pageBackground = readerPageBackground,
                 visible = !showReaderMenu && readerReady && error == null && chapterBoundary == null,
+                headerHeight = safeTopPadding,
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }

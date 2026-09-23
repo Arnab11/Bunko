@@ -265,8 +265,7 @@ internal fun ReaderOverviewGallery(
                 .calculateTopPadding(),
             with(density) { resStatusBarHeight.toDp() }
         )
-        val liveStatusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val galleryTopInset = maxOf(stableStatusBarHeight, liveStatusBarHeight)
+        val galleryTopInset = stableStatusBarHeight
 
         BoxWithConstraints(
             modifier = Modifier

@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,10 +47,12 @@ import androidx.compose.ui.unit.sp
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.imageLoader
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import com.bunko.reader.EPaperMode
 import com.bunko.reader.EpubTextAlign
 import com.bunko.reader.InvertMode
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderEpubPageView(
     subpage: EpubSubpage,
@@ -94,8 +98,8 @@ internal fun ReaderEpubPageView(
         EpubTextAlign.Justify -> TextAlign.Justify
     }
 
-    val insets = WindowInsets.navigationBars.union(WindowInsets.displayCutout).asPaddingValues()
-    val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
+    val insets = WindowInsets.navigationBarsIgnoringVisibility.union(WindowInsets.displayCutout).asPaddingValues()
+    val statusInsets = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).asPaddingValues()
     val layoutDirection = LocalLayoutDirection.current
     val effectivePadding = contentPadding ?: PaddingValues(
         start = (insets.calculateStartPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp),

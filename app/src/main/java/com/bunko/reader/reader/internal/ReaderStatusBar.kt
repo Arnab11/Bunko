@@ -10,16 +10,20 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Battery0Bar
@@ -51,6 +55,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
@@ -135,6 +140,7 @@ internal fun BatteryIcon(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderBottomStatusBar(
     currentPage: Int,
@@ -173,7 +179,9 @@ internal fun ReaderBottomStatusBar(
         exit = fadeOut(),
         modifier = modifier
     ) {
-        val navInsets = WindowInsets.navigationBars.asPaddingValues()
+        val navInsets = WindowInsets.navigationBarsIgnoringVisibility
+            .union(WindowInsets.displayCutout)
+            .asPaddingValues()
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -220,11 +228,13 @@ internal fun ReaderBottomStatusBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderTopHeaderBar(
     bookTitle: String,
     pageBackground: Color,
     visible: Boolean,
+    headerHeight: Dp = 44.dp,
     modifier: Modifier = Modifier
 ) {
     if (bookTitle.isBlank()) return
@@ -256,11 +266,10 @@ internal fun ReaderTopHeaderBar(
         exit = fadeOut(),
         modifier = modifier
     ) {
-        val insets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = (insets.calculateTopPadding() + 8.dp).coerceAtLeast(12.dp))
+                .height(headerHeight)
                 .padding(horizontal = 32.dp),
             contentAlignment = Alignment.Center
         ) {
