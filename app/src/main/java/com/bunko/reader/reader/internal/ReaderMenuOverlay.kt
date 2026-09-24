@@ -62,6 +62,8 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.NightlightRound
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -203,7 +205,12 @@ internal fun ReaderMenuOverlay(
     isBookmarked: Boolean = false,
     onToggleBookmark: (() -> Unit)? = null,
     onDeleteBookmark: ((String) -> Unit)? = null,
-    onJumpToBookmark: ((ReaderBookmark) -> Unit)? = null
+    onJumpToBookmark: ((ReaderBookmark) -> Unit)? = null,
+    isTtsVisible: Boolean = false,
+    isTtsSpeaking: Boolean = false,
+    ttsRate: Float = 1f,
+    onToggleTts: (() -> Unit)? = null,
+    onSetTtsRate: ((Float) -> Unit)? = null
 ) {
     val rightToLeft = readingDirection == ReaderReadingDirection.RightToLeft
     val safePageCount = pages.coerceAtLeast(1)
@@ -356,6 +363,17 @@ internal fun ReaderMenuOverlay(
                     contentDescription = if (isBookmarked) "Remove bookmark" else "Add bookmark",
                     tint = if (isBookmarked) MaterialTheme.colorScheme.primary else onBar
                 )
+            }
+
+            // TTS Play / Stop (e-books only)
+            if (isTtsVisible) {
+                IconButton(onClick = { onToggleTts?.invoke() }) {
+                    Icon(
+                        imageVector = if (isTtsSpeaking) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                        contentDescription = if (isTtsSpeaking) "Stop reading aloud" else "Read aloud",
+                        tint = if (isTtsSpeaking) MaterialTheme.colorScheme.primary else onBar
+                    )
+                }
             }
 
             // Google Books "Aa" Options Button
@@ -636,6 +654,60 @@ internal fun ReaderMenuOverlay(
                                                         modifier = Modifier.size(20.dp)
                                                     )
                                                 }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Read aloud (TTS, e-books only)
+                                if (isTtsVisible) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Read aloud",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = unselectedText
+                                            )
+                                            DialogToggleButton(
+                                                checked = isTtsSpeaking,
+                                                onCheckedChange = { onToggleTts?.invoke() },
+                                                text = if (isTtsSpeaking) "Stop" else "Play"
+                                            )
+                                        }
+                                        if (onSetTtsRate != null) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Text(
+                                                    text = "0.5x",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = unselectedText
+                                                )
+                                                Slider(
+                                                    value = ttsRate.coerceIn(0.5f, 2f),
+                                                    onValueChange = { onSetTtsRate(it) },
+                                                    valueRange = 0.5f..2f,
+                                                    steps = 5,
+                                                    modifier = Modifier.weight(1f),
+                                                    colors = SliderDefaults.colors(
+                                                        thumbColor = accent,
+                                                        activeTrackColor = accent,
+                                                        inactiveTrackColor = dialogBorder
+                                                    )
+                                                )
+                                                Text(
+                                                    text = "${ttsRate}x".take(4),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = onSurface,
+                                                    modifier = Modifier.widthIn(min = 40.dp),
+                                                    textAlign = TextAlign.End
+                                                )
                                             }
                                         }
                                     }

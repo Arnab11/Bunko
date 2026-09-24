@@ -346,6 +346,14 @@ fun ReaderScreen(
     var isPdf by remember { mutableStateOf(false) }
     var epubSpineBlocks by remember { mutableStateOf<List<List<EpubBlock>>>(emptyList()) }
     var epubSubpages by remember { mutableStateOf<List<EpubSubpage>>(emptyList()) }
+    // E-book-only TTS (read aloud + word highlight). Lives for the whole reader
+    // session so speech survives recompositions; shut down on dispose/exit.
+    val ttsManager = remember(ctx) { com.bunko.reader.tts.TtsManager(ctx) }
+    val ttsSpeaking by ttsManager.speaking.collectAsState()
+    val ttsHighlight by ttsManager.highlight.collectAsState()
+    var ttsPage by remember { mutableIntStateOf(-1) }
+    var ttsAutoContinue by remember { mutableStateOf(false) }
+    var ttsAutoAdvancing by remember { mutableStateOf(false) }
     val epubFontSizeSp = settings.reader.epubFontSizeSp
     var pinchBaseFontSize by remember { mutableFloatStateOf(18f) }
     var pinchAccumulatedScale by remember { mutableFloatStateOf(1f) }
@@ -378,6 +386,8 @@ fun ReaderScreen(
     DisposableEffect(readerImageLoader, localBookId) {
         val activeLoader = readerImageLoader
         onDispose {
+            ttsManager.stop()
+            ttsManager.shutdown()
             activeLoader?.shutdown()
             com.bunko.reader.engine.pdf.PdfDocumentEngine.closeActiveSession()
             if (localBookId != null && localRepository != null && pages > 0) {
@@ -388,7 +398,25 @@ fun ReaderScreen(
         }
     }
 
+    // Keep engine speech rate in sync with the persisted setting.
+    LaunchedEffect(settings.reader.ttsSpeechRate) {
+        ttsManager.setSpeechRate(settings.reader.ttsSpeechRate)
+    }
+
+    // Manual page turns stop speech; auto-advance sets the bypass flag first.
+    LaunchedEffect(page) {
+        if (ttsAutoAdvancing) {
+            ttsAutoAdvancing = false
+        } else if (ttsSpeaking && ttsPage != page) {
+            ttsAutoContinue = false
+            ttsManager.stop()
+            ttsPage = -1
+        }
+    }
+
     val handleBack = {
+        ttsAutoContinue = false
+        ttsManager.stop()
         val activity = ctx.findActivity()
         if (activity != null) {
             val lp = activity.window.attributes
@@ -601,9 +629,44 @@ fun ReaderScreen(
             page = nextPage
         }
     }
+    fun speakEpubPage(targetPage: Int) {
+        val subpage = epubSubpages.getOrNull(targetPage) ?: return
+        ttsPage = targetPage
+        ttsAutoContinue = true
+        ttsManager.onCompleted = {
+            if (ttsAutoContinue && targetPage < pages - 1) {
+                ttsAutoAdvancing = true
+                val next = targetPage + 1
+                jumpToPage(next)
+                speakEpubPage(next)
+            } else {
+                ttsAutoContinue = false
+                ttsPage = -1
+            }
+        }
+        val started = ttsManager.speakSubpage(subpage)
+        if (!started) {
+            ttsAutoContinue = false
+            ttsPage = -1
+            BunkoLog.w("TTS: no speakable text on page $targetPage (image-only?).")
+        }
+    }
+    fun toggleTts() {
+        if (!isEpub) return
+        if (ttsSpeaking) {
+            ttsAutoContinue = false
+            ttsManager.stop()
+            ttsPage = -1
+        } else {
+            speakEpubPage(page)
+        }
+    }
     fun switchChapter(target: ReaderChapterEntry, openAtLastPage: Boolean) {
         if (chapterSwitching) return
         if (localBookId == null && target.chapterId == currentChapterId) return
+        ttsAutoContinue = false
+        ttsManager.stop()
+        ttsPage = -1
         chapterSwitching = true
         showReaderMenu = false
         error = null
@@ -1731,6 +1794,7 @@ fun ReaderScreen(
                             imageLoader = imageLoader,
                             contentPadding = epubContentPaddingOverride ?: portraitPadding,
                             blockSpacingDp = effectiveBlockSpacing,
+                            ttsHighlight = ttsHighlight.takeIf { ttsPage == safeIndex },
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {
@@ -1750,6 +1814,7 @@ fun ReaderScreen(
                                             imageLoader = imageLoader,
                                             contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
                                             blockSpacingDp = effectiveBlockSpacing,
+                                            ttsHighlight = ttsHighlight.takeIf { ttsPage == spread.leftPage },
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     } else {
@@ -1773,6 +1838,7 @@ fun ReaderScreen(
                                             imageLoader = imageLoader,
                                             contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
                                             blockSpacingDp = effectiveBlockSpacing,
+                                            ttsHighlight = ttsHighlight.takeIf { ttsPage == spread.rightPage },
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     } else {
@@ -1840,6 +1906,12 @@ fun ReaderScreen(
         }
 
         val verticalListState = rememberLazyListState()
+        // Follow TTS auto-advance in vertical/webtoon so the spoken page stays visible.
+        LaunchedEffect(ttsPage, ttsSpeaking) {
+            if (vertical && ttsSpeaking && ttsPage >= 0 && pages > 0) {
+                runCatching { verticalListState.scrollToItem((ttsPage + 1).coerceIn(1, pages)) }
+            }
+        }
         var verticalBoundariesEnabled by remember(
             currentChapterId,
             readingDirection,
@@ -2907,6 +2979,8 @@ fun ReaderScreen(
                     epubFontSizeSp = epubFontSizeSp,
                     epubFontFamily = settings.reader.epubFontFamily,
                     epubTextAlign = settings.reader.epubTextAlign,
+                    ttsPage = ttsPage,
+                    ttsHighlight = ttsHighlight,
                     isWebtoon = isWebtoon,
                     sidePaddingPercent = settings.reader.webtoonSidePadding,
                     navigationMode = settings.reader.navigationMode,
@@ -3863,6 +3937,13 @@ fun ReaderScreen(
                 epubTextAlign = settings.reader.epubTextAlign,
                 onSetEpubTextAlign = { newAlign ->
                     scope.launch { settingsStore.setEpubTextAlign(newAlign) }
+                },
+                isTtsVisible = isEpub,
+                isTtsSpeaking = ttsSpeaking,
+                ttsRate = settings.reader.ttsSpeechRate,
+                onToggleTts = { toggleTts() },
+                onSetTtsRate = { rate ->
+                    scope.launch { settingsStore.setTtsSpeechRate(rate) }
                 },
                 pageBackground = settings.reader.pageBackground,
                 onSetPageBackground = { newBg ->

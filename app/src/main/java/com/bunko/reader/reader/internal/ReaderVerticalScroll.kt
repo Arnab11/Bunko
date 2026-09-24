@@ -120,7 +120,9 @@ internal fun ReaderVerticalScroll(
     navigationMode: ReaderNavigationMode = ReaderNavigationMode.Default,
     tappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
     imageScaleType: ReaderImageScaleType = ReaderImageScaleType.FitWidth,
-    cropBorders: Boolean = false
+    cropBorders: Boolean = false,
+    ttsPage: Int = -1,
+    ttsHighlight: com.bunko.reader.tts.TtsHighlight? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -223,6 +225,7 @@ internal fun ReaderVerticalScroll(
                         invertMode = invertMode,
                         ePaperMode = ePaperMode,
                         imageLoader = imageLoader,
+                        ttsHighlight = ttsHighlight.takeIf { ttsPage == page },
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {

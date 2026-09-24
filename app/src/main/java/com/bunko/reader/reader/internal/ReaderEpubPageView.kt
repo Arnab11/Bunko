@@ -65,7 +65,8 @@ internal fun ReaderEpubPageView(
     modifier: Modifier = Modifier,
     imageLoader: ImageLoader? = null,
     contentPadding: PaddingValues? = null,
-    blockSpacingDp: Dp = 10.dp
+    blockSpacingDp: Dp = 10.dp,
+    ttsHighlight: com.bunko.reader.tts.TtsHighlight? = null
 ) {
     val isDark = pageBackground.luminance() < 0.5f
     val isSepia = !isDark && pageBackground != Color.White
@@ -147,7 +148,10 @@ internal fun ReaderEpubPageView(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(blockSpacingDp)
             ) {
-                for (block in subpage.blocks) {
+                // TTS word highlight: amber wash that adapts to paper / sepia / dark.
+                val ttsHighlightBg = if (isDark) Color(0xFF8A6D00).copy(alpha = 0.55f)
+                    else Color(0xFFFFD54F).copy(alpha = 0.55f)
+                for ((blockIndex, block) in subpage.blocks.withIndex()) {
                     when (block) {
                         is EpubBlock.DividerBlock -> {
                             HorizontalDivider(
@@ -187,6 +191,28 @@ internal fun ReaderEpubPageView(
                         }
 
                         is EpubBlock.TextBlock -> {
+                            val displayText = if (ttsHighlight != null &&
+                                ttsHighlight.blockIndex == blockIndex
+                            ) {
+                                val safeStart = ttsHighlight.startInBlock
+                                    .coerceIn(0, block.text.length)
+                                val safeEnd = ttsHighlight.endInBlock
+                                    .coerceIn(safeStart, block.text.length)
+                                if (safeEnd > safeStart) {
+                                    androidx.compose.runtime.remember(block.text, safeStart, safeEnd) {
+                                        androidx.compose.ui.text.buildAnnotatedString {
+                                            append(block.text)
+                                            addStyle(
+                                                androidx.compose.ui.text.SpanStyle(
+                                                    background = ttsHighlightBg
+                                                ),
+                                                safeStart,
+                                                safeEnd
+                                            )
+                                        }
+                                    }
+                                } else block.text
+                            } else block.text
                             if (block.isHeading) {
                                 val headingScale = when (block.headingLevel) {
                                     1 -> 1.45f
@@ -195,7 +221,7 @@ internal fun ReaderEpubPageView(
                                     else -> 1.1f
                                 }
                                 Text(
-                                    text = block.text,
+                                    text = displayText,
                                     fontSize = (fontSizeSp * headingScale).sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = activeFontFamily,
@@ -221,7 +247,7 @@ internal fun ReaderEpubPageView(
                                             .background(quoteBarColor)
                                     )
                                     Text(
-                                        text = block.text,
+                                        text = displayText,
                                         fontSize = fontSizeSp.sp,
                                         fontStyle = FontStyle.Italic,
                                         fontFamily = activeFontFamily,
@@ -234,7 +260,7 @@ internal fun ReaderEpubPageView(
                                 }
                             } else {
                                 Text(
-                                    text = block.text,
+                                    text = displayText,
                                     fontSize = fontSizeSp.sp,
                                     fontFamily = activeFontFamily,
                                     color = textColor,
