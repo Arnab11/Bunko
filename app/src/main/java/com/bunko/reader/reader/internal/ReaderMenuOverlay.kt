@@ -698,60 +698,6 @@ internal fun ReaderMenuOverlay(
                                     }
                                 }
 
-                                // Read aloud (TTS, e-books only)
-                                if (isTtsVisible) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "Read aloud",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = unselectedText
-                                            )
-                                            DialogToggleButton(
-                                                checked = isTtsSpeaking,
-                                                onCheckedChange = { onToggleTts?.invoke() },
-                                                text = if (isTtsSpeaking) "Stop" else "Play"
-                                            )
-                                        }
-                                        if (onSetTtsRate != null) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                            ) {
-                                                Text(
-                                                    text = "0.5x",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = unselectedText
-                                                )
-                                                Slider(
-                                                    value = ttsRate.coerceIn(0.5f, 2f),
-                                                    onValueChange = { onSetTtsRate(it) },
-                                                    valueRange = 0.5f..2f,
-                                                    steps = 5,
-                                                    modifier = Modifier.weight(1f),
-                                                    colors = SliderDefaults.colors(
-                                                        thumbColor = accent,
-                                                        activeTrackColor = accent,
-                                                        inactiveTrackColor = dialogBorder
-                                                    )
-                                                )
-                                                Text(
-                                                    text = "${ttsRate}x".take(4),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = onSurface,
-                                                    modifier = Modifier.widthIn(min = 40.dp),
-                                                    textAlign = TextAlign.End
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
                                 // Page layout (Auto, 2 pages, 1 page)
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(

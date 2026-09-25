@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
@@ -124,6 +125,7 @@ import com.bunko.reader.reader.internal.ReaderTopHeaderBar
 import com.bunko.reader.reader.internal.ReaderChapterBoundary
 import com.bunko.reader.reader.internal.ReaderChapterBoundaryScreen
 import com.bunko.reader.reader.internal.ReaderChapterEntry
+import com.bunko.reader.reader.internal.FloatingTtsBubble
 import com.bunko.reader.reader.internal.ReaderMenuOverlay
 import com.bunko.reader.reader.internal.ReaderOverviewGallery
 import com.bunko.reader.reader.internal.readerOverviewCursors
@@ -355,6 +357,19 @@ fun ReaderScreen(
     var ttsPage by remember { mutableIntStateOf(-1) }
     var ttsAutoContinue by remember { mutableStateOf(false) }
     var ttsAutoAdvancing by remember { mutableStateOf(false) }
+    var isTtsActive by remember { mutableStateOf(false) }
+    fun stopTts() {
+        ttsAutoContinue = false
+        ttsManager.stop()
+        ttsPage = -1
+        isTtsActive = false
+    }
+    val audioManager = remember(ctx) { ctx.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager }
+    val maxAudioVolume = remember(audioManager) { audioManager?.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) ?: 15 }
+    var currentAudioVolume by remember(audioManager) {
+        val current = audioManager?.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) ?: (maxAudioVolume / 2)
+        mutableFloatStateOf((current.toFloat() / maxAudioVolume.coerceAtLeast(1)).coerceIn(0f, 1f))
+    }
     val epubFontSizeSp = settings.reader.epubFontSizeSp
     var pinchBaseFontSize by remember { mutableFloatStateOf(18f) }
     var pinchAccumulatedScale by remember { mutableFloatStateOf(1f) }
@@ -416,8 +431,7 @@ fun ReaderScreen(
     }
 
     val handleBack = {
-        ttsAutoContinue = false
-        ttsManager.stop()
+        stopTts()
         val activity = ctx.findActivity()
         if (activity != null) {
             val lp = activity.window.attributes
@@ -634,6 +648,7 @@ fun ReaderScreen(
         val subpage = epubSubpages.getOrNull(targetPage) ?: return
         ttsPage = targetPage
         ttsAutoContinue = true
+        isTtsActive = true
         ttsManager.onCompleted = {
             if (ttsAutoContinue && targetPage < pages - 1) {
                 ttsAutoAdvancing = true
@@ -643,12 +658,14 @@ fun ReaderScreen(
             } else {
                 ttsAutoContinue = false
                 ttsPage = -1
+                isTtsActive = false
             }
         }
         val started = ttsManager.speakSubpage(subpage)
         if (!started) {
             ttsAutoContinue = false
             ttsPage = -1
+            isTtsActive = false
             BunkoLog.w("TTS: no speakable text on page $targetPage (image-only?).")
         }
     }
@@ -665,9 +682,7 @@ fun ReaderScreen(
     fun switchChapter(target: ReaderChapterEntry, openAtLastPage: Boolean) {
         if (chapterSwitching) return
         if (localBookId == null && target.chapterId == currentChapterId) return
-        ttsAutoContinue = false
-        ttsManager.stop()
-        ttsPage = -1
+        stopTts()
         chapterSwitching = true
         showReaderMenu = false
         error = null
@@ -3079,7 +3094,7 @@ fun ReaderScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-                if (overviewTakingOver || !playCurlHost.ready) {
+                if (overviewTakingOver || !playCurlHost.ready || (isEpub && (ttsSpeaking || isTtsActive))) {
                     RenderReaderPage(
                         cursor = page,
                         pageCount = pages,
@@ -3933,7 +3948,7 @@ fun ReaderScreen(
                 onSetEpubTextAlign = { newAlign ->
                     scope.launch { settingsStore.setEpubTextAlign(newAlign) }
                 },
-                isTtsVisible = isEpub,
+                isTtsVisible = isEpub && settings.reader.ttsEnabled,
                 isTtsSpeaking = ttsSpeaking,
                 ttsRate = settings.reader.ttsSpeechRate,
                 onToggleTts = { toggleTts() },
@@ -4084,6 +4099,60 @@ fun ReaderScreen(
             }
         }
 
+        // Floating TTS mini bubble (visible when read aloud session is active)
+        val isTtsFloatingBubbleVisible = isEpub && settings.reader.ttsEnabled && (isTtsActive || ttsSpeaking) && !showReaderMenu
+        FloatingTtsBubble(
+            visible = isTtsFloatingBubbleVisible,
+            isSpeaking = ttsSpeaking,
+            ttsRate = settings.reader.ttsSpeechRate,
+            volume = currentAudioVolume,
+            currentPage = page,
+            totalPages = pages,
+            onTogglePlayPause = { toggleTts() },
+            onPrevious = {
+                if (page > 0) {
+                    val prev = page - 1
+                    jumpToPage(prev)
+                    if (ttsSpeaking) {
+                        speakEpubPage(prev)
+                    }
+                    if (vertical) {
+                        scope.launch { verticalListState.scrollToItem(prev + 1) }
+                    }
+                }
+            },
+            onNext = {
+                if (page < pages - 1) {
+                    val next = page + 1
+                    jumpToPage(next)
+                    if (ttsSpeaking) {
+                        speakEpubPage(next)
+                    }
+                    if (vertical) {
+                        scope.launch { verticalListState.scrollToItem(next + 1) }
+                    }
+                }
+            },
+            onSetTtsRate = { rate ->
+                scope.launch { settingsStore.setTtsSpeechRate(rate) }
+            },
+            onSetVolume = { newVolume ->
+                currentAudioVolume = newVolume
+                audioManager?.setStreamVolume(
+                    android.media.AudioManager.STREAM_MUSIC,
+                    (newVolume * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume),
+                    0
+                )
+                ttsManager.setVolume(newVolume)
+            },
+            onClose = {
+                stopTts()
+            },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 20.dp)
+        )
     }
 }
 

@@ -125,6 +125,7 @@ data class ReaderSettings(
     val overviewMode: Boolean = true,
     val volumeKeysNavigation: Boolean = false,
     val ttsSpeechRate: Float = 1f,
+    val ttsEnabled: Boolean = false,
     val drawUnderCutout: Boolean = true
 ) {
     val rightToLeft: Boolean
@@ -177,6 +178,7 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_READER_OVERVIEW_MODE = booleanPreferencesKey("reader_overview_mode")
     private val KEY_READER_VOLUME_KEYS_NAVIGATION = booleanPreferencesKey("reader_volume_keys_navigation")
     private val KEY_READER_DRAW_UNDER_CUTOUT = booleanPreferencesKey("reader_draw_under_cutout")
+    private val KEY_READER_TTS_ENABLED = booleanPreferencesKey("reader_tts_enabled")
     private val KEY_TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
@@ -242,6 +244,7 @@ class AppSettingsStore(private val context: Context) {
                 overviewMode = prefs[KEY_READER_OVERVIEW_MODE] ?: true,
                 volumeKeysNavigation = prefs[KEY_READER_VOLUME_KEYS_NAVIGATION] ?: false,
                 ttsSpeechRate = (prefs[KEY_TTS_SPEECH_RATE] ?: 1f).coerceIn(0.25f, 3f),
+                ttsEnabled = prefs[KEY_READER_TTS_ENABLED] ?: false,
                 drawUnderCutout = prefs[KEY_READER_DRAW_UNDER_CUTOUT] ?: true
             )
         )
@@ -359,6 +362,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setDrawUnderCutout(value: Boolean) {
         context.settingsDataStore.edit { it[KEY_READER_DRAW_UNDER_CUTOUT] = value }
+    }
+
+    suspend fun setTtsEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_READER_TTS_ENABLED] = value }
     }
 
     suspend fun setTtsSpeechRate(value: Float) {

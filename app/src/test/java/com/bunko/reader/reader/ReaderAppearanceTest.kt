@@ -26,4 +26,10 @@ class ReaderAppearanceTest {
         assertEquals(Color.White, readerPageBackgroundColor(darkPaper = false, usePureColors = true))
         assertEquals(Color.Black, readerPageBackgroundColor(darkPaper = true, usePureColors = true))
     }
+
+    @Test
+    fun readerSettingsDefaultsTtsToDisabled() {
+        val defaultSettings = com.bunko.reader.ReaderSettings()
+        org.junit.Assert.assertFalse(defaultSettings.ttsEnabled)
+    }
 }

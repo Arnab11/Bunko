@@ -1271,6 +1271,28 @@ fun ReaderSettingsScreen(
                     }
                 }
 
+                // Section 3e: Read Aloud (TTS)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Read Aloud (Text-to-Speech)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        SwitchSettingRow(
+                            title = "Enable Read Aloud",
+                            subtitle = "Show text-to-speech controls for EPUB e-books in the reader",
+                            checked = settings.reader.ttsEnabled,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setTtsEnabled(enabled) }
+                            }
+                        )
+                    }
+                }
+
                 // Section 4: Page Margins & Background
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(

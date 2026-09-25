@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -148,9 +149,9 @@ internal fun ReaderEpubPageView(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(blockSpacingDp)
             ) {
-                // TTS word highlight: amber wash that adapts to paper / sepia / dark.
-                val ttsHighlightBg = if (isDark) Color(0xFF8A6D00).copy(alpha = 0.55f)
-                    else Color(0xFFFFD54F).copy(alpha = 0.55f)
+                // TTS word highlight: themed highlight color from MaterialTheme.colorScheme.primary
+                val themePrimary = MaterialTheme.colorScheme.primary
+                val ttsHighlightBg = themePrimary.copy(alpha = if (isDark) 0.38f else 0.28f)
                 for ((blockIndex, block) in subpage.blocks.withIndex()) {
                     when (block) {
                         is EpubBlock.DividerBlock -> {
@@ -199,20 +200,23 @@ internal fun ReaderEpubPageView(
                                 val safeEnd = ttsHighlight.endInBlock
                                     .coerceIn(safeStart, block.text.length)
                                 if (safeEnd > safeStart) {
-                                    androidx.compose.runtime.remember(block.text, safeStart, safeEnd) {
-                                        androidx.compose.ui.text.buildAnnotatedString {
-                                            append(block.text)
-                                            addStyle(
-                                                androidx.compose.ui.text.SpanStyle(
-                                                    background = ttsHighlightBg
-                                                ),
-                                                safeStart,
-                                                safeEnd
-                                            )
-                                        }
+                                    androidx.compose.ui.text.buildAnnotatedString {
+                                        append(block.text)
+                                        addStyle(
+                                            androidx.compose.ui.text.SpanStyle(
+                                                background = ttsHighlightBg,
+                                                fontWeight = FontWeight.SemiBold
+                                            ),
+                                            safeStart,
+                                            safeEnd
+                                        )
                                     }
-                                } else block.text
-                            } else block.text
+                                } else {
+                                    block.text
+                                }
+                            } else {
+                                block.text
+                            }
                             if (block.isHeading) {
                                 val headingScale = when (block.headingLevel) {
                                     1 -> 1.45f

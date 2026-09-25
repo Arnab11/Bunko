@@ -52,11 +52,17 @@ class TtsManager(context: Context) : TextToSpeech.OnInitListener {
     private var session: TtsSession? = null
     private var chunks: List<Pair<Int, String>> = emptyList()
     private var initRate = 1f
+    private var volume = 1f
 
     /** Applied once the engine is ready, and on every rate change after that. */
     fun setSpeechRate(rate: Float) {
         initRate = rate.coerceIn(0.25f, 3f)
         if (_ready.value) runCatching { tts.setSpeechRate(initRate) }
+    }
+
+    /** Set TTS speech volume (0.0 to 1.0). */
+    fun setVolume(vol: Float) {
+        volume = vol.coerceIn(0f, 1f)
     }
 
     /** Best-effort locale pick; returns false when nothing suitable is available. */
@@ -85,6 +91,16 @@ class TtsManager(context: Context) : TextToSpeech.OnInitListener {
             override fun onStart(utteranceId: String?) {
                 scope.launch {
                     _speaking.value = true
+                    val sess = session ?: return@launch
+                    val chunkIndex = utteranceId
+                        ?.removePrefix(UTTERANCE_PREFIX)
+                        ?.toIntOrNull() ?: return@launch
+                    val (chunkStart, chunkText) = chunks.getOrNull(chunkIndex) ?: return@launch
+                    _spokenOffset.value = chunkStart
+                    val h = sess.highlightFor(chunkStart, chunkStart + chunkText.length)
+                    if (_highlight.value == null || _highlight.value?.blockIndex != h?.blockIndex) {
+                        _highlight.value = h
+                    }
                 }
             }
 
@@ -124,9 +140,11 @@ class TtsManager(context: Context) : TextToSpeech.OnInitListener {
                 val globalStart = chunkStart + start
                 val globalEnd = chunkStart + end
                 val h = sess.highlightFor(globalStart, globalEnd)
-                scope.launch {
-                    _highlight.value = h
-                    _spokenOffset.value = globalStart
+                if (h != null) {
+                    scope.launch {
+                        _highlight.value = h
+                        _spokenOffset.value = globalStart
+                    }
                 }
             }
         })
@@ -182,6 +200,7 @@ class TtsManager(context: Context) : TextToSpeech.OnInitListener {
             val utteranceId = "$UTTERANCE_PREFIX${fromIndex + i}"
             val params = Bundle().apply {
                 putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
             }
             val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
             val rc = tts.speak(text, mode, params, utteranceId)
