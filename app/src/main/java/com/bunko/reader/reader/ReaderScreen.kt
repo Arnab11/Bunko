@@ -1853,27 +1853,6 @@ fun ReaderScreen(
                                     }
                                 }
                             }
-                            // Center book spine crease shadow between left and right pages
-                            val isDark = pageBackground.luminance() < 0.5f
-                            val shadowCenter = if (isDark) Color.Black.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.12f)
-                            val shadowMid = if (isDark) Color.Black.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.05f)
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .fillMaxHeight()
-                                    .width(32.dp)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            listOf(
-                                                Color.Transparent,
-                                                shadowMid,
-                                                shadowCenter,
-                                                shadowMid,
-                                                Color.Transparent
-                                            )
-                                        )
-                                    )
-                            )
                         }
                     }
                 } else {
