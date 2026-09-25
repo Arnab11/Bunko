@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -1334,7 +1335,7 @@ fun LocalBookPosterCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(KavitaCoverAspectRatio)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RectangleShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerLowest)
         ) {
             if (book.hasCover) {
@@ -1395,16 +1396,18 @@ fun LocalBookPosterCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 2.dp, vertical = 6.dp)
+                .padding(top = 6.dp, bottom = 6.dp)
         ) {
             Text(
                 text = book.title,
                 color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Start,
                 minLines = 2,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
             )
 
             Row(

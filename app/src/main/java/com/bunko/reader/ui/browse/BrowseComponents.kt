@@ -67,6 +67,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -244,7 +245,7 @@ fun UnifiedPosterCard(
     item: UnifiedMediaItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    shape: Shape = MaterialTheme.shapes.small,
+    shape: Shape = RectangleShape,
     coverFillsHeight: Boolean = false
 ) {
     Card(
@@ -264,7 +265,7 @@ fun UnifiedPosterCard(
             }
             Box(
                 modifier = coverModifier
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(shape)
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
@@ -318,10 +319,13 @@ fun UnifiedPosterCard(
                     color = MaterialTheme.colorScheme.onBackground,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Start,
                     minLines = 2,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp, bottom = 6.dp)
                 )
             }
         }
@@ -437,7 +441,7 @@ internal fun SeriesPosterCard(
     series: SeriesDto,
     session: KavitaSession,
     modifier: Modifier = Modifier,
-    shape: Shape = MaterialTheme.shapes.small,
+    shape: Shape = RectangleShape,
     coverFillsHeight: Boolean = false
 ) {
     Card(
@@ -460,7 +464,7 @@ internal fun SeriesPosterCard(
             }
             Box(
                 modifier = coverModifier
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(shape)
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
@@ -489,10 +493,13 @@ internal fun SeriesPosterCard(
                     color = MaterialTheme.colorScheme.onBackground,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Start,
                     minLines = 2,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp, bottom = 6.dp)
                 )
             }
         }
@@ -737,9 +744,9 @@ fun CoverProgressBadge(
     if (progress == null || progress <= 0f) return
     val bounded = progress.coerceIn(0f, 1f)
     val percent = (bounded * 100f).roundToInt().coerceIn(1, 100)
-    val background = if (bounded >= 1f) ReadingProgressRead else Color.Black.copy(alpha = 0.65f)
     Surface(
-        color = background,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
         shape = CircleShape,
         modifier = modifier
     ) {
@@ -747,7 +754,7 @@ fun CoverProgressBadge(
             text = "$percent%",
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
         )
     }
