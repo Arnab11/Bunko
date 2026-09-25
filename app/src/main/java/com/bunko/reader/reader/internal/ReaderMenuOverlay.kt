@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.NightlightRound
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.ButtonGroupDefaults
@@ -591,43 +592,66 @@ internal fun ReaderMenuOverlay(
                                     // Font Size Adjuster Box
                                     if (onSetEpubFontSizeSp != null) {
                                         Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(segmentBg)
-                                                .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(12.dp))
-                                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            IconButton(
-                                                onClick = { onSetEpubFontSizeSp((epubFontSizeSp - 2f).coerceAtLeast(12f)) },
-                                                enabled = epubFontSizeSp > 12f
+                                            Row(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(48.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(segmentBg)
+                                                    .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(12.dp))
+                                                    .padding(horizontal = 4.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
+                                                IconButton(
+                                                    onClick = { onSetEpubFontSizeSp((epubFontSizeSp - 2f).coerceAtLeast(12f)) },
+                                                    enabled = epubFontSizeSp > 12f
+                                                ) {
+                                                    Text(
+                                                        text = "T",
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (epubFontSizeSp > 12f) onSurface else onSurface.copy(alpha = 0.38f)
+                                                    )
+                                                }
+
                                                 Text(
-                                                    text = "T",
-                                                    fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (epubFontSizeSp > 12f) onSurface else onSurface.copy(alpha = 0.38f)
+                                                    text = "${((epubFontSizeSp / 18f) * 100).roundToInt()}%",
+                                                    color = onSurface,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Medium
                                                 )
+
+                                                IconButton(
+                                                    onClick = { onSetEpubFontSizeSp((epubFontSizeSp + 2f).coerceAtMost(36f)) },
+                                                    enabled = epubFontSizeSp < 36f
+                                                ) {
+                                                    Text(
+                                                        text = "T",
+                                                        fontSize = 22.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (epubFontSizeSp < 36f) onSurface else onSurface.copy(alpha = 0.38f)
+                                                    )
+                                                }
                                             }
 
-                                            Text(
-                                                text = "${((epubFontSizeSp / 18f) * 100).roundToInt()}%",
-                                                color = onSurface,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Medium
-                                            )
-
                                             IconButton(
-                                                onClick = { onSetEpubFontSizeSp((epubFontSizeSp + 2f).coerceAtMost(36f)) },
-                                                enabled = epubFontSizeSp < 36f
+                                                onClick = { onSetEpubFontSizeSp(18f) },
+                                                enabled = epubFontSizeSp != 18f,
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(segmentBg)
+                                                    .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(12.dp))
                                             ) {
-                                                Text(
-                                                    text = "T",
-                                                    fontSize = 22.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (epubFontSizeSp < 36f) onSurface else onSurface.copy(alpha = 0.38f)
+                                                Icon(
+                                                    imageVector = Icons.Filled.RestartAlt,
+                                                    contentDescription = "Reset text size",
+                                                    tint = if (epubFontSizeSp != 18f) onSurface else onSurface.copy(alpha = 0.38f)
                                                 )
                                             }
                                         }
