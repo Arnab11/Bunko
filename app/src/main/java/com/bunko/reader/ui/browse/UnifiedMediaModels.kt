@@ -24,6 +24,8 @@ data class UnifiedMediaItem(
     val readPages: Int? = null,
     val badgeText: String? = null,
     val source: MediaStorageSource = MediaStorageSource.Kavita,
+    val isStack: Boolean = false,
+    val itemCount: Int = 1,
     val rawPayload: Any? = null
 )
 
@@ -36,6 +38,8 @@ fun SeriesDto.toUnifiedMediaItem(session: KavitaSession): UnifiedMediaItem {
     } else {
         null
     }
+    val totalChapters = volumes.sumOf { it.chapters.size }
+    val isMulti = volumes.size > 1 || totalChapters > 1
     return UnifiedMediaItem(
         id = id.toString(),
         title = name,
@@ -45,6 +49,8 @@ fun SeriesDto.toUnifiedMediaItem(session: KavitaSession): UnifiedMediaItem {
         totalPages = pages,
         readPages = pagesRead,
         source = MediaStorageSource.Kavita,
+        isStack = isMulti,
+        itemCount = if (totalChapters > 1) totalChapters else if (volumes.size > 1) volumes.size else 1,
         rawPayload = this
     )
 }
@@ -52,7 +58,11 @@ fun SeriesDto.toUnifiedMediaItem(session: KavitaSession): UnifiedMediaItem {
 /**
  * Extension to convert Local [LocalBook] to [UnifiedMediaItem].
  */
-fun LocalBook.toUnifiedMediaItem(): UnifiedMediaItem {
+fun LocalBook.toUnifiedMediaItem(
+    isStack: Boolean = false,
+    itemCount: Int = 1,
+    displayTitle: String? = null
+): UnifiedMediaItem {
     val progressFraction = if (pageCount > 0 && lastReadPage > 0) {
         (lastReadPage.toFloat() / (pageCount - 1).coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
     } else {
@@ -60,14 +70,16 @@ fun LocalBook.toUnifiedMediaItem(): UnifiedMediaItem {
     }
     return UnifiedMediaItem(
         id = id,
-        title = title,
-        subtitle = format.displayName,
-        coverModel = coverPath?.takeIf { it.isNotBlank() }?.let { java.io.File(it) },
+        title = displayTitle ?: title,
+        subtitle = if (isStack && itemCount > 1) "$itemCount issues" else format.displayName,
+        coverModel = coverPath.takeIf { it.isNotBlank() }?.let { java.io.File(it) },
         progress = progressFraction,
         totalPages = pageCount,
         readPages = lastReadPage,
-        badgeText = if (isCompleted) "Completed" else null,
+        badgeText = if (isCompleted) "Completed" else if (isStack && itemCount > 1) "$itemCount issues" else null,
         source = MediaStorageSource.Local,
+        isStack = isStack,
+        itemCount = itemCount,
         rawPayload = this
     )
 }

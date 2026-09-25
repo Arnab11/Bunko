@@ -445,30 +445,30 @@ internal fun HomeShell(
         }
 
         if (showNavigationRail) {
-            Column(Modifier.fillMaxSize().then(contentCutoutModifier)) {
-                HomeTopBar(
-                    title = topBarTitle,
-                    onBack = topBarBackAction,
-                    showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
-                    isOffline = isOffline,
-                    onOpenSettings = onOpenSettings,
-                    onSearch = ::openInlineSearch,
-                    isSearchActive = isSearching,
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    onCloseSearch = ::closeInlineSearch,
-                    onSwitchMode = onToggleLibraryMode,
-                    onToggleTheme = onToggleTheme,
-                    actions = topBarActions
+            Row(Modifier.fillMaxSize().then(contentCutoutModifier)) {
+                HomeNavigationRail(
+                    selected = destination,
+                    onSelect = ::selectDestination
                 )
-                Row(
+                Column(
                     Modifier
                         .weight(1f)
-                        .fillMaxWidth()
+                        .fillMaxHeight()
                 ) {
-                    HomeNavigationRail(
-                        selected = destination,
-                        onSelect = ::selectDestination
+                    HomeTopBar(
+                        title = topBarTitle,
+                        onBack = topBarBackAction,
+                        showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
+                        isOffline = isOffline,
+                        onOpenSettings = onOpenSettings,
+                        onSearch = ::openInlineSearch,
+                        isSearchActive = isSearching,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { searchQuery = it },
+                        onCloseSearch = ::closeInlineSearch,
+                        onSwitchMode = onToggleLibraryMode,
+                        onToggleTheme = onToggleTheme,
+                        actions = topBarActions
                     )
                     HomeContent(
                         destination = destination,
@@ -495,9 +495,9 @@ internal fun HomeShell(
                         api = api,
                         searchHistoryStore = searchHistoryStore,
                         searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    isSearching = isSearching,
-                    onOpenInlineSearch = ::openInlineSearch,
+                        onSearchQueryChange = { searchQuery = it },
+                        isSearching = isSearching,
+                        onOpenInlineSearch = ::openInlineSearch,
                         selectedLibrary = selectedLibrary,
                         onSelectLibraryChange = { selectedLibrary = it },
                         selectedShelf = selectedShelf,
@@ -552,12 +552,12 @@ internal fun HomeShell(
                         onSelectDestination = ::selectDestination,
                         modifier = Modifier.weight(1f)
                     )
-                }
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Spacer(Modifier.navigationBarsPadding())
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Spacer(Modifier.navigationBarsPadding())
+                    }
                 }
             }
         } else if (navigationBarStyle == NavigationBarStyle.FloatingPill) {
@@ -1077,6 +1077,7 @@ internal fun HomeNavigationRail(
                 .fillMaxHeight()
                 .background(MaterialTheme.colorScheme.surfaceContainer),
             state = railState,
+            arrangement = Arrangement.Center,
             hideOnCollapse = false,
             colors = WideNavigationRailDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,

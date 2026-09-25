@@ -3,7 +3,9 @@ package com.bunko.reader.ui.browse
 import android.net.Uri
 import kotlin.math.roundToInt
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -175,6 +177,9 @@ fun <T> PosterGrid(
     key: (T) -> Any,
     modifier: Modifier = Modifier,
     minSize: Dp = 130.dp,
+    horizontalSpacing: Dp = 16.dp,
+    verticalSpacing: Dp = 20.dp,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
     state: LazyGridState = rememberLazyGridState(),
     footer: (@Composable () -> Unit)? = null,
     itemContent: @Composable (T) -> Unit
@@ -183,13 +188,81 @@ fun <T> PosterGrid(
         columns = GridCells.Adaptive(minSize = minSize),
         state = state,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = contentPadding,
+        horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
+        verticalArrangement = Arrangement.spacedBy(verticalSpacing)
     ) {
         items(items = items, key = key) { item -> itemContent(item) }
         if (footer != null) {
             item(span = { GridItemSpan(maxLineSpan) }) { footer() }
+        }
+    }
+}
+
+@Composable
+fun BookStackCover(
+    modifier: Modifier = Modifier,
+    isStack: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    if (!isStack) {
+        Box(modifier = modifier) {
+            content()
+        }
+        return
+    }
+
+    Box(
+        modifier = modifier.padding(start = 5.dp, end = 5.dp, top = 3.dp, bottom = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        // Bottom layer in stack (tilted left)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    rotationZ = -4.5f
+                    translationX = -3.5f
+                    translationY = 1.5f
+                }
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                    shape = RectangleShape
+                )
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                    shape = RectangleShape
+                )
+        )
+
+        // Middle layer in stack (tilted right)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    rotationZ = 3.5f
+                    translationX = 3f
+                    translationY = -1f
+                }
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RectangleShape
+                )
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    shape = RectangleShape
+                )
+        )
+
+        // Top main cover
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest, RectangleShape)
+        ) {
+            content()
         }
     }
 }
@@ -263,51 +336,57 @@ fun UnifiedPosterCard(
                     .fillMaxWidth()
                     .aspectRatio(KavitaCoverAspectRatio)
             }
-            Box(
-                modifier = coverModifier
-                    .clip(shape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
-                contentAlignment = Alignment.Center
+            BookStackCover(
+                modifier = coverModifier,
+                isStack = item.isStack
             ) {
-                if (item.coverModel != null) {
-                    val context = LocalContext.current
-                    val request = remember(context, item.coverModel) {
-                        ImageRequest.Builder(context)
-                            .data(item.coverModel)
-                            .crossfade(180)
-                            .build()
-                    }
-                    AsyncImage(
-                        model = request,
-                        contentDescription = item.title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    SeriesCoverPlaceholder(seriesName = item.title)
-                }
-                if (item.badgeText != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(topStart = 8.dp, bottomEnd = 8.dp),
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(4.dp)
-                    ) {
-                        Text(
-                            text = item.badgeText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-                CoverProgressBadge(
-                    progress = item.progress,
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                )
+                        .fillMaxSize()
+                        .clip(shape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (item.coverModel != null) {
+                        val context = LocalContext.current
+                        val request = remember(context, item.coverModel) {
+                            ImageRequest.Builder(context)
+                                .data(item.coverModel)
+                                .crossfade(180)
+                                .build()
+                        }
+                        AsyncImage(
+                            model = request,
+                            contentDescription = item.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        SeriesCoverPlaceholder(seriesName = item.title)
+                    }
+                    if (item.badgeText != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                            shape = RoundedCornerShape(topStart = 8.dp, bottomEnd = 8.dp),
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(4.dp)
+                        ) {
+                            Text(
+                                text = item.badgeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    CoverProgressBadge(
+                        progress = item.progress,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                    )
+                }
             }
             Box(
                 Modifier
@@ -442,7 +521,8 @@ internal fun SeriesPosterCard(
     session: KavitaSession,
     modifier: Modifier = Modifier,
     shape: Shape = RectangleShape,
-    coverFillsHeight: Boolean = false
+    coverFillsHeight: Boolean = false,
+    isStack: Boolean = series.volumes.sumOf { it.chapters.size } > 1 || series.volumes.size > 1
 ) {
     Card(
         modifier = modifier,
@@ -462,26 +542,32 @@ internal fun SeriesPosterCard(
                     .fillMaxWidth()
                     .aspectRatio(KavitaCoverAspectRatio)
             }
-            Box(
-                modifier = coverModifier
-                    .clip(shape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
-                contentAlignment = Alignment.Center
+            BookStackCover(
+                modifier = coverModifier,
+                isStack = isStack
             ) {
-                if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
-                    SeriesCoverImage(
-                        seriesName = series.name,
-                        coverUrl = seriesCoverUrl(session, series.id)
-                    )
-                } else {
-                    SeriesCoverPlaceholder(seriesName = series.name)
-                }
-                CoverProgressBadge(
-                    progress = series.readingProgress(),
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                )
+                        .fillMaxSize()
+                        .clip(shape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+                        SeriesCoverImage(
+                            seriesName = series.name,
+                            coverUrl = seriesCoverUrl(session, series.id)
+                        )
+                    } else {
+                        SeriesCoverPlaceholder(seriesName = series.name)
+                    }
+                    CoverProgressBadge(
+                        progress = series.readingProgress(),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                    )
+                }
             }
             Box(
                 Modifier

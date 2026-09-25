@@ -448,23 +448,23 @@ internal fun ChapterPickScreen(
         val contentCutoutModifier = Modifier.padding(start = startCutoutPadding, end = endCutoutPadding)
 
         if (showRail) {
-            Column(Modifier.fillMaxSize().then(contentCutoutModifier)) {
-                topHeader()
+            Row(Modifier.fillMaxSize().then(contentCutoutModifier)) {
+                HomeNavigationRail(
+                    selected = currentDestination,
+                    onSelect = onSelectDestination
+                )
 
-                Row(
+                Column(
                     Modifier
                         .weight(1f)
-                        .fillMaxWidth()
+                        .fillMaxHeight()
                 ) {
-                    HomeNavigationRail(
-                        selected = currentDestination,
-                        onSelect = onSelectDestination
-                    )
+                    topHeader()
 
                     Box(
                         Modifier
                             .weight(1f)
-                            .fillMaxHeight()
+                            .fillMaxWidth()
                     ) {
                         when {
                             loading -> DarkLoadingState()
@@ -522,13 +522,13 @@ internal fun ChapterPickScreen(
                                 .padding(16.dp)
                         )
                     }
-                }
 
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Spacer(Modifier.navigationBarsPadding())
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Spacer(Modifier.navigationBarsPadding())
+                    }
                 }
             }
         } else if (navigationBarStyle == NavigationBarStyle.FloatingPill) {
