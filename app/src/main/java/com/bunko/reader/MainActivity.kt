@@ -14,6 +14,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -892,6 +900,12 @@ fun LoginScreen(
         }
     }
 
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+    val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
+    val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+    val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -899,9 +913,13 @@ fun LoginScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(20.dp),
+                .padding(
+                    start = startCutoutPadding + 20.dp,
+                    end = endCutoutPadding + 20.dp,
+                    top = statusInsets.calculateTopPadding() + 20.dp,
+                    bottom = 20.dp
+                )
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

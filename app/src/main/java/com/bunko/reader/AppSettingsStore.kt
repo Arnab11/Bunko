@@ -124,7 +124,8 @@ data class ReaderSettings(
     val webtoonSidePadding: Int = 0,
     val overviewMode: Boolean = true,
     val volumeKeysNavigation: Boolean = false,
-    val ttsSpeechRate: Float = 1f
+    val ttsSpeechRate: Float = 1f,
+    val drawUnderCutout: Boolean = true
 ) {
     val rightToLeft: Boolean
         get() = readingDirection == ReaderReadingDirection.RightToLeft
@@ -175,6 +176,7 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_READER_WEBTOON_SIDE_PADDING = intPreferencesKey("reader_webtoon_side_padding")
     private val KEY_READER_OVERVIEW_MODE = booleanPreferencesKey("reader_overview_mode")
     private val KEY_READER_VOLUME_KEYS_NAVIGATION = booleanPreferencesKey("reader_volume_keys_navigation")
+    private val KEY_READER_DRAW_UNDER_CUTOUT = booleanPreferencesKey("reader_draw_under_cutout")
     private val KEY_TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
@@ -239,7 +241,8 @@ class AppSettingsStore(private val context: Context) {
                 webtoonSidePadding = (prefs[KEY_READER_WEBTOON_SIDE_PADDING] ?: 0).coerceIn(0, 25),
                 overviewMode = prefs[KEY_READER_OVERVIEW_MODE] ?: true,
                 volumeKeysNavigation = prefs[KEY_READER_VOLUME_KEYS_NAVIGATION] ?: false,
-                ttsSpeechRate = (prefs[KEY_TTS_SPEECH_RATE] ?: 1f).coerceIn(0.25f, 3f)
+                ttsSpeechRate = (prefs[KEY_TTS_SPEECH_RATE] ?: 1f).coerceIn(0.25f, 3f),
+                drawUnderCutout = prefs[KEY_READER_DRAW_UNDER_CUTOUT] ?: true
             )
         )
     }
@@ -352,6 +355,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setVolumeKeysNavigation(value: Boolean) {
         context.settingsDataStore.edit { it[KEY_READER_VOLUME_KEYS_NAVIGATION] = value }
+    }
+
+    suspend fun setDrawUnderCutout(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_READER_DRAW_UNDER_CUTOUT] = value }
     }
 
     suspend fun setTtsSpeechRate(value: Float) {

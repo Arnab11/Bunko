@@ -563,7 +563,6 @@ internal fun SearchSeriesScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .statusBarsPadding()
             .navigationBarsPadding()
             .background(BunkoBackground)
     ) {

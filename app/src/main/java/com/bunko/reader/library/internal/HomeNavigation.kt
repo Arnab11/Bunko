@@ -1,6 +1,15 @@
 package com.bunko.reader.library.internal
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -392,8 +401,15 @@ internal fun HomeShell(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        val isWide = maxWidth >= 720.dp
+        val configuration = LocalConfiguration.current
+        val isTablet = configuration.smallestScreenWidthDp >= 600
+        val isWide = isTablet && maxWidth >= 720.dp
         val showNavigationRail = isWide && navigationBarStyle == NavigationBarStyle.Standard
+        val layoutDirection = LocalLayoutDirection.current
+        val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+        val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+        val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+        val contentCutoutModifier = Modifier.padding(start = startCutoutPadding, end = endCutoutPadding)
 
         val topBarBackAction: (() -> Unit)? = when {
             destination == HomeDestination.Browse && browseDrilldown != null -> {
@@ -429,7 +445,7 @@ internal fun HomeShell(
         }
 
         if (showNavigationRail) {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().then(contentCutoutModifier)) {
                 HomeTopBar(
                     title = topBarTitle,
                     onBack = topBarBackAction,
@@ -545,7 +561,7 @@ internal fun HomeShell(
                 }
             }
         } else if (navigationBarStyle == NavigationBarStyle.FloatingPill) {
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().then(contentCutoutModifier)) {
                 Column(Modifier.fillMaxSize()) {
                     HomeTopBar(
                         title = topBarTitle,
@@ -653,7 +669,7 @@ internal fun HomeShell(
                 )
             }
         } else {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().then(contentCutoutModifier)) {
                 HomeTopBar(
                     title = topBarTitle,
                     onBack = topBarBackAction,
@@ -793,11 +809,16 @@ internal fun HomeTopBar(
                 onClose = onCloseSearch
             )
         } else {
+        val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = if (onBack != null) 4.dp else 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                .padding(
+                    start = if (onBack != null) 4.dp else 16.dp,
+                    end = 4.dp,
+                    top = statusInsets.calculateTopPadding() + 8.dp,
+                    bottom = 8.dp
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (onBack != null) {
@@ -958,11 +979,11 @@ internal fun HomeSearchTopBar(
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
+    val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 4.dp, end = 4.dp, top = statusInsets.calculateTopPadding() + 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(

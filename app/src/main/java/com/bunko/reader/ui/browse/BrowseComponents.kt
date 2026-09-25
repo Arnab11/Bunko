@@ -22,6 +22,14 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Surface
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -93,11 +101,19 @@ internal fun BrowsePageScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable BoxScope.() -> Unit
 ) {
-    val scaffoldModifier = if (statusBarPadding) {
-        modifier.statusBarsPadding()
-    } else {
-        modifier
-    }
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+    val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
+    val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+    val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+    val topPadding = if (statusBarPadding) statusInsets.calculateTopPadding() else 0.dp
+
+    val scaffoldModifier = modifier
+        .padding(
+            start = startCutoutPadding,
+            end = endCutoutPadding,
+            top = topPadding
+        )
 
     if (!showTopBar) {
         Box(

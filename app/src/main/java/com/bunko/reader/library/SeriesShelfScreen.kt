@@ -215,7 +215,6 @@ internal fun SeriesShelfScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .then(if (statusBarPadding) Modifier.statusBarsPadding() else Modifier)
             .then(if (navigationBarPadding) Modifier.navigationBarsPadding() else Modifier)
             .background(BunkoBackground)
     ) {

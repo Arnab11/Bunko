@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Battery0Bar
 import androidx.compose.material.icons.filled.Battery1Bar
@@ -182,11 +185,14 @@ internal fun ReaderBottomStatusBar(
         val navInsets = WindowInsets.navigationBarsIgnoringVisibility
             .union(WindowInsets.displayCutout)
             .asPaddingValues()
+        val layoutDirection = LocalLayoutDirection.current
+        val startInset = (navInsets.calculateStartPadding(layoutDirection) + 24.dp).coerceAtLeast(24.dp)
+        val endInset = (navInsets.calculateEndPadding(layoutDirection) + 24.dp).coerceAtLeast(24.dp)
+        val bottomInset = (navInsets.calculateBottomPadding() + 8.dp).coerceAtLeast(10.dp)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = (navInsets.calculateBottomPadding() + 8.dp).coerceAtLeast(10.dp))
-                .padding(horizontal = 24.dp)
+                .padding(bottom = bottomInset, start = startInset, end = endInset)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -266,11 +272,22 @@ internal fun ReaderTopHeaderBar(
         exit = fadeOut(),
         modifier = modifier
     ) {
+        val statusBarTop = WindowInsets.statusBarsIgnoringVisibility
+            .union(WindowInsets.displayCutout)
+            .asPaddingValues()
+            .calculateTopPadding()
+        val layoutDirection = LocalLayoutDirection.current
+        val sideInsets = WindowInsets.navigationBarsIgnoringVisibility
+            .union(WindowInsets.displayCutout)
+            .asPaddingValues()
+        val startPadding = (sideInsets.calculateStartPadding(layoutDirection) + 32.dp).coerceAtLeast(32.dp)
+        val endPadding = (sideInsets.calculateEndPadding(layoutDirection) + 32.dp).coerceAtLeast(32.dp)
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(headerHeight)
-                .padding(horizontal = 32.dp),
+                .padding(top = statusBarTop, start = startPadding, end = endPadding)
+                .height(headerHeight),
             contentAlignment = Alignment.Center
         ) {
             Text(

@@ -113,6 +113,7 @@ internal fun ReaderVerticalScroll(
     epubFontSizeSp: Float = 18f,
     epubFontFamily: String = "Serif",
     epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
+    epubContentPadding: PaddingValues? = null,
     nightModeEnabled: Boolean = false,
     nightLightIntensity: Float = 0f,
     isWebtoon: Boolean = false,
@@ -225,6 +226,7 @@ internal fun ReaderVerticalScroll(
                         invertMode = invertMode,
                         ePaperMode = ePaperMode,
                         imageLoader = imageLoader,
+                        contentPadding = epubContentPadding,
                         ttsHighlight = ttsHighlight.takeIf { ttsPage == page },
                         modifier = Modifier.fillMaxSize()
                     )

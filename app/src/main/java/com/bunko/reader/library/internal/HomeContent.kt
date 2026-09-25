@@ -4,6 +4,7 @@ import android.net.Uri
 import com.bunko.reader.offline.LocalBook
 import com.bunko.reader.offline.LocalFolder
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -549,7 +550,8 @@ internal fun HomeContent(
             }
             HomeDestination.Libraries -> {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val isTablet = maxWidth >= 720.dp
+                    val configuration = LocalConfiguration.current
+                    val isTablet = configuration.smallestScreenWidthDp >= 600 && maxWidth >= 720.dp
                     if (isTablet) {
                         val activeLibrary = selectedLibrary ?: libraries.firstOrNull()
                         Row(

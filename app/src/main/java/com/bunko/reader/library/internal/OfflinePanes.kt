@@ -1,6 +1,7 @@
 package com.bunko.reader.library.internal
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -723,7 +724,8 @@ internal fun OfflineLibrariesPane(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val isTablet = maxWidth >= 720.dp
+        val configuration = LocalConfiguration.current
+        val isTablet = configuration.smallestScreenWidthDp >= 600 && maxWidth >= 720.dp
 
         if (isTablet) {
             // Tablet Dual Pane: Library categories on Left, Books on Right

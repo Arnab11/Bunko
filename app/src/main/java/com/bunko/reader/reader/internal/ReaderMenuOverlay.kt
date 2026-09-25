@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -38,6 +40,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -210,7 +213,9 @@ internal fun ReaderMenuOverlay(
     isTtsSpeaking: Boolean = false,
     ttsRate: Float = 1f,
     onToggleTts: (() -> Unit)? = null,
-    onSetTtsRate: ((Float) -> Unit)? = null
+    onSetTtsRate: ((Float) -> Unit)? = null,
+    drawUnderCutout: Boolean = true,
+    onSetDrawUnderCutout: (Boolean) -> Unit = {}
 ) {
     val rightToLeft = readingDirection == ReaderReadingDirection.RightToLeft
     val safePageCount = pages.coerceAtLeast(1)
@@ -254,6 +259,12 @@ internal fun ReaderMenuOverlay(
     )
     val liveStatusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val statusBarTopPadding = maxOf(stableStatusBarHeight, liveStatusBarHeight)
+    val layoutDirection = LocalLayoutDirection.current
+    val sideSystemInsets = WindowInsets.navigationBars
+        .union(WindowInsets.displayCutout)
+        .asPaddingValues()
+    val startCutoutPadding = sideSystemInsets.calculateStartPadding(layoutDirection)
+    val endCutoutPadding = sideSystemInsets.calculateEndPadding(layoutDirection)
     val configuration = LocalConfiguration.current
     val isTablet = configuration.smallestScreenWidthDp >= 600
     val navBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -324,8 +335,12 @@ internal fun ReaderMenuOverlay(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) { /* consume taps inside top bar */ }
-                    .padding(top = statusBarTopPadding)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(
+                        top = statusBarTopPadding,
+                        start = (startCutoutPadding + 8.dp).coerceAtLeast(8.dp),
+                        end = (endCutoutPadding + 8.dp).coerceAtLeast(8.dp),
+                        bottom = 8.dp
+                    ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -422,8 +437,8 @@ internal fun ReaderMenuOverlay(
                     .padding(
                         top = statusBarTopPadding + 64.dp,
                         bottom = dialogBottomPadding,
-                        end = 12.dp,
-                        start = 12.dp
+                        end = (endCutoutPadding + 12.dp).coerceAtLeast(12.dp),
+                        start = (startCutoutPadding + 12.dp).coerceAtLeast(12.dp)
                     )
                     .widthIn(max = 350.dp)
                     .heightIn(max = maxDialogHeight)
@@ -846,6 +861,26 @@ internal fun ReaderMenuOverlay(
                                             text = if (overviewMode) "On" else "Off"
                                         )
                                     }
+                                }
+
+                                // Show in Cutout Area toggle
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Show in cutout area",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = unselectedText
+                                        )
+                                    }
+                                    DialogToggleButton(
+                                        checked = drawUnderCutout,
+                                        onCheckedChange = { onSetDrawUnderCutout(it) },
+                                        text = if (drawUnderCutout) "On" else "Off"
+                                    )
                                 }
 
                                 // Webtoon Side Padding (when in Webtoon mode)
@@ -1513,7 +1548,12 @@ internal fun ReaderMenuOverlay(
                         indication = null
                     ) { /* consume taps inside bottom bar */ }
                     .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(
+                        start = (startCutoutPadding + 16.dp).coerceAtLeast(16.dp),
+                        end = (endCutoutPadding + 16.dp).coerceAtLeast(16.dp),
+                        top = 8.dp,
+                        bottom = 8.dp
+                    ),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Row(

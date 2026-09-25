@@ -14,6 +14,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.luminance
 
+import android.os.Build
+import android.view.View
+
 /** Internal to reader, not for external use. */
 @Composable
 internal fun ReaderFullscreenEffect(
@@ -28,6 +31,14 @@ internal fun ReaderFullscreenEffect(
             onDispose {}
         } else {
             WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val lp = activity.window.attributes
+                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                activity.window.attributes = lp
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                activity.window.isNavigationBarContrastEnforced = false
+            }
             WindowInsetsControllerCompat(activity.window, view).apply {
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 hide(WindowInsetsCompat.Type.systemBars())
@@ -37,6 +48,9 @@ internal fun ReaderFullscreenEffect(
                 if (act != null) {
                     val lp = act.window.attributes
                     lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                    }
                     act.window.attributes = lp
                     WindowInsetsControllerCompat(act.window, act.window.decorView).apply {
                         systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
@@ -84,4 +98,18 @@ internal tailrec fun Context.findActivity(): Activity? {
         is ContextWrapper -> baseContext.findActivity()
         else -> null
     }
+}
+
+/**
+ * Checks whether the device has a display cutout (i.e. notch, camera cutout, etc.).
+ */
+fun Activity.hasDisplayCutout(): Boolean {
+    return window.decorView.hasDisplayCutout()
+}
+
+/**
+ * Checks whether the device has a display cutout (i.e. notch, camera cutout, etc.).
+ */
+fun View.hasDisplayCutout(): Boolean {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && rootWindowInsets?.displayCutout != null
 }

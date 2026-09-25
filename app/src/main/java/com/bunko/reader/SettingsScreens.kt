@@ -18,6 +18,14 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.verticalScroll
@@ -140,6 +148,11 @@ fun SettingsHubScreen(
     onStorage: () -> Unit,
     onBack: () -> Unit
 ) {
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+    val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+    val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -147,7 +160,7 @@ fun SettingsHubScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
+                .padding(start = startCutoutPadding, end = endCutoutPadding)
                 .navigationBarsPadding()
         ) {
             SettingsTopAppBar(title = "Settings", onBack = onBack)
@@ -262,6 +275,11 @@ fun ServerSettingsScreen(
         page = ServerSettingsPage.Servers
     }
 
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+    val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+    val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -269,7 +287,7 @@ fun ServerSettingsScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
+                .padding(start = startCutoutPadding, end = endCutoutPadding)
                 .navigationBarsPadding()
         ) {
             SettingsTopAppBar(
@@ -748,6 +766,11 @@ fun ReaderSettingsScreen(
     val scope = rememberCoroutineScope()
     val settings by settingsStore.flow.collectAsState(initial = AppSettings())
 
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+    val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+    val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -755,7 +778,8 @@ fun ReaderSettingsScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .then(if (showTopBar) Modifier.statusBarsPadding().navigationBarsPadding() else Modifier)
+                .padding(start = startCutoutPadding, end = endCutoutPadding)
+                .then(if (showTopBar) Modifier.navigationBarsPadding() else Modifier)
         ) {
             if (showTopBar) {
                 SettingsTopAppBar(title = "Reader Settings", onBack = onBack)
@@ -1233,6 +1257,15 @@ fun ReaderSettingsScreen(
                             checked = settings.reader.cropBorders,
                             onCheckedChange = { enabled ->
                                 scope.launch { settingsStore.setCropBorders(enabled) }
+                            }
+                        )
+                        CategoryRowGap()
+                        SwitchSettingRow(
+                            title = "Show Content in Cutout Area",
+                            subtitle = "Extend reader viewer into display cutout / notch / punch hole area",
+                            checked = settings.reader.drawUnderCutout,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setDrawUnderCutout(enabled) }
                             }
                         )
                     }

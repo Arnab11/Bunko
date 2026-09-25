@@ -297,6 +297,7 @@ fun ReaderScreen(
     var readerBrightness by remember { mutableFloatStateOf(settings.reader.readerBrightness) }
     var nightModeEnabled by remember { mutableStateOf(settings.reader.nightModeEnabled) }
     var nightLightIntensity by remember { mutableFloatStateOf(settings.reader.nightLightIntensity) }
+    var drawUnderCutout by remember { mutableStateOf(settings.reader.drawUnderCutout) }
     ReaderFullscreenEffect(
         showStatusBar = showReaderMenu,
         brightness = readerBrightness
@@ -844,6 +845,7 @@ fun ReaderScreen(
         readerBrightness = persistedReaderSettings.readerBrightness
         nightModeEnabled = persistedReaderSettings.nightModeEnabled
         nightLightIntensity = persistedReaderSettings.nightLightIntensity
+        drawUnderCutout = persistedReaderSettings.drawUnderCutout
 
         if (localBookId != null && localRepository != null) {
             localRepository.touchLastRead(localBookId)
@@ -1617,10 +1619,10 @@ fun ReaderScreen(
         val layoutDirection = LocalLayoutDirection.current
         val navBottomInsetDp = stableNavInsets.calculateBottomPadding()
 
-        val safeTopPadding = (stableStatusBarHeight + 38.dp).coerceAtLeast(44.dp)
+        val safeTopPadding = (stableStatusBarHeight + 42.dp).coerceAtLeast(48.dp)
         val safeBottomPadding = (navBottomInsetDp + 42.dp).coerceAtLeast(50.dp)
-        val safeStartPadding = (stableNavInsets.calculateStartPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp)
-        val safeEndPadding = (stableNavInsets.calculateEndPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp)
+        val safeStartPadding = (stableNavInsets.calculateStartPadding(layoutDirection) + 16.dp).coerceAtLeast(20.dp)
+        val safeEndPadding = (stableNavInsets.calculateEndPadding(layoutDirection) + 16.dp).coerceAtLeast(20.dp)
 
         val galleryTopInset = stableStatusBarHeight
         val navBarBottomDp = WindowInsets.navigationBarsIgnoringVisibility.asPaddingValues().calculateBottomPadding()
@@ -1642,7 +1644,7 @@ fun ReaderScreen(
             end = safeEndPadding,
             bottom = safeBottomPadding
         )
-        val landscapeOuterMargin = maxOf(safeStartPadding, safeEndPadding).coerceIn(24.dp, 36.dp)
+        val landscapeOuterMargin = maxOf(safeStartPadding, safeEndPadding).coerceAtLeast(24.dp)
         val landscapeInnerMargin = 20.dp
         val landscapeLeftPadding = PaddingValues(
             start = landscapeOuterMargin,
@@ -1667,6 +1669,7 @@ fun ReaderScreen(
             safeBottomPadding,
             safeStartPadding,
             safeEndPadding,
+            landscapeOuterMargin,
             settings.reader.epubFontFamily
         ) {
             if (isEpub && epubSpineBlocks.isNotEmpty() && viewportWidthPx > 0f && viewportHeightPx > 0f) {
@@ -2896,9 +2899,15 @@ fun ReaderScreen(
         val transition = activeTransition
         val transitionVisible =
             transition != null && settings.reader.pageTransitionAnimation
+        val cutoutPadding = if (!drawUnderCutout && !isEpub) {
+            WindowInsets.displayCutout.asPaddingValues()
+        } else {
+            PaddingValues(0.dp)
+        }
         Box(
             Modifier
                 .fillMaxSize()
+                .padding(cutoutPadding)
                 .clipToBounds()
                 .graphicsLayer {
                     val safeViewportHeight = viewportHeightPx.coerceAtLeast(1f)
@@ -2979,6 +2988,7 @@ fun ReaderScreen(
                     epubFontSizeSp = epubFontSizeSp,
                     epubFontFamily = settings.reader.epubFontFamily,
                     epubTextAlign = settings.reader.epubTextAlign,
+                    epubContentPadding = portraitPadding,
                     ttsPage = ttsPage,
                     ttsHighlight = ttsHighlight,
                     isWebtoon = isWebtoon,
@@ -3209,6 +3219,11 @@ fun ReaderScreen(
                             } else {
                                 Alignment.CenterEnd
                             }
+                            val backPageEpubPadding = if (backPageAlignment == Alignment.CenterStart) {
+                                landscapeLeftPadding
+                            } else {
+                                landscapeRightPadding
+                            }
                             Box(Modifier.fillMaxSize()) {
                                 Box(
                                     Modifier
@@ -3237,6 +3252,7 @@ fun ReaderScreen(
                                             invertDecisionCache = invertDecisionCache,
                                             pageBackground = readerPageBackground,
                                             singlePageAlignmentOverride = backPageAlignment,
+                                            epubContentPaddingOverride = backPageEpubPadding,
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
@@ -3777,7 +3793,7 @@ fun ReaderScreen(
                 bookTitle = seriesName.ifBlank { currentChapter.displayName },
                 pageBackground = readerPageBackground,
                 visible = !showReaderMenu && readerReady && error == null && chapterBoundary == null,
-                headerHeight = safeTopPadding,
+                headerHeight = 38.dp,
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }
@@ -3998,6 +4014,11 @@ fun ReaderScreen(
                 overviewMode = settings.reader.overviewMode,
                 onSetOverviewMode = { enabled ->
                     scope.launch { settingsStore.setOverviewMode(enabled) }
+                },
+                drawUnderCutout = drawUnderCutout,
+                onSetDrawUnderCutout = { enabled ->
+                    drawUnderCutout = enabled
+                    scope.launch { settingsStore.setDrawUnderCutout(enabled) }
                 },
                 // Fall back to the current chapter so the list is never empty
                 // (e.g. offline opens where the volumes call failed).

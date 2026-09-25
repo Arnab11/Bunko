@@ -821,20 +821,18 @@ private suspend fun renderEpubSubpageToBitmap(
             EpubTextAlign.Justify -> Layout.Alignment.ALIGN_NORMAL
         }
 
-        val defaultPad = style.epubContentPadding ?: PaddingValues(20.dp, 28.dp, 20.dp, 48.dp)
+        val defaultPad = style.epubContentPadding ?: PaddingValues(20.dp, 48.dp, 20.dp, 50.dp)
+        val startPad = defaultPad.calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr)
+        val endPad = defaultPad.calculateEndPadding(androidx.compose.ui.unit.LayoutDirection.Ltr)
         val outerMargin = with(density) {
-            maxOf(
-                defaultPad.calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                defaultPad.calculateEndPadding(androidx.compose.ui.unit.LayoutDirection.Ltr)
-            ).coerceIn(20.dp, 32.dp).roundToPx()
+            maxOf(startPad, endPad).coerceAtLeast(20.dp).roundToPx()
         }
-        val innerMargin = with(density) { 16.dp.roundToPx() }
+        val innerMargin = with(density) { 20.dp.roundToPx() }
         val (startPadPx, endPadPx) = when (glue) {
             PlayCurlHalf.Left -> outerMargin to innerMargin
             PlayCurlHalf.Right -> innerMargin to outerMargin
             null -> with(density) {
-                defaultPad.calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr).roundToPx() to
-                    defaultPad.calculateEndPadding(androidx.compose.ui.unit.LayoutDirection.Ltr).roundToPx()
+                startPad.coerceAtLeast(20.dp).roundToPx() to endPad.coerceAtLeast(20.dp).roundToPx()
             }
         }
         val topPadPx = with(density) { defaultPad.calculateTopPadding().roundToPx() }

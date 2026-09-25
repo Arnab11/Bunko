@@ -10,6 +10,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -204,10 +212,16 @@ internal fun SeriesScreen(
         }
     }
 
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+    val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+    val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .then(if (statusBarPadding) Modifier.statusBarsPadding() else Modifier)
+            .padding(start = startCutoutPadding, end = endCutoutPadding)
+            .then(if (!showTopBar && statusBarPadding) Modifier.statusBarsPadding() else Modifier)
             .then(if (navigationBarPadding) Modifier.navigationBarsPadding() else Modifier),
         containerColor = BunkoBackground,
         snackbarHost = { SnackbarHost(snackbarHostState) },

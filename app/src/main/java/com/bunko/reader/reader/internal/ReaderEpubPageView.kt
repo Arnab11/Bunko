@@ -103,9 +103,9 @@ internal fun ReaderEpubPageView(
     val statusInsets = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout).asPaddingValues()
     val layoutDirection = LocalLayoutDirection.current
     val effectivePadding = contentPadding ?: PaddingValues(
-        start = (insets.calculateStartPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp),
-        top = (statusInsets.calculateTopPadding() + 38.dp).coerceAtLeast(44.dp),
-        end = (insets.calculateEndPadding(layoutDirection) + 6.dp).coerceAtLeast(22.dp),
+        start = (insets.calculateStartPadding(layoutDirection) + 16.dp).coerceAtLeast(20.dp),
+        top = (statusInsets.calculateTopPadding() + 42.dp).coerceAtLeast(48.dp),
+        end = (insets.calculateEndPadding(layoutDirection) + 16.dp).coerceAtLeast(20.dp),
         bottom = (insets.calculateBottomPadding() + 42.dp).coerceAtLeast(50.dp)
     )
 

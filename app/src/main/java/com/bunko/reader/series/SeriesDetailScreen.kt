@@ -3,6 +3,15 @@ package com.bunko.reader.series
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -383,6 +392,7 @@ internal fun ChapterPickScreen(
     }
 
     val topHeader: @Composable () -> Unit = {
+        val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth()
@@ -390,8 +400,7 @@ internal fun ChapterPickScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 4.dp, end = 4.dp, top = statusInsets.calculateTopPadding() + 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
@@ -429,11 +438,17 @@ internal fun ChapterPickScreen(
             .fillMaxSize()
             .background(BunkoBackground)
     ) {
-        val isTablet = maxWidth >= 720.dp
+        val configuration = LocalConfiguration.current
+        val isTablet = configuration.smallestScreenWidthDp >= 600 && maxWidth >= 720.dp
         val showRail = isTablet && navigationBarStyle == NavigationBarStyle.Standard
+        val layoutDirection = LocalLayoutDirection.current
+        val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+        val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+        val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+        val contentCutoutModifier = Modifier.padding(start = startCutoutPadding, end = endCutoutPadding)
 
         if (showRail) {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().then(contentCutoutModifier)) {
                 topHeader()
 
                 Row(
@@ -517,7 +532,7 @@ internal fun ChapterPickScreen(
                 }
             }
         } else if (navigationBarStyle == NavigationBarStyle.FloatingPill) {
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().then(contentCutoutModifier)) {
                 Column(Modifier.fillMaxSize()) {
                     topHeader()
 
@@ -593,7 +608,7 @@ internal fun ChapterPickScreen(
                 )
             }
         } else {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().then(contentCutoutModifier)) {
                 topHeader()
 
                 Box(
@@ -694,7 +709,8 @@ private fun SeriesDetailContent(
     val issueCards = chapterCards.filterNot { it.chapter.isSpecial }
     val bottomPadding = if (navigationBarStyle == NavigationBarStyle.FloatingPill) 96.dp else 16.dp
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val isTablet = maxWidth >= 720.dp
+        val configuration = LocalConfiguration.current
+        val isTablet = configuration.smallestScreenWidthDp >= 600 && maxWidth >= 720.dp
         if (isTablet) {
             val summaryWidth = if (maxWidth >= 1000.dp) 380.dp else 340.dp
             Row(

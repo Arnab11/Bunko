@@ -8,6 +8,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -106,6 +114,11 @@ fun SettingsAdaptiveScreen(
             mutableStateOf(initialCategory ?: SettingsCategory.APPEARANCE)
         }
 
+        val layoutDirection = LocalLayoutDirection.current
+        val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+        val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+        val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
@@ -113,7 +126,7 @@ fun SettingsAdaptiveScreen(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
+                    .padding(start = startCutoutPadding, end = endCutoutPadding)
                     .navigationBarsPadding()
             ) {
                 // Left Pane: Master Categories (38% width)
@@ -219,6 +232,11 @@ fun SettingsAdaptiveScreen(
             activeCategory = null
         }
 
+        val layoutDirection = LocalLayoutDirection.current
+        val cutoutInsets = WindowInsets.displayCutout.asPaddingValues()
+        val startCutoutPadding = cutoutInsets.calculateStartPadding(layoutDirection)
+        val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
+
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
@@ -226,7 +244,7 @@ fun SettingsAdaptiveScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
+                    .padding(start = startCutoutPadding, end = endCutoutPadding)
                     .navigationBarsPadding()
             ) {
                 TopAppBar(
