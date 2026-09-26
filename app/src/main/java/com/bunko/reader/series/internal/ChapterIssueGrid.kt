@@ -97,9 +97,10 @@ internal fun ChapterIssueGrid(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            ChapterSectionHeader("Issues", issueCards.size)
+            val distinctIssues = issueCards.distinctBy { it.chapter.id }
+            ChapterSectionHeader("Issues", distinctIssues.size)
         }
-        gridItems(issueCards, key = { "${it.volume.id}-${it.chapter.id}" }) { item ->
+        gridItems(issueCards.distinctBy { it.chapter.id }, key = { it.chapter.id }) { item ->
             ChapterGridCard(
                 item = item,
                 session = session,
@@ -114,10 +115,11 @@ internal fun ChapterIssueGrid(
             )
         }
         if (specialCards.isNotEmpty()) {
+            val distinctSpecials = specialCards.distinctBy { it.chapter.id }
             item(span = { GridItemSpan(maxLineSpan) }) {
-                ChapterSectionHeader("Specials", specialCards.size)
+                ChapterSectionHeader("Specials", distinctSpecials.size)
             }
-            gridItems(specialCards, key = { "${it.volume.id}-${it.chapter.id}" }) { item ->
+            gridItems(distinctSpecials, key = { it.chapter.id }) { item ->
                 ChapterGridCard(
                     item = item,
                     session = session,

@@ -1,10 +1,13 @@
 package com.bunko.reader
 
+import okhttp3.MultipartBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -184,4 +187,22 @@ interface KavitaApi {
 
     @POST("api/Series/refresh-metadata")
     suspend fun refreshSeriesMetadata(@Body dto: RefreshSeriesDto)
+
+    @POST("api/Rating/user-rating")
+    suspend fun updateRating(@Body dto: UpdateSeriesRatingDto)
+
+    @GET("api/Rating/series-rating")
+    suspend fun seriesRating(@Query("seriesId") seriesId: Int): SeriesRatingDto
+
+    @Multipart
+    @POST("api/Upload/upload-series-cover")
+    suspend fun uploadSeriesCover(
+        @Part file: MultipartBody.Part,
+        @Query("seriesId") seriesId: Int
+    ): Response<ResponseBody>
+
+    @POST("api/Upload/reset-series-cover")
+    suspend fun resetSeriesCover(
+        @Query("seriesId") seriesId: Int
+    ): Response<ResponseBody>
 }

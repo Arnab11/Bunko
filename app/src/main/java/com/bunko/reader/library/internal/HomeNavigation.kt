@@ -62,8 +62,12 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material3.VerticalDivider
+import com.bunko.reader.library.detail.LocalBookDetailContent
 import com.bunko.reader.offline.LocalBook
+import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.LocalFolder
+import com.bunko.reader.series.ChapterPickScreen
 import com.bunko.reader.series.SeriesLibrarySort
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import kotlinx.coroutines.delay
@@ -238,6 +242,18 @@ internal fun HomeShell(
     var browseDrilldown by rememberSaveable { mutableStateOf<BrowseDrilldown?>(null) }
     var selectedLibrary by remember { mutableStateOf<LibraryDto?>(null) }
     var selectedShelf by remember { mutableStateOf<HomeShelfKind?>(null) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val localRepository = remember(ctx) { LocalBookRepository(ctx) }
+    var selectedOfflineBook by remember { mutableStateOf<LocalBook?>(null) }
+    var selectedKavitaSeries by remember { mutableStateOf<SeriesDto?>(null) }
+
+    LaunchedEffect(offlineBooks, selectedOfflineBook?.id) {
+        val currentId = selectedOfflineBook?.id ?: return@LaunchedEffect
+        val updated = offlineBooks.firstOrNull { it.id == currentId }
+        if (updated != null) {
+            selectedOfflineBook = updated
+        }
+    }
 
     LaunchedEffect(initialDestination) {
         if (initialDestination == HomeDestination.Search) {
@@ -248,6 +264,8 @@ internal fun HomeShell(
             destination = initialDestination
             browseDrilldown = null
             selectedShelf = null
+            selectedOfflineBook = null
+            selectedKavitaSeries = null
             if (initialDestination != HomeDestination.Libraries) {
                 selectedLibrary = null
             }
@@ -255,6 +273,8 @@ internal fun HomeShell(
     }
 
     fun selectDestination(next: HomeDestination) {
+        selectedOfflineBook = null
+        selectedKavitaSeries = null
         if (next == destination) {
             reselectionCount++
             // Reset drilldowns on re-clicking the same tab
@@ -271,16 +291,20 @@ internal fun HomeShell(
         }
     }
 
-    BackHandler(enabled = browseDrilldown != null) {
+    BackHandler(enabled = selectedOfflineBook != null || selectedKavitaSeries != null) {
+        selectedOfflineBook = null
+        selectedKavitaSeries = null
+    }
+    BackHandler(enabled = (selectedOfflineBook == null && selectedKavitaSeries == null) && browseDrilldown != null) {
         browseDrilldown = null
     }
-    BackHandler(enabled = browseDrilldown == null && selectedLibrary != null) {
+    BackHandler(enabled = (selectedOfflineBook == null && selectedKavitaSeries == null) && browseDrilldown == null && selectedLibrary != null) {
         selectedLibrary = null
     }
-    BackHandler(enabled = browseDrilldown == null && selectedLibrary == null && selectedShelf != null) {
+    BackHandler(enabled = (selectedOfflineBook == null && selectedKavitaSeries == null) && browseDrilldown == null && selectedLibrary == null && selectedShelf != null) {
         selectedShelf = null
     }
-    BackHandler(enabled = browseDrilldown == null && selectedLibrary == null && selectedShelf == null && destination != HomeDestination.Home) {
+    BackHandler(enabled = (selectedOfflineBook == null && selectedKavitaSeries == null) && browseDrilldown == null && selectedLibrary == null && selectedShelf == null && destination != HomeDestination.Home) {
         selectDestination(HomeDestination.Home)
     }
     // Registered last so exiting search wins over every destination handler.
@@ -444,6 +468,127 @@ internal fun HomeShell(
             }
         }
 
+        val handleOpenOfflineBook: (LocalBook) -> Unit = { book ->
+            if (isWide) {
+                selectedOfflineBook = book
+                selectedKavitaSeries = null
+            } else {
+                onOpenOfflineBook(book)
+            }
+        }
+
+        val handleSelectSeries: (SeriesDto, HomeDestination) -> Unit = { series, tab ->
+            if (isWide) {
+                selectedKavitaSeries = series
+                selectedOfflineBook = null
+            } else {
+                onSelectSeries(series, tab)
+            }
+        }
+
+        val mainListContent: @Composable () -> Unit = {
+            HomeContent(
+                destination = destination,
+                scrollToTopSignal = reselectionCount,
+                libraries = libraries,
+                librarySeriesCounts = librarySeriesCounts,
+                isAdmin = isAdmin,
+                scanningLibraryIds = scanningLibraryIds,
+                loading = loading,
+                refreshing = refreshing,
+                onRefresh = onRefresh,
+                error = error,
+                session = session,
+                sessionStore = sessionStore,
+                onDeck = onDeck,
+                recentlyUpdated = recentlyUpdated,
+                newlyAdded = newlyAdded,
+                wantToRead = wantToRead,
+                wantToReadError = wantToReadError,
+                wantToReadHasMore = wantToReadHasMore,
+                wantToReadLoadingMore = wantToReadLoadingMore,
+                wantToReadLoadMoreError = wantToReadLoadMoreError,
+                downloaded = downloaded,
+                api = api,
+                searchHistoryStore = searchHistoryStore,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                isSearching = isSearching,
+                onOpenInlineSearch = ::openInlineSearch,
+                selectedLibrary = selectedLibrary,
+                onSelectLibraryChange = { selectedLibrary = it },
+                selectedShelf = selectedShelf,
+                onSelectShelfChange = { selectedShelf = it },
+                browseDrilldown = browseDrilldown,
+                onBrowseDrilldownChange = { browseDrilldown = it },
+                onSelectLibrary = { lib ->
+                    selectedLibrary = lib
+                    destination = HomeDestination.Libraries
+                },
+                onScanLibrary = onScanLibrary,
+                onSelectSeries = handleSelectSeries,
+                onOpenShelf = { shelfKind ->
+                    if (shelfKind == HomeShelfKind.OnDeck) {
+                        selectDestination(HomeDestination.History)
+                    } else {
+                        selectedShelf = shelfKind
+                        destination = HomeDestination.Home
+                    }
+                },
+                onRemoveWantToRead = onRemoveWantToRead,
+                onLoadMoreWantToRead = { onLoadMoreWantToRead() },
+                onLoadAllWantToRead = onLoadAllWantToRead,
+                onOpenBookmarks = {
+                    selectDestination(HomeDestination.Browse)
+                    browseDrilldown = BrowseDrilldown.Bookmarks
+                },
+                onOpenCollections = {
+                    selectDestination(HomeDestination.Browse)
+                    browseDrilldown = BrowseDrilldown.Collections
+                },
+                onOpenDownloaded = {
+                    selectDestination(HomeDestination.Browse)
+                    browseDrilldown = BrowseDrilldown.Downloaded
+                },
+                onOpenBookmark = onOpenBookmark,
+                onOpenCollection = onOpenCollection,
+                onPickIssue = onPickIssue,
+                onOpenFilteredSeries = onOpenFilteredSeries,
+                isOffline = isOffline,
+                offlineBooks = offlineBooks,
+                offlineFolders = offlineFolders,
+                offlineFolderName = offlineFolderName,
+                isOfflineScanning = isOfflineScanning,
+                onOpenOfflineBook = handleOpenOfflineBook,
+                onChangeOfflineFolder = onChangeOfflineFolder,
+                onAddOfflineFolder = onAddOfflineFolder,
+                onRescanOffline = onRescanOffline,
+                selectedSort = selectedSort,
+                kavitaSort = kavitaSort,
+                isGridView = isGridView,
+                onSelectDestination = ::selectDestination,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        val topBarBlock: @Composable () -> Unit = {
+            HomeTopBar(
+                title = topBarTitle,
+                onBack = topBarBackAction,
+                showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
+                isOffline = isOffline,
+                onOpenSettings = onOpenSettings,
+                onSearch = ::openInlineSearch,
+                isSearchActive = isSearching,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                onCloseSearch = ::closeInlineSearch,
+                onSwitchMode = onToggleLibraryMode,
+                onToggleTheme = onToggleTheme,
+                actions = topBarActions
+            )
+        }
+
         if (showNavigationRail) {
             Row(Modifier.fillMaxSize().then(contentCutoutModifier)) {
                 HomeNavigationRail(
@@ -455,101 +600,24 @@ internal fun HomeShell(
                         .weight(1f)
                         .fillMaxHeight()
                 ) {
-                    HomeTopBar(
-                        title = topBarTitle,
-                        onBack = topBarBackAction,
-                        showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
-                        isOffline = isOffline,
-                        onOpenSettings = onOpenSettings,
-                        onSearch = ::openInlineSearch,
-                        isSearchActive = isSearching,
-                        searchQuery = searchQuery,
-                        onSearchQueryChange = { searchQuery = it },
-                        onCloseSearch = ::closeInlineSearch,
-                        onSwitchMode = onToggleLibraryMode,
-                        onToggleTheme = onToggleTheme,
-                        actions = topBarActions
-                    )
-                    HomeContent(
-                        destination = destination,
-                        scrollToTopSignal = reselectionCount,
-                        libraries = libraries,
-                        librarySeriesCounts = librarySeriesCounts,
-                        isAdmin = isAdmin,
-                        scanningLibraryIds = scanningLibraryIds,
-                        loading = loading,
-                        refreshing = refreshing,
-                        onRefresh = onRefresh,
-                        error = error,
-                        session = session,
-                        sessionStore = sessionStore,
-                        onDeck = onDeck,
-                        recentlyUpdated = recentlyUpdated,
-                        newlyAdded = newlyAdded,
-                        wantToRead = wantToRead,
-                        wantToReadError = wantToReadError,
-                        wantToReadHasMore = wantToReadHasMore,
-                        wantToReadLoadingMore = wantToReadLoadingMore,
-                        wantToReadLoadMoreError = wantToReadLoadMoreError,
-                        downloaded = downloaded,
-                        api = api,
-                        searchHistoryStore = searchHistoryStore,
-                        searchQuery = searchQuery,
-                        onSearchQueryChange = { searchQuery = it },
-                        isSearching = isSearching,
-                        onOpenInlineSearch = ::openInlineSearch,
-                        selectedLibrary = selectedLibrary,
-                        onSelectLibraryChange = { selectedLibrary = it },
-                        selectedShelf = selectedShelf,
-                        onSelectShelfChange = { selectedShelf = it },
-                        browseDrilldown = browseDrilldown,
-                        onBrowseDrilldownChange = { browseDrilldown = it },
-                        onSelectLibrary = { lib ->
-                            selectedLibrary = lib
-                            destination = HomeDestination.Libraries
+                    DualPaneOrSingleContent(
+                        isWide = isWide,
+                        selectedOfflineBook = selectedOfflineBook,
+                        selectedKavitaSeries = selectedKavitaSeries,
+                        onCloseDetail = {
+                            selectedOfflineBook = null
+                            selectedKavitaSeries = null
                         },
-                        onScanLibrary = onScanLibrary,
-                        onSelectSeries = onSelectSeries,
-                        onOpenShelf = { shelfKind ->
-                            if (shelfKind == HomeShelfKind.OnDeck) {
-                                selectDestination(HomeDestination.History)
-                            } else {
-                                selectedShelf = shelfKind
-                                destination = HomeDestination.Home
-                            }
-                        },
-                        onRemoveWantToRead = onRemoveWantToRead,
-                        onLoadMoreWantToRead = { onLoadMoreWantToRead() },
-                        onLoadAllWantToRead = onLoadAllWantToRead,
-                        onOpenBookmarks = {
-                            selectDestination(HomeDestination.Browse)
-                            browseDrilldown = BrowseDrilldown.Bookmarks
-                        },
-                        onOpenCollections = {
-                            selectDestination(HomeDestination.Browse)
-                            browseDrilldown = BrowseDrilldown.Collections
-                        },
-                        onOpenDownloaded = {
-                            selectDestination(HomeDestination.Browse)
-                            browseDrilldown = BrowseDrilldown.Downloaded
-                        },
-                        onOpenBookmark = onOpenBookmark,
-                        onOpenCollection = onOpenCollection,
-                        onPickIssue = onPickIssue,
-                        onOpenFilteredSeries = onOpenFilteredSeries,
-                        isOffline = isOffline,
+                        onSelectOfflineBook = { selectedOfflineBook = it },
                         offlineBooks = offlineBooks,
-                        offlineFolders = offlineFolders,
-                        offlineFolderName = offlineFolderName,
-                        isOfflineScanning = isOfflineScanning,
-                        onOpenOfflineBook = onOpenOfflineBook,
-                        onChangeOfflineFolder = onChangeOfflineFolder,
-                        onAddOfflineFolder = onAddOfflineFolder,
-                        onRescanOffline = onRescanOffline,
-                        selectedSort = selectedSort,
-                        kavitaSort = kavitaSort,
-                        isGridView = isGridView,
-                        onSelectDestination = ::selectDestination,
+                        localRepository = localRepository,
+                        sessionStore = sessionStore,
+                        onOpenFilteredSeries = onOpenFilteredSeries,
+                        onOpenSettings = onOpenSettings,
+                        onPickIssue = onPickIssue,
+                        onOpenOfflineBookReader = onOpenOfflineBook,
+                        topBarContent = topBarBlock,
+                        listContent = mainListContent,
                         modifier = Modifier.weight(1f)
                     )
                     Surface(
@@ -562,105 +630,26 @@ internal fun HomeShell(
             }
         } else if (navigationBarStyle == NavigationBarStyle.FloatingPill) {
             Box(Modifier.fillMaxSize().then(contentCutoutModifier)) {
-                Column(Modifier.fillMaxSize()) {
-                    HomeTopBar(
-                        title = topBarTitle,
-                        onBack = topBarBackAction,
-                        showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
-                        isOffline = isOffline,
-                        onOpenSettings = onOpenSettings,
-                        onSearch = ::openInlineSearch,
-                        isSearchActive = isSearching,
-                        searchQuery = searchQuery,
-                        onSearchQueryChange = { searchQuery = it },
-                        onCloseSearch = ::closeInlineSearch,
-                        onSwitchMode = onToggleLibraryMode,
-                        onToggleTheme = onToggleTheme,
-                        actions = topBarActions
-                    )
-                    HomeContent(
-                        destination = destination,
-                        scrollToTopSignal = reselectionCount,
-                        libraries = libraries,
-                        librarySeriesCounts = librarySeriesCounts,
-                        isAdmin = isAdmin,
-                        scanningLibraryIds = scanningLibraryIds,
-                        loading = loading,
-                        refreshing = refreshing,
-                        onRefresh = onRefresh,
-                        error = error,
-                        session = session,
-                        sessionStore = sessionStore,
-                        onDeck = onDeck,
-                        recentlyUpdated = recentlyUpdated,
-                        newlyAdded = newlyAdded,
-                        wantToRead = wantToRead,
-                        wantToReadError = wantToReadError,
-                        wantToReadHasMore = wantToReadHasMore,
-                        wantToReadLoadingMore = wantToReadLoadingMore,
-                        wantToReadLoadMoreError = wantToReadLoadMoreError,
-                        downloaded = downloaded,
-                        api = api,
-                        searchHistoryStore = searchHistoryStore,
-                        searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    isSearching = isSearching,
-                    onOpenInlineSearch = ::openInlineSearch,
-                        selectedLibrary = selectedLibrary,
-                        onSelectLibraryChange = { selectedLibrary = it },
-                        selectedShelf = selectedShelf,
-                        onSelectShelfChange = { selectedShelf = it },
-                        browseDrilldown = browseDrilldown,
-                        onBrowseDrilldownChange = { browseDrilldown = it },
-                        onSelectLibrary = { lib ->
-                            selectedLibrary = lib
-                            destination = HomeDestination.Libraries
-                        },
-                        onScanLibrary = onScanLibrary,
-                        onSelectSeries = onSelectSeries,
-                        onOpenShelf = { shelfKind ->
-                            if (shelfKind == HomeShelfKind.OnDeck) {
-                                selectDestination(HomeDestination.History)
-                            } else {
-                                selectedShelf = shelfKind
-                                destination = HomeDestination.Home
-                            }
-                        },
-                        onRemoveWantToRead = onRemoveWantToRead,
-                        onLoadMoreWantToRead = { onLoadMoreWantToRead() },
-                        onLoadAllWantToRead = onLoadAllWantToRead,
-                        onOpenBookmarks = {
-                            selectDestination(HomeDestination.Browse)
-                            browseDrilldown = BrowseDrilldown.Bookmarks
-                        },
-                        onOpenCollections = {
-                            selectDestination(HomeDestination.Browse)
-                            browseDrilldown = BrowseDrilldown.Collections
-                        },
-                        onOpenDownloaded = {
-                            selectDestination(HomeDestination.Browse)
-                            browseDrilldown = BrowseDrilldown.Downloaded
-                        },
-                        onOpenBookmark = onOpenBookmark,
-                        onOpenCollection = onOpenCollection,
-                        onPickIssue = onPickIssue,
-                        onOpenFilteredSeries = onOpenFilteredSeries,
-                        isOffline = isOffline,
-                        offlineBooks = offlineBooks,
-                        offlineFolders = offlineFolders,
-                        offlineFolderName = offlineFolderName,
-                        isOfflineScanning = isOfflineScanning,
-                        onOpenOfflineBook = onOpenOfflineBook,
-                        onChangeOfflineFolder = onChangeOfflineFolder,
-                        onAddOfflineFolder = onAddOfflineFolder,
-                        onRescanOffline = onRescanOffline,
-                        selectedSort = selectedSort,
-                        kavitaSort = kavitaSort,
-                        isGridView = isGridView,
-                        onSelectDestination = ::selectDestination,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                DualPaneOrSingleContent(
+                    isWide = isWide,
+                    selectedOfflineBook = selectedOfflineBook,
+                    selectedKavitaSeries = selectedKavitaSeries,
+                    onCloseDetail = {
+                        selectedOfflineBook = null
+                        selectedKavitaSeries = null
+                    },
+                    onSelectOfflineBook = { selectedOfflineBook = it },
+                    offlineBooks = offlineBooks,
+                    localRepository = localRepository,
+                    sessionStore = sessionStore,
+                    onOpenFilteredSeries = onOpenFilteredSeries,
+                    onOpenSettings = onOpenSettings,
+                    onPickIssue = onPickIssue,
+                    onOpenOfflineBookReader = onOpenOfflineBook,
+                    topBarContent = topBarBlock,
+                    listContent = mainListContent,
+                    modifier = Modifier.fillMaxSize()
+                )
                 HomeBottomNavigation(
                     selected = destination,
                     onSelect = ::selectDestination,
@@ -670,101 +659,24 @@ internal fun HomeShell(
             }
         } else {
             Column(Modifier.fillMaxSize().then(contentCutoutModifier)) {
-                HomeTopBar(
-                    title = topBarTitle,
-                    onBack = topBarBackAction,
-                    showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
-                    isOffline = isOffline,
-                    onOpenSettings = onOpenSettings,
-                    onSearch = ::openInlineSearch,
-                    isSearchActive = isSearching,
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    onCloseSearch = ::closeInlineSearch,
-                    onSwitchMode = onToggleLibraryMode,
-                    onToggleTheme = onToggleTheme,
-                    actions = topBarActions
-                )
-                HomeContent(
-                    destination = destination,
-                    scrollToTopSignal = reselectionCount,
-                    libraries = libraries,
-                    librarySeriesCounts = librarySeriesCounts,
-                    isAdmin = isAdmin,
-                    scanningLibraryIds = scanningLibraryIds,
-                    loading = loading,
-                    refreshing = refreshing,
-                    onRefresh = onRefresh,
-                    error = error,
-                    session = session,
-                    sessionStore = sessionStore,
-                    onDeck = onDeck,
-                    recentlyUpdated = recentlyUpdated,
-                    newlyAdded = newlyAdded,
-                    wantToRead = wantToRead,
-                    wantToReadError = wantToReadError,
-                    wantToReadHasMore = wantToReadHasMore,
-                    wantToReadLoadingMore = wantToReadLoadingMore,
-                    wantToReadLoadMoreError = wantToReadLoadMoreError,
-                    downloaded = downloaded,
-                    api = api,
-                    searchHistoryStore = searchHistoryStore,
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    isSearching = isSearching,
-                    onOpenInlineSearch = ::openInlineSearch,
-                    selectedLibrary = selectedLibrary,
-                    onSelectLibraryChange = { selectedLibrary = it },
-                    selectedShelf = selectedShelf,
-                    onSelectShelfChange = { selectedShelf = it },
-                    browseDrilldown = browseDrilldown,
-                    onBrowseDrilldownChange = { browseDrilldown = it },
-                    onSelectLibrary = { lib ->
-                        selectedLibrary = lib
-                        destination = HomeDestination.Libraries
+                DualPaneOrSingleContent(
+                    isWide = isWide,
+                    selectedOfflineBook = selectedOfflineBook,
+                    selectedKavitaSeries = selectedKavitaSeries,
+                    onCloseDetail = {
+                        selectedOfflineBook = null
+                        selectedKavitaSeries = null
                     },
-                    onScanLibrary = onScanLibrary,
-                    onSelectSeries = onSelectSeries,
-                    onOpenShelf = { shelfKind ->
-                        if (shelfKind == HomeShelfKind.OnDeck) {
-                            selectDestination(HomeDestination.History)
-                        } else {
-                            selectedShelf = shelfKind
-                            destination = HomeDestination.Home
-                        }
-                    },
-                    onRemoveWantToRead = onRemoveWantToRead,
-                    onLoadMoreWantToRead = { onLoadMoreWantToRead() },
-                    onLoadAllWantToRead = onLoadAllWantToRead,
-                    onOpenBookmarks = {
-                        selectDestination(HomeDestination.Browse)
-                        browseDrilldown = BrowseDrilldown.Bookmarks
-                    },
-                    onOpenCollections = {
-                        selectDestination(HomeDestination.Browse)
-                        browseDrilldown = BrowseDrilldown.Collections
-                    },
-                    onOpenDownloaded = {
-                        selectDestination(HomeDestination.Browse)
-                        browseDrilldown = BrowseDrilldown.Downloaded
-                    },
-                    onOpenBookmark = onOpenBookmark,
-                    onOpenCollection = onOpenCollection,
-                    onPickIssue = onPickIssue,
-                    onOpenFilteredSeries = onOpenFilteredSeries,
-                    isOffline = isOffline,
+                    onSelectOfflineBook = { selectedOfflineBook = it },
                     offlineBooks = offlineBooks,
-                    offlineFolders = offlineFolders,
-                    offlineFolderName = offlineFolderName,
-                    isOfflineScanning = isOfflineScanning,
-                    onOpenOfflineBook = onOpenOfflineBook,
-                    onChangeOfflineFolder = onChangeOfflineFolder,
-                    onAddOfflineFolder = onAddOfflineFolder,
-                    onRescanOffline = onRescanOffline,
-                    selectedSort = selectedSort,
-                    kavitaSort = kavitaSort,
-                    isGridView = isGridView,
-                    onSelectDestination = ::selectDestination,
+                    localRepository = localRepository,
+                    sessionStore = sessionStore,
+                    onOpenFilteredSeries = onOpenFilteredSeries,
+                    onOpenSettings = onOpenSettings,
+                    onPickIssue = onPickIssue,
+                    onOpenOfflineBookReader = onOpenOfflineBook,
+                    topBarContent = topBarBlock,
+                    listContent = mainListContent,
                     modifier = Modifier.weight(1f)
                 )
                 HomeBottomNavigation(
@@ -772,6 +684,93 @@ internal fun HomeShell(
                     onSelect = ::selectDestination,
                     navigationBarStyle = navigationBarStyle
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DualPaneOrSingleContent(
+    modifier: Modifier = Modifier,
+    isWide: Boolean,
+    selectedOfflineBook: LocalBook?,
+    selectedKavitaSeries: SeriesDto?,
+    onCloseDetail: () -> Unit,
+    onSelectOfflineBook: (LocalBook) -> Unit = {},
+    offlineBooks: List<LocalBook>,
+    localRepository: LocalBookRepository,
+    sessionStore: KavitaSessionStore,
+    onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
+    onOpenSettings: () -> Unit,
+    onPickIssue: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, incognito: Boolean) -> Unit,
+    onOpenOfflineBookReader: (LocalBook) -> Unit,
+    topBarContent: @Composable () -> Unit,
+    listContent: @Composable () -> Unit
+) {
+    val hasDetail = isWide && (selectedOfflineBook != null || selectedKavitaSeries != null)
+    if (hasDetail) {
+        Row(modifier = modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .weight(0.42f)
+                    .fillMaxHeight()
+            ) {
+                topBarContent()
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    listContent()
+                }
+            }
+
+            VerticalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+            )
+
+            Box(
+                modifier = Modifier
+                    .weight(0.58f)
+                    .fillMaxHeight()
+            ) {
+                if (selectedOfflineBook != null) {
+                    LocalBookDetailContent(
+                        book = selectedOfflineBook,
+                        allBooks = offlineBooks,
+                        localRepository = localRepository,
+                        onBack = onCloseDetail,
+                        onOpenReader = { targetBook, startPage -> onOpenOfflineBookReader(targetBook) },
+                        isDualPane = true,
+                        onSelectBook = onSelectOfflineBook,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (selectedKavitaSeries != null) {
+                    ChapterPickScreen(
+                        sessionStore = sessionStore,
+                        libraryId = selectedKavitaSeries.libraryId ?: 0,
+                        seriesId = selectedKavitaSeries.id,
+                        seriesName = selectedKavitaSeries.name,
+                        onOpenFilteredSeries = onOpenFilteredSeries,
+                        onOpenSettings = onOpenSettings,
+                        onBack = onCloseDetail,
+                        isDualPane = true,
+                        onPick = { chapterId, volumeId, incognito, initialPage ->
+                            onPickIssue(selectedKavitaSeries.libraryId ?: 0, selectedKavitaSeries.id, volumeId, chapterId, incognito)
+                        }
+                    )
+                }
+            }
+        }
+    } else {
+        Column(modifier = modifier.fillMaxSize()) {
+            topBarContent()
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                listContent()
             }
         }
     }

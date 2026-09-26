@@ -247,7 +247,16 @@ class LocalBookRepository(context: Context) {
                             lastReadPage = existing.lastReadPage,
                             isCompleted = existing.isCompleted,
                             coverPath = if (existing.hasCover) existing.coverPath else "",
-                            lastReadTime = existing.lastReadTime
+                            lastReadTime = existing.lastReadTime,
+                            author = if (existing.author.isNotBlank()) existing.author else scanned.author,
+                            description = if (existing.description.isNotBlank()) existing.description else scanned.description,
+                            tagsCsv = if (existing.tagsCsv.isNotBlank()) existing.tagsCsv else scanned.tagsCsv,
+                            rating = existing.rating,
+                            startedReadingAt = existing.startedReadingAt,
+                            finishedReadingAt = existing.finishedReadingAt,
+                            totalReadingSeconds = existing.totalReadingSeconds,
+                            isReadNext = existing.isReadNext,
+                            isWantToRead = existing.isWantToRead
                         )
                     } else {
                         scanned
@@ -333,6 +342,116 @@ class LocalBookRepository(context: Context) {
         }
     }
 
+    suspend fun updateBookMetadata(
+        bookId: String,
+        title: String,
+        author: String,
+        seriesName: String,
+        volumeOrIssue: String,
+        description: String,
+        tagsCsv: String
+    ) {
+        appContext.localBooksDataStore.edit { prefs ->
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON])
+            val updated = books.map { book ->
+                if (book.id == bookId) {
+                    book.copy(
+                        title = title.trim(),
+                        author = author.trim(),
+                        seriesName = seriesName.trim(),
+                        volumeOrIssue = volumeOrIssue.trim(),
+                        description = description.trim(),
+                        tagsCsv = tagsCsv.trim()
+                    )
+                } else book
+            }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(updated)
+        }
+    }
+
+    suspend fun updateBookRating(bookId: String, rating: Float) {
+        appContext.localBooksDataStore.edit { prefs ->
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON])
+            val updated = books.map { book ->
+                if (book.id == bookId) book.copy(rating = rating.coerceIn(0f, 5f)) else book
+            }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(updated)
+        }
+    }
+
+    suspend fun updateBookReadingDates(bookId: String, startedAt: Long?, finishedAt: Long?) {
+        appContext.localBooksDataStore.edit { prefs ->
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON])
+            val updated = books.map { book ->
+                if (book.id == bookId) {
+                    book.copy(
+                        startedReadingAt = startedAt ?: 0L,
+                        finishedReadingAt = finishedAt ?: 0L
+                    )
+                } else book
+            }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(updated)
+        }
+    }
+
+    suspend fun setBookCover(bookId: String, coverPath: String) {
+        updateBookCover(bookId, coverPath)
+    }
+
+    suspend fun removeBookCover(bookId: String) {
+        updateBookCover(bookId, "")
+    }
+
+    suspend fun toggleBookReadNext(bookId: String, isReadNext: Boolean) {
+        appContext.localBooksDataStore.edit { prefs ->
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON])
+            val updated = books.map { book ->
+                if (book.id == bookId) book.copy(isReadNext = isReadNext) else book
+            }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(updated)
+        }
+    }
+
+    suspend fun toggleBookWantToRead(bookId: String, wantToRead: Boolean) {
+        appContext.localBooksDataStore.edit { prefs ->
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON])
+            val updated = books.map { book ->
+                if (book.id == bookId) book.copy(isWantToRead = wantToRead) else book
+            }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(updated)
+        }
+    }
+
+    suspend fun resetBookReadingStats(bookId: String) {
+        appContext.localBooksDataStore.edit { prefs ->
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON])
+            val updated = books.map { book ->
+                if (book.id == bookId) {
+                    book.copy(
+                        lastReadPage = 0,
+                        lastReadTime = 0L,
+                        isCompleted = false,
+                        startedReadingAt = 0L,
+                        finishedReadingAt = 0L,
+                        totalReadingSeconds = 0L
+                    )
+                } else book
+            }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(updated)
+        }
+    }
+
+    suspend fun deleteBook(bookId: String) {
+        appContext.localBooksDataStore.edit { prefs ->
+            val books = decodeBooks(prefs[KEY_BOOKS_JSON]).filter { it.id != bookId }
+            prefs[KEY_BOOKS_JSON] = encodeBooks(books)
+        }
+        withContext(Dispatchers.IO) {
+            val cacheFolder = File(appContext.cacheDir, "active_books")
+            cacheFolder.listFiles()?.filter { it.name.startsWith(bookId) }?.forEach { it.delete() }
+        }
+    }
+
     private suspend fun updateBookCover(bookId: String, coverPath: String) {
         appContext.localBooksDataStore.edit { prefs ->
             val books = decodeBooks(prefs[KEY_BOOKS_JSON])
@@ -342,6 +461,7 @@ class LocalBookRepository(context: Context) {
             prefs[KEY_BOOKS_JSON] = encodeBooks(updated)
         }
     }
+
 
     suspend fun prepareBookFile(book: LocalBook): File = withContext(Dispatchers.IO) {
         val cacheFolder = File(appContext.cacheDir, "active_books").apply { mkdirs() }

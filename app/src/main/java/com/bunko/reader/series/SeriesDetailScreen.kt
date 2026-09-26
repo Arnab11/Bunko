@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -158,7 +159,7 @@ import com.bunko.reader.ui.theme.themeToggleModifier
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun ChapterPickScreen(
+fun ChapterPickScreen(
     sessionStore: KavitaSessionStore,
     libraryId: Int,
     seriesId: Int,
@@ -169,6 +170,7 @@ internal fun ChapterPickScreen(
     onSelectDestination: (HomeDestination) -> Unit = {},
     navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
     onBack: () -> Unit = {},
+    isDualPane: Boolean = false,
     onPick: (chapterId: Int, volumeId: Int, incognito: Boolean, initialPage: Int?) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -251,7 +253,7 @@ internal fun ChapterPickScreen(
         volume.chapters.map { chapter ->
             ChapterCardItem(volume = volume, chapter = chapter)
         }
-    }
+    }.distinctBy { it.chapter.id }
     val displaySeries = series ?: SeriesDto(id = seriesId, name = seriesName, libraryId = libraryId)
     val loadedApi = api
     val downloadedList by offlineRepository.observeDownloaded(session).collectAsState(initial = emptyList())
@@ -289,15 +291,12 @@ internal fun ChapterPickScreen(
                         generateReadingSession = false
                     )
                 )
-                val refreshed = try {
-                    currentApi.seriesChapter(item.chapter.id)
-                } catch (c: CancellationException) {
-                    throw c
-                } catch (t: Throwable) {
-                    BunkoLog.w("Could not refresh issue detail after marking read.", t)
-                    item.chapter.copy(pagesRead = item.chapter.pages)
+                runCatching {
+                    val updatedSeries = currentApi.series(seriesId)
+                    series = updatedSeries
+                    val updatedVolumes = currentApi.volumes(seriesId)
+                    volumes = updatedVolumes
                 }
-                updateChapter(refreshed)
                 showMessage("Marked as read")
             } catch (c: CancellationException) {
                 throw c
@@ -322,15 +321,12 @@ internal fun ChapterPickScreen(
                         chapterIds = listOf(item.chapter.id)
                     )
                 )
-                val refreshed = try {
-                    currentApi.seriesChapter(item.chapter.id)
-                } catch (c: CancellationException) {
-                    throw c
-                } catch (t: Throwable) {
-                    BunkoLog.w("Could not refresh issue detail after marking unread.", t)
-                    item.chapter.copy(pagesRead = 0)
+                runCatching {
+                    val updatedSeries = currentApi.series(seriesId)
+                    series = updatedSeries
+                    val updatedVolumes = currentApi.volumes(seriesId)
+                    volumes = updatedVolumes
                 }
-                updateChapter(refreshed)
                 showMessage("Marked as unread")
             } catch (c: CancellationException) {
                 throw c
@@ -412,7 +408,7 @@ internal fun ChapterPickScreen(
                 }
                 Text(
                     text = displaySeries.name,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
@@ -447,7 +443,116 @@ internal fun ChapterPickScreen(
         val endCutoutPadding = cutoutInsets.calculateEndPadding(layoutDirection)
         val contentCutoutModifier = Modifier.padding(start = startCutoutPadding, end = endCutoutPadding)
 
-        if (showRail) {
+        if (isDualPane) {
+            Column(Modifier.fillMaxSize()) {
+                val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = 4.dp,
+                                end = 4.dp,
+                                top = statusInsets.calculateTopPadding() + 8.dp,
+                                bottom = 8.dp
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = displaySeries.name,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 4.dp)
+                        )
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    when {
+                        loading -> DarkLoadingState()
+                        error != null -> DarkMessageState(
+                            title = "Could not load series details",
+                            body = error ?: "Unknown error",
+                            actionLabel = "Retry",
+                            onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                        )
+                        loadedApi == null -> DarkMessageState(
+                            title = "Could not load series details",
+                            body = "API unavailable",
+                            actionLabel = "Retry",
+                            onAction = { scope.launch { loadSeriesDetails(initialLoad = true) } }
+                        )
+                        else -> PullToRefreshBox(
+                            isRefreshing = refreshing,
+                            onRefresh = {
+                                if (!refreshing) {
+                                    scope.launch { loadSeriesDetails(initialLoad = false) }
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                            state = pullRefreshState,
+                            indicator = { BunkoPullToRefreshIndicator(pullRefreshState, refreshing) }
+                        ) {
+                            SeriesDetailContent(
+                                series = displaySeries,
+                                metadata = metadata,
+                                continueChapter = continueChapter,
+                                chapterCards = chapterCards,
+                                volumeCount = volumes.size,
+                                session = session,
+                                api = loadedApi,
+                                isAdmin = isAdmin,
+                                downloadedChapterIds = downloadedChapterIds,
+                                downloadingChapterIds = downloadingChapterIds,
+                                onOpenFilteredSeries = onOpenFilteredSeries,
+                                onPick = { chapterId, volumeId, initialPage -> onPick(chapterId, volumeId, false, initialPage) },
+                                onReadIncognito = { item -> onPick(item.chapter.id, item.volume.id, true, null) },
+                                onMarkRead = ::markIssueRead,
+                                onMarkUnread = ::markIssueUnread,
+                                onDownload = ::downloadIssue,
+                                onRemoveDownload = ::removeIssueDownload,
+                                onRefreshSeries = { scope.launch { loadSeriesDetails(initialLoad = false) } },
+                                onMessage = ::showMessage,
+                                navigationBarStyle = navigationBarStyle
+                            )
+                        }
+                    }
+
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(16.dp)
+                    )
+                }
+            }
+        } else if (showRail) {
             Row(Modifier.fillMaxSize().then(contentCutoutModifier)) {
                 HomeNavigationRail(
                     selected = currentDestination,
@@ -509,6 +614,7 @@ internal fun ChapterPickScreen(
                                     onMarkUnread = ::markIssueUnread,
                                     onDownload = ::downloadIssue,
                                     onRemoveDownload = ::removeIssueDownload,
+                                    onRefreshSeries = { scope.launch { loadSeriesDetails(initialLoad = false) } },
                                     onMessage = ::showMessage,
                                     navigationBarStyle = navigationBarStyle
                                 )
@@ -584,6 +690,7 @@ internal fun ChapterPickScreen(
                                     onMarkUnread = ::markIssueUnread,
                                     onDownload = ::downloadIssue,
                                     onRemoveDownload = ::removeIssueDownload,
+                                    onRefreshSeries = { scope.launch { loadSeriesDetails(initialLoad = false) } },
                                     onMessage = ::showMessage,
                                     navigationBarStyle = navigationBarStyle
                                 )
@@ -659,6 +766,7 @@ internal fun ChapterPickScreen(
                                 onMarkUnread = ::markIssueUnread,
                                 onDownload = ::downloadIssue,
                                 onRemoveDownload = ::removeIssueDownload,
+                                onRefreshSeries = { scope.launch { loadSeriesDetails(initialLoad = false) } },
                                 onMessage = ::showMessage,
                                 navigationBarStyle = navigationBarStyle
                             )
@@ -702,130 +810,43 @@ private fun SeriesDetailContent(
     onMarkUnread: (ChapterCardItem) -> Unit,
     onDownload: (ChapterCardItem) -> Unit,
     onRemoveDownload: (ChapterCardItem) -> Unit,
+    onRefreshSeries: () -> Unit = {},
     onMessage: (String) -> Unit,
     navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard
 ) {
-    val specialCards = chapterCards.filter { it.chapter.isSpecial }
-    val issueCards = chapterCards.filterNot { it.chapter.isSpecial }
-    val bottomPadding = if (navigationBarStyle == NavigationBarStyle.FloatingPill) 96.dp else 16.dp
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val configuration = LocalConfiguration.current
-        val isTablet = configuration.smallestScreenWidthDp >= 600 && maxWidth >= 720.dp
-        if (isTablet) {
-            val summaryWidth = if (maxWidth >= 1000.dp) 380.dp else 340.dp
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .width(summaryWidth)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(bottom = if (navigationBarStyle == NavigationBarStyle.FloatingPill) 96.dp else 24.dp)
-                ) {
-                    item {
-                        SeriesDetailSummary(
-                            series = series,
-                            metadata = metadata,
-                            continueChapter = continueChapter,
-                            chapterCards = chapterCards,
-                            volumeCount = volumeCount,
-                            session = session,
-                            api = api,
-                            isAdmin = isAdmin,
-                            onOpenFilteredSeries = onOpenFilteredSeries,
-                            onPick = onPick,
-                            onMessage = onMessage
-                        )
-                    }
-                }
-                androidx.compose.material3.VerticalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                )
-                ChapterIssueGrid(
-                    issueCards = issueCards,
-                    specialCards = specialCards,
-                    session = session,
-                    onIssueClick = { onPick(it.chapter.id, it.volume.id, null) },
-                    onReadIncognito = onReadIncognito,
-                    onMarkRead = onMarkRead,
-                    onMarkUnread = onMarkUnread,
-                    onDownload = onDownload,
-                    onRemoveDownload = onRemoveDownload,
-                    downloadedChapterIds = downloadedChapterIds,
-                    downloadingChapterIds = downloadingChapterIds,
-                    navigationBarStyle = navigationBarStyle,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 130.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    top = 16.dp,
-                    end = 16.dp,
-                    bottom = bottomPadding
-                ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    SeriesDetailSummary(
-                        series = series,
-                        metadata = metadata,
-                        continueChapter = continueChapter,
-                        chapterCards = chapterCards,
-                        volumeCount = volumeCount,
-                        session = session,
-                        api = api,
-                        isAdmin = isAdmin,
-                        onOpenFilteredSeries = onOpenFilteredSeries,
-                        onPick = onPick,
-                        onMessage = onMessage
-                    )
-                }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    ChapterSectionHeader("Issues", issueCards.size)
-                }
-                gridItems(issueCards, key = { "${it.volume.id}-${it.chapter.id}" }) { item ->
-                    ChapterGridCard(
-                        item = item,
-                        session = session,
-                        isDownloaded = item.chapter.id in downloadedChapterIds,
-                        isDownloading = item.chapter.id in downloadingChapterIds,
-                        onClick = { onPick(item.chapter.id, item.volume.id, null) },
-                        onReadIncognito = { onReadIncognito(item) },
-                        onMarkRead = { onMarkRead(item) },
-                        onMarkUnread = { onMarkUnread(item) },
-                        onDownload = { onDownload(item) },
-                        onRemoveDownload = { onRemoveDownload(item) }
-                    )
-                }
-                if (specialCards.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ChapterSectionHeader("Specials", specialCards.size)
-                    }
-                    gridItems(specialCards, key = { "${it.volume.id}-${it.chapter.id}" }) { item ->
-                        ChapterGridCard(
-                            item = item,
-                            session = session,
-                            isDownloaded = item.chapter.id in downloadedChapterIds,
-                            isDownloading = item.chapter.id in downloadingChapterIds,
-                            onClick = { onPick(item.chapter.id, item.volume.id, null) },
-                            onReadIncognito = { onReadIncognito(item) },
-                            onMarkRead = { onMarkRead(item) },
-                            onMarkUnread = { onMarkUnread(item) },
-                            onDownload = { onDownload(item) },
-                            onRemoveDownload = { onRemoveDownload(item) }
-                        )
-                    }
-                }
-            }
+    val bottomPadding = if (navigationBarStyle == NavigationBarStyle.FloatingPill) 96.dp else 24.dp
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 16.dp,
+            end = 16.dp,
+            bottom = bottomPadding
+        ),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            SeriesDetailSummary(
+                series = series,
+                metadata = metadata,
+                continueChapter = continueChapter,
+                chapterCards = chapterCards,
+                volumeCount = volumeCount,
+                session = session,
+                api = api,
+                isAdmin = isAdmin,
+                downloadedChapterIds = downloadedChapterIds,
+                downloadingChapterIds = downloadingChapterIds,
+                onOpenFilteredSeries = onOpenFilteredSeries,
+                onPick = onPick,
+                onReadIncognito = onReadIncognito,
+                onMarkRead = onMarkRead,
+                onMarkUnread = onMarkUnread,
+                onDownload = onDownload,
+                onRemoveDownload = onRemoveDownload,
+                onRefreshSeries = onRefreshSeries,
+                onMessage = onMessage
+            )
         }
     }
 }

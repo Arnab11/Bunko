@@ -26,7 +26,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PlaylistAdd
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuGroup
@@ -46,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.bunko.reader.ui.theme.accessibleContentColor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,13 +79,22 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.imageLoader
 import coil.request.ImageRequest
+import kotlin.math.roundToInt
+import com.bunko.reader.BunkoLog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.bunko.reader.ChapterDto
 import com.bunko.reader.CreateReadingListDto
 import com.bunko.reader.KavitaApi
@@ -84,12 +106,27 @@ import com.bunko.reader.SeriesDto
 import com.bunko.reader.SeriesMetadataDto
 import com.bunko.reader.UpdateReadingListBySeriesDto
 import com.bunko.reader.UpdateWantToReadDto
+import com.bunko.reader.UpdateSeriesRatingDto
+import com.bunko.reader.MarkChapterReadDto
+import com.bunko.reader.MarkVolumesReadDto
+import com.bunko.reader.library.detail.BookDetailSection
+import com.bunko.reader.library.detail.BookRatingRow
+import com.bunko.reader.library.detail.CoverPreviewDialog
+import com.bunko.reader.library.detail.KavitaEditCoverDialog
+import com.bunko.reader.library.detail.KavitaQuickActions
+import com.bunko.reader.library.detail.KavitaReadingStatsCard
+import com.bunko.reader.library.detail.ScrollableDescription
 import com.bunko.reader.library.SearchSeriesTarget
 import com.bunko.reader.normalizeKavitaBaseUrl
 import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.seriesCoverUrl
 import com.bunko.reader.ui.seriesInitial
 import com.bunko.reader.ui.theme.BunkoBackground
+
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 
 internal fun String.cleanHtmlDescription(): String {
     if (isBlank()) return ""
@@ -104,7 +141,7 @@ internal fun String.cleanHtmlDescription(): String {
 }
 
 /** Internal to series, not for external use. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, coil.annotation.ExperimentalCoilApi::class)
 @Composable
 internal fun SeriesDetailSummary(
     series: SeriesDto,
@@ -115,10 +152,96 @@ internal fun SeriesDetailSummary(
     session: KavitaSession,
     api: KavitaApi,
     isAdmin: Boolean,
+    downloadedChapterIds: Set<Int> = emptySet(),
+    downloadingChapterIds: Set<Int> = emptySet(),
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onPick: (chapterId: Int, volumeId: Int, initialPage: Int?) -> Unit,
+    onReadIncognito: ((ChapterCardItem) -> Unit)? = null,
+    onMarkRead: ((ChapterCardItem) -> Unit)? = null,
+    onMarkUnread: ((ChapterCardItem) -> Unit)? = null,
+    onDownload: ((ChapterCardItem) -> Unit)? = null,
+    onRemoveDownload: ((ChapterCardItem) -> Unit)? = null,
+    onRefreshSeries: () -> Unit = {},
     onMessage: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isWantToRead by remember { mutableStateOf(false) }
+    var userRating by remember { mutableStateOf(0f) }
+    var showCoverPreview by remember { mutableStateOf(false) }
+    var showActionsDialog by remember { mutableStateOf(false) }
+    var showEditCoverDialog by remember { mutableStateOf(false) }
+    var isUploadingCover by remember { mutableStateOf(false) }
+    var coverUpdateKey by remember { mutableStateOf(0L) }
+
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isUploadingCover = true
+                try {
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    }
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val requestFile = bytes.toRequestBody("image/*".toMediaTypeOrNull())
+                        val body = MultipartBody.Part.createFormData("file", "cover.jpg", requestFile)
+                        val response = api.uploadSeriesCover(body, series.id)
+                        if (response.isSuccessful) {
+                            coverUpdateKey = System.currentTimeMillis()
+                            context.imageLoader.diskCache?.clear()
+                            context.imageLoader.memoryCache?.clear()
+                            showEditCoverDialog = false
+                            onRefreshSeries()
+                            onMessage("Series cover updated")
+                        } else {
+                            onMessage("Failed to update cover (${response.code()})")
+                        }
+                    }
+                } catch (t: Throwable) {
+                    BunkoLog.w("Failed to upload series cover", t)
+                    onMessage("Failed to upload cover: ${t.message}")
+                } finally {
+                    isUploadingCover = false
+                }
+            }
+        }
+    }
+
+    fun resetCover() {
+        scope.launch {
+            isUploadingCover = true
+            try {
+                val response = api.resetSeriesCover(series.id)
+                if (response.isSuccessful) {
+                    coverUpdateKey = System.currentTimeMillis()
+                    context.imageLoader.diskCache?.clear()
+                    context.imageLoader.memoryCache?.clear()
+                    showEditCoverDialog = false
+                    onRefreshSeries()
+                    onMessage("Series cover reset to default")
+                } else {
+                    onMessage("Failed to reset cover (${response.code()})")
+                }
+            } catch (t: Throwable) {
+                BunkoLog.w("Failed to reset series cover", t)
+                onMessage("Failed to reset cover: ${t.message}")
+            } finally {
+                isUploadingCover = false
+            }
+        }
+    }
+
+    LaunchedEffect(series.id) {
+        runCatching {
+            val ratingDto = api.seriesRating(series.id)
+            userRating = ratingDto.userRating
+        }
+        runCatching {
+            val wantList = api.wantToRead(pageSize = 200)
+            isWantToRead = wantList.any { it.id == series.id }
+        }
+    }
+
     val summary = remember(metadata?.summary) {
         metadata?.summary?.cleanHtmlDescription()?.takeIf { it.isNotBlank() }
     }
@@ -144,148 +267,540 @@ internal fun SeriesDetailSummary(
             chapterCards.firstOrNull { it.chapter.id == chapter.id }
         } ?: chapterCards.firstOrNull()
     }
-    val continueButtonColor = series.coverActionColor()
-    val summaryActionColor = continueButtonColor.readableAccentOn(BunkoBackground)
-    var summaryExpanded by remember(summary) { mutableStateOf(false) }
-    var summaryCanExpand by remember(summary) { mutableStateOf(false) }
+    val coverUrl = seriesCoverUrl(session, series.id)
+    val isSeriesFinished = ((series.readingProgress() ?: 0f) >= 0.999f)
 
-    val readButton: @Composable () -> Unit = {
-        continueItem?.let { item ->
-            SeriesReadSplitButton(
-                text = continueButtonText,
-                containerColor = continueButtonColor,
-                series = series,
-                api = api,
-                isAdmin = isAdmin,
-                onRead = { onPick(item.chapter.id, item.volume.id, if (isReread) 0 else null) },
-                onMessage = onMessage,
-                modifier = Modifier.fillMaxWidth()
+    if (showCoverPreview) {
+        val previewUrl = if (coverUpdateKey > 0L) "$coverUrl&t=$coverUpdateKey" else coverUrl
+        CoverPreviewDialog(
+            coverPath = previewUrl,
+            title = series.name,
+            onDismiss = { showCoverPreview = false }
+        )
+    }
+
+    if (showEditCoverDialog) {
+        val currentCoverUrl = if (coverUpdateKey > 0L) "$coverUrl&t=$coverUpdateKey" else coverUrl
+        KavitaEditCoverDialog(
+            seriesName = series.name,
+            coverUrl = currentCoverUrl,
+            onChangeCover = {
+                coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onResetCover = ::resetCover,
+            onDismiss = { showEditCoverDialog = false },
+            isProcessing = isUploadingCover
+        )
+    }
+
+    if (showActionsDialog) {
+        SeriesActionsDialog(
+            series = series,
+            api = api,
+            isAdmin = isAdmin,
+            onEditCover = { showEditCoverDialog = true },
+            onDismiss = { showActionsDialog = false },
+            onMessage = onMessage
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Hero section
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    shadowElevation = 8.dp,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier
+                        .width(130.dp)
+                        .aspectRatio(KavitaCoverAspectRatio)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { showCoverPreview = true }
+                ) {
+                    SeriesCover(series, session, Modifier.fillMaxSize(), coverKey = coverUpdateKey)
+                }
+
+                AssistChip(
+                    onClick = { showEditCoverDialog = true },
+                    label = { Text("Edit Cover", style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    },
+                    modifier = Modifier.padding(top = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ),
+                    border = null,
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = series.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val releaseYear = metadata?.releaseYear
+                val metaText = listOfNotNull(
+                    series.libraryName?.takeIf { it.isNotBlank() },
+                    releaseYear?.toString(),
+                    if (chapterCards.isNotEmpty()) "${chapterCards.size} issues" else null
+                ).joinToString(" · ")
+                if (metaText.isNotBlank()) {
+                    Text(
+                        text = metaText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                val progressPct = ((series.readingProgress() ?: 0f) * 100).roundToInt()
+                val statusText = if (progressPct >= 100) "Completed" else if (progressPct > 0) "$progressPct% read" else "Not Started"
+                Text(
+                    text = "${series.pagesRead ?: 0} / ${series.pages ?: 0} pages · $statusText",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+
+                // Credit and Publisher beside cover under pages and percentage read
+                if (creditChips.isNotEmpty()) {
+                    Text(
+                        text = "Credits: " + creditChips.joinToString { it.second },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
+                val publishersText = listOfNotNull(
+                    publisherChips.takeIf { it.isNotEmpty() }?.joinToString { it.second },
+                    imprintChips.takeIf { it.isNotEmpty() }?.joinToString { it.second }
+                ).joinToString(" · ")
+                if (publishersText.isNotBlank()) {
+                    Text(
+                        text = "Publisher: $publishersText",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 1.dp)
+                    )
+                }
+            }
+        }
+
+        // Action Buttons Row (Continue / Want to Read / Mark Finished / Edit)
+        KavitaQuickActions(
+            primaryActionText = continueButtonText,
+            onPrimaryAction = {
+                continueItem?.let { onPick(it.chapter.id, it.volume.id, if (isReread) 0 else null) }
+            },
+            isWantToRead = isWantToRead,
+            onToggleWantToRead = {
+                val next = !isWantToRead
+                isWantToRead = next
+                scope.launch {
+                    runCatching {
+                        if (next) {
+                            api.addSeriesToWantToRead(UpdateWantToReadDto(listOf(series.id)))
+                            onMessage("Added to Want to Read")
+                        } else {
+                            api.removeSeriesFromWantToRead(UpdateWantToReadDto(listOf(series.id)))
+                            onMessage("Removed from Want to Read")
+                        }
+                    }.onFailure {
+                        isWantToRead = !next
+                        BunkoLog.w("Could not update Want to Read", it)
+                        onMessage("Failed to update Want to Read")
+                    }
+                }
+            },
+            isFinished = isSeriesFinished,
+            onToggleFinished = {
+                scope.launch {
+                    runCatching {
+                        if (!isSeriesFinished) {
+                            val allChapterIds = chapterCards.map { it.chapter.id }
+                            chapterCards.forEach { card ->
+                                api.markChapterRead(
+                                    MarkChapterReadDto(
+                                        seriesId = series.id,
+                                        chapterId = card.chapter.id,
+                                        generateReadingSession = false
+                                    )
+                                )
+                            }
+                            onRefreshSeries()
+                            onMessage("Marked series as finished")
+                        } else {
+                            val allChapterIds = chapterCards.map { it.chapter.id }
+                            api.markChaptersUnread(
+                                MarkVolumesReadDto(
+                                    seriesId = series.id,
+                                    chapterIds = allChapterIds
+                                )
+                            )
+                            onRefreshSeries()
+                            onMessage("Marked series as unread")
+                        }
+                    }.onFailure {
+                        BunkoLog.w("Could not update reading status", it)
+                        onMessage("Failed to update reading status")
+                    }
+                }
+            },
+            onEdit = { showActionsDialog = true },
+            accentColor = series.coverActionColor()
+        )
+
+        // Issues & Specials Section (Placed above Rating Section)
+        if (chapterCards.isNotEmpty()) {
+            KavitaIssuesSection(
+                chapterCards = chapterCards,
+                session = session,
+                downloadedChapterIds = downloadedChapterIds,
+                downloadingChapterIds = downloadingChapterIds,
+                onPick = onPick,
+                onReadIncognito = onReadIncognito,
+                onMarkRead = onMarkRead,
+                onMarkUnread = onMarkUnread,
+                onDownload = onDownload,
+                onRemoveDownload = onRemoveDownload
             )
         }
-    }
 
-    val summaryBlock: @Composable () -> Unit = {
-        summary?.let { text ->
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = text,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = if (summaryExpanded) Int.MAX_VALUE else 8,
-                    overflow = TextOverflow.Ellipsis,
-                    onTextLayout = { layoutResult ->
-                        if (!summaryExpanded && layoutResult.hasVisualOverflow) {
-                            summaryCanExpand = true
-                        }
-                    }
-                )
-                if (summaryCanExpand || summaryExpanded) {
-                    TextButton(
-                        onClick = { summaryExpanded = !summaryExpanded },
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                        colors = ButtonDefaults.textButtonColors(contentColor = summaryActionColor)
-                    ) {
-                        Text(if (summaryExpanded) "Show less" else "Show more")
+        // Interactive 5-star Rating Row
+        BookRatingRow(
+            rating = userRating,
+            onRatingChange = { newRating ->
+                userRating = newRating
+                scope.launch {
+                    runCatching {
+                        api.updateRating(UpdateSeriesRatingDto(seriesId = series.id, userRating = newRating))
+                        onMessage(if (newRating > 0f) "Rating saved ($newRating ★)" else "Rating cleared")
+                    }.onFailure {
+                        BunkoLog.w("Could not update series rating", it)
+                        onMessage("Failed to save rating")
                     }
                 }
-            }
-        }
-    }
-
-    // Beside the cover the labels are redundant, so callers can hide them; stacked below
-    // (narrow layout) they keep their titles to match the Genres/Tags sections.
-    val creditsBlock: @Composable (showTitle: Boolean) -> Unit = { showTitle ->
-        DetailChipBlock(
-            title = "Credits",
-            showTitle = showTitle,
-            horizontalScroll = true,
-            chips = creditChips.map { (id, name) ->
-                name to { onOpenFilteredSeries(SearchSeriesTarget.Person, id, name) }
-            }
+            },
+            promptToRate = isSeriesFinished
         )
-    }
 
-    // Publisher and imprint share one "Publisher" row; each chip still filters its own field.
-    val publisherBlock: @Composable (showTitle: Boolean) -> Unit = { showTitle ->
-        DetailChipBlock(
-            title = "Publisher",
-            showTitle = showTitle,
-            horizontalScroll = true,
-            chips = publisherChips.map { (id, name) ->
-                name to { onOpenFilteredSeries(SearchSeriesTarget.Publisher, id, name) }
-            } + imprintChips.map { (id, name) ->
-                name to { onOpenFilteredSeries(SearchSeriesTarget.Imprint, id, name) }
-            }
-        )
-    }
-
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        // Phone width and up: lay the cover beside the info column (with the short
-        // Credits/Publisher blocks) instead of centering the cover with wasted space on
-        // either side. The summary stays full width below where it is readable. Only very
-        // narrow widths fall back to the stacked cover-on-top layout.
-        val heroSideBySide = maxWidth >= 340.dp
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            if (heroSideBySide) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    SeriesCover(series, session, Modifier.width(150.dp))
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SeriesDetailHeroInfo(
-                            series = series,
-                            metadata = metadata,
-                            issueCount = chapterCards.size,
-                            volumeCount = volumeCount,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        // Keep the credits/publisher rows spaced like the wrapped chips
-                        // within a single block (4dp) so they read as one chip list.
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            creditsBlock(false)
-                            publisherBlock(false)
-                        }
-                    }
-                }
-            } else {
-                SeriesDetailHero(
-                    series = series,
-                    metadata = metadata,
-                    issueCount = chapterCards.size,
-                    volumeCount = volumeCount,
-                    session = session
-                )
-            }
-
-            readButton()
-            summaryBlock()
-            if (!heroSideBySide) {
-                creditsBlock(true)
-                publisherBlock(true)
-            }
-
+        // Genres & Tags
+        if (genreChips.isNotEmpty() || tagChips.isNotEmpty()) {
             DetailChipBlock(
-                title = "Genres",
+                title = "Genres & Tags",
                 chips = genreChips.map { (id, title) ->
                     title to { onOpenFilteredSeries(SearchSeriesTarget.Genre, id, title) }
-                }
-            )
-            DetailChipBlock(
-                title = "Tags",
-                chips = tagChips.map { (id, title) ->
+                } + tagChips.map { (id, title) ->
                     title to { onOpenFilteredSeries(SearchSeriesTarget.Tag, id, title) }
                 }
             )
         }
+
+        // Reading Stats Card
+        val totalChapters = chapterCards.size
+        val readChapters = chapterCards.count { (it.chapter.pagesRead ?: 0) >= (it.chapter.pages ?: 1) && (it.chapter.pages ?: 0) > 0 }
+        val unreadChapters = (totalChapters - readChapters).coerceAtLeast(0)
+        KavitaReadingStatsCard(
+            totalChapters = totalChapters,
+            readChapters = readChapters,
+            unreadChapters = unreadChapters,
+            totalPages = series.pages,
+            readPages = series.pagesRead,
+            avgHoursToRead = series.avgHoursToRead
+        )
+
+        // Synopsis Section
+        if (summary != null) {
+            BookDetailSection(
+                icon = Icons.Outlined.Description,
+                title = "About this series"
+            ) {
+                ScrollableDescription(text = summary)
+            }
+        }
     }
+}
+
+@Composable
+private fun SeriesActionsDialog(
+    series: SeriesDto,
+    api: KavitaApi,
+    isAdmin: Boolean,
+    onEditCover: () -> Unit = {},
+    onDismiss: () -> Unit,
+    onMessage: (String) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var showingReadingLists by remember { mutableStateOf(false) }
+    var readingLists by remember { mutableStateOf<List<ReadingListDto>>(emptyList()) }
+    var createReadingListDialog by remember { mutableStateOf(false) }
+    var newReadingListTitle by remember { mutableStateOf("") }
+    var loadingReadingLists by remember { mutableStateOf(false) }
+
+    if (createReadingListDialog) {
+        AlertDialog(
+            onDismissRequest = { createReadingListDialog = false },
+            title = { Text("New Reading List") },
+            text = {
+                OutlinedTextField(
+                    value = newReadingListTitle,
+                    onValueChange = { newReadingListTitle = it },
+                    label = { Text("Title") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newReadingListTitle.trim().isNotBlank(),
+                    onClick = {
+                        val title = newReadingListTitle.trim()
+                        scope.launch {
+                            runCatching {
+                                val list = api.createReadingList(CreateReadingListDto(title))
+                                api.addSeriesToReadingList(
+                                    UpdateReadingListBySeriesDto(
+                                        seriesId = series.id,
+                                        readingListId = list.id
+                                    )
+                                )
+                                createReadingListDialog = false
+                                onDismiss()
+                                onMessage("Added to $title")
+                            }.onFailure {
+                                onMessage("Could not create reading list")
+                            }
+                        }
+                    }
+                ) {
+                    Text("Create & Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { createReadingListDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (showingReadingLists) "Add to Reading List" else "Series Actions")
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (showingReadingLists) {
+                    if (loadingReadingLists) {
+                        Text("Loading reading lists...", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        readingLists.forEach { list ->
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        runCatching {
+                                            api.addSeriesToReadingList(
+                                                UpdateReadingListBySeriesDto(
+                                                    seriesId = series.id,
+                                                    readingListId = list.id
+                                                )
+                                            )
+                                            onDismiss()
+                                            onMessage("Added to ${list.title ?: "reading list"}")
+                                        }.onFailure {
+                                            onMessage("Could not update reading list")
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = list.title ?: "Reading List ${list.id}",
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Start
+                                )
+                            }
+                        }
+                        TextButton(
+                            onClick = {
+                                newReadingListTitle = ""
+                                createReadingListDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "+ Create New Reading List",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    TextButton(
+                        onClick = {
+                            onDismiss()
+                            onEditCover()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Outlined.Edit, contentDescription = null)
+                            Text("Edit Series Cover")
+                        }
+                    }
+
+                    TextButton(
+                        onClick = {
+                            loadingReadingLists = true
+                            showingReadingLists = true
+                            scope.launch {
+                                runCatching {
+                                    readingLists = api.readingLists()
+                                }.onFailure {
+                                    onMessage("Could not load reading lists")
+                                }
+                                loadingReadingLists = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Outlined.PlaylistAdd, contentDescription = null)
+                            Text("Add to Reading List")
+                        }
+                    }
+
+                    if (isAdmin && (series.libraryId ?: 0) > 0) {
+                        val request = RefreshSeriesDto(
+                            libraryId = series.libraryId ?: 0,
+                            seriesId = series.id,
+                            forceUpdate = true
+                        )
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        api.refreshSeriesMetadata(request)
+                                        onDismiss()
+                                        onMessage("Refresh metadata requested")
+                                    }.onFailure {
+                                        onMessage("Could not refresh series metadata")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                                Text("Refresh Metadata")
+                            }
+                        }
+
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        api.scanSeries(request)
+                                        onDismiss()
+                                        onMessage("Scan series requested")
+                                    }.onFailure {
+                                        onMessage("Could not scan series")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Outlined.Folder, contentDescription = null)
+                                Text("Scan Series Files")
+                            }
+                        }
+
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        api.analyzeSeries(request)
+                                        onDismiss()
+                                        onMessage("Analyze series requested")
+                                    }.onFailure {
+                                        onMessage("Could not analyze series")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Outlined.Info, contentDescription = null)
+                                Text("Analyze Series")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (showingReadingLists) {
+                TextButton(onClick = { showingReadingLists = false }) {
+                    Text("Back")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
 
 /** Distinct credited people across every role, as (personId, name) pairs. */
@@ -719,7 +1234,12 @@ private fun SeriesDetailHero(
 }
 
 @Composable
-private fun SeriesCover(series: SeriesDto, session: KavitaSession, modifier: Modifier = Modifier) {
+private fun SeriesCover(
+    series: SeriesDto,
+    session: KavitaSession,
+    modifier: Modifier = Modifier,
+    coverKey: Long = 0L
+) {
     val context = LocalContext.current
     Box(
         modifier = modifier
@@ -729,9 +1249,11 @@ private fun SeriesCover(series: SeriesDto, session: KavitaSession, modifier: Mod
         contentAlignment = Alignment.Center
     ) {
         if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
-            val request = remember(context, session.baseUrl, session.apiKey, series.id) {
+            val url = seriesCoverUrl(session, series.id)
+            val fullUrl = if (coverKey > 0L) "$url&t=$coverKey" else url
+            val request = remember(context, fullUrl) {
                 ImageRequest.Builder(context)
-                    .data(seriesCoverUrl(session, series.id))
+                    .data(fullUrl)
                     .crossfade(180)
                     .build()
             }
@@ -793,6 +1315,110 @@ private fun SeriesDetailHeroInfo(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun KavitaIssuesSection(
+    chapterCards: List<ChapterCardItem>,
+    session: KavitaSession,
+    downloadedChapterIds: Set<Int>,
+    downloadingChapterIds: Set<Int>,
+    onPick: (chapterId: Int, volumeId: Int, initialPage: Int?) -> Unit,
+    onReadIncognito: ((ChapterCardItem) -> Unit)?,
+    onMarkRead: ((ChapterCardItem) -> Unit)?,
+    onMarkUnread: ((ChapterCardItem) -> Unit)?,
+    onDownload: ((ChapterCardItem) -> Unit)?,
+    onRemoveDownload: ((ChapterCardItem) -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    if (chapterCards.isEmpty()) return
+
+    val issueCards = remember(chapterCards) { chapterCards.filterNot { it.chapter.isSpecial }.distinctBy { it.chapter.id } }
+    val specialCards = remember(chapterCards) { chapterCards.filter { it.chapter.isSpecial }.distinctBy { it.chapter.id } }
+
+    var selectedTab by remember(issueCards.isEmpty(), specialCards.isEmpty()) {
+        mutableStateOf(if (issueCards.isNotEmpty()) 0 else 1)
+    }
+
+    val activeList = when {
+        selectedTab == 0 && issueCards.isNotEmpty() -> issueCards
+        selectedTab == 1 && specialCards.isNotEmpty() -> specialCards
+        issueCards.isNotEmpty() -> issueCards
+        else -> specialCards
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (issueCards.isNotEmpty() && specialCards.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    label = {
+                        Text(
+                            "Issues (${issueCards.size})",
+                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+                FilterChip(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    label = {
+                        Text(
+                            "Specials (${specialCards.size})",
+                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            }
+        } else {
+            val title = if (issueCards.isNotEmpty()) "Issues (${issueCards.size})" else "Specials (${specialCards.size})"
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
+        ) {
+            items(activeList.distinctBy { it.chapter.id }, key = { it.chapter.id }) { item ->
+                Box(modifier = Modifier.width(130.dp)) {
+                    ChapterGridCard(
+                        item = item,
+                        session = session,
+                        isDownloaded = item.chapter.id in downloadedChapterIds,
+                        isDownloading = item.chapter.id in downloadingChapterIds,
+                        onClick = { onPick(item.chapter.id, item.volume.id, null) },
+                        onReadIncognito = onReadIncognito?.let { { it(item) } },
+                        onMarkRead = onMarkRead?.let { { it(item) } },
+                        onMarkUnread = onMarkUnread?.let { { it(item) } },
+                        onDownload = onDownload?.let { { it(item) } },
+                        onRemoveDownload = onRemoveDownload?.let { { it(item) } }
+                    )
+                }
             }
         }
     }

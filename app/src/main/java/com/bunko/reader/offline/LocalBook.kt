@@ -91,7 +91,16 @@ data class LocalBook(
     val folderName: String = "",
     val isWebtoon: Boolean = false,
     val isExternalFile: Boolean = false,
-    val lastReadTime: Long = 0L
+    val lastReadTime: Long = 0L,
+    val author: String = "",
+    val description: String = "",
+    val tagsCsv: String = "",
+    val rating: Float = 0f,
+    val startedReadingAt: Long = 0L,
+    val finishedReadingAt: Long = 0L,
+    val totalReadingSeconds: Long = 0L,
+    val isReadNext: Boolean = false,
+    val isWantToRead: Boolean = false
 ) {
     val isWebtoonBook: Boolean
         get() = isWebtoon || com.bunko.reader.reader.internal.ReaderWebtoonDetector.isWebtoonMetadata(seriesName = title)
@@ -114,6 +123,35 @@ data class LocalBook(
             return (lastReadPage.toFloat() / (pageCount - 1).coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
         }
 
+    val readingPercent: Float
+        get() = progressFraction
+
     val hasCover: Boolean
         get() = coverPath.isNotBlank() && File(coverPath).let { it.isFile && it.length() > 0 }
+
+    fun readingState(): LocalBookReadingState = when {
+        isCompleted -> LocalBookReadingState.FINISHED
+        lastReadPage > 0 || lastReadTime > 0L -> LocalBookReadingState.READING
+        else -> LocalBookReadingState.NOT_STARTED
+    }
+
+    fun tags(): List<String> = if (tagsCsv.isBlank()) emptyList() else {
+        tagsCsv.split(',', ';').map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    fun seriesDisplay(): String = buildString {
+        if (seriesName.isNotBlank()) {
+            append(seriesName)
+            if (volumeOrIssue.isNotBlank()) {
+                append(" #").append(volumeOrIssue)
+            }
+        }
+    }
 }
+
+enum class LocalBookReadingState {
+    NOT_STARTED,
+    READING,
+    FINISHED
+}
+

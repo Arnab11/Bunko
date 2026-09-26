@@ -88,6 +88,7 @@ import com.bunko.reader.update.rememberUpdateController
 import com.bunko.reader.library.internal.HomeDestination
 import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.OfflineStartupScreen
+import com.bunko.reader.library.detail.LocalBookDetailScreen
 
 import android.content.Intent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -548,14 +549,30 @@ fun AppRoot(
                         nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}?fromTab=${tab.name}")
                     },
                     onOpenOfflineBook = { book ->
-                        val startPage = if (book.isCompleted) 0 else book.lastReadPage
-                        nav.navigate("local-reader/${book.id}?page=$startPage")
+                        nav.navigate("book-details/${Uri.encode(book.id)}")
                     },
                     onRequireLogin = {
                         nav.navigate("login")
                     },
                     onToggleTheme = onToggleTheme,
                     navigationBarStyle = appSettings.navigationBarStyle
+                )
+            }
+
+            composable(
+                route = "book-details/{bookId}",
+                arguments = listOf(
+                    navArgument("bookId") { type = NavType.StringType }
+                )
+            ) { backStack ->
+                val bookId = backStack.arguments!!.getString("bookId").orEmpty()
+                LocalBookDetailScreen(
+                    bookId = bookId,
+                    localRepository = localRepository,
+                    onBack = { nav.popBackStack() },
+                    onOpenReader = { _, startPage ->
+                        nav.navigate("local-reader/${Uri.encode(bookId)}?page=$startPage")
+                    }
                 )
             }
 

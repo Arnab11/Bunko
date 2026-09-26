@@ -303,3 +303,17 @@ data class BookmarkDto(
     val series: SeriesDto? = null,
     val chapterTitle: String? = null
 )
+
+@Serializable
+data class SeriesRatingDto(
+    val seriesId: Int? = null,
+    val userRating: Float = 0f,
+    val rating: Float = 0f
+)
+
+@Serializable
+data class UpdateSeriesRatingDto(
+    val seriesId: Int,
+    val userRating: Float,
+    val userReview: String? = null
+)
