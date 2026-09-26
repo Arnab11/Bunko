@@ -51,7 +51,8 @@ enum class PageLayoutMode {
 /** Colour of the margins around a page (and of the Play Curl fold shading). */
 enum class PageBackground {
     Paper,
-    Dark
+    Dark,
+    Mint
 }
 
 enum class EpubTextAlign {

@@ -70,19 +70,23 @@ internal fun ReaderEpubPageView(
     ttsHighlight: com.bunko.reader.tts.TtsHighlight? = null
 ) {
     val isDark = pageBackground.luminance() < 0.5f
-    val isSepia = !isDark && pageBackground != Color.White
+    val isMint = pageBackground == Color(0xFFE5F3EA)
+    val isSepia = !isDark && !isMint && pageBackground != Color.White
     val textColor = when {
         isDark -> Color(0xFFEDEDED)
+        isMint -> Color(0xFF14251D)
         isSepia -> Color(0xFF423224)
         else -> Color(0xFF141414)
     }
     val dividerColor = when {
         isDark -> Color(0xFF333333)
+        isMint -> Color(0xFFC7E3D1)
         isSepia -> Color(0xFFD6C8B4)
         else -> Color(0xFFDCD7CC)
     }
     val quoteBarColor = when {
         isDark -> Color(0xFF666666)
+        isMint -> Color(0xFF7CA68D)
         isSepia -> Color(0xFF8D7B68)
         else -> Color(0xFF9E988D)
     }

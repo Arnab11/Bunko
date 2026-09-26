@@ -314,12 +314,18 @@ internal const val SepiaPaperColorArgb: Int = 0xFFFBF0D9.toInt()
 internal val SepiaPaperColor = Color(0xFFFBF0D9)
 internal const val SepiaTextColorArgb: Int = 0xFF423224.toInt()
 internal val SepiaTextColor = Color(0xFF423224)
+internal const val MintPaperColorArgb: Int = 0xFFE5F3EA.toInt()
+internal val MintPaperColor = Color(0xFFE5F3EA)
+internal const val MintTextColorArgb: Int = 0xFF14251D.toInt()
+internal val MintTextColor = Color(0xFF14251D)
 
 internal fun readerPageBackgroundColor(
     darkPaper: Boolean,
     usePureColors: Boolean,
-    themePaperColor: Color? = null
+    themePaperColor: Color? = null,
+    isMint: Boolean = false
 ): Color = when {
+    isMint -> MintPaperColor
     darkPaper && usePureColors -> Color.Black
     darkPaper -> Color(0xFF101010)
     usePureColors -> Color.White
@@ -1728,9 +1734,11 @@ fun ReaderScreen(
     val spreadPages = spreadPagesFor(page, rtl)
 
     val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    val isMintPaper = settings.reader.pageBackground == PageBackground.Mint
     val darkPaper = invertMode != InvertMode.Off ||
         settings.reader.pageBackground == PageBackground.Dark
     val defaultReaderBg = when {
+        isMintPaper -> MintPaperColor
         darkPaper && settings.reader.usePurePageBackgroundColors -> Color.Black
         darkPaper -> Color(0xFF101010)
         settings.reader.usePurePageBackgroundColors -> Color.White
@@ -1838,7 +1846,8 @@ fun ReaderScreen(
         readerPageBackgroundColor(
             darkPaper = settings.reader.pageBackground == PageBackground.Dark,
             usePureColors = settings.reader.usePurePageBackgroundColors,
-            themePaperColor = null
+            themePaperColor = null,
+            isMint = isMintPaper
         )
     }
     val screenBgColor = if (isPdf) pdfPaperColor else defaultReaderBg
@@ -2223,7 +2232,8 @@ fun ReaderScreen(
         val curlBackPageColor = readerPageBackgroundColor(
             darkPaper = darkPaper,
             usePureColors = settings.reader.usePurePageBackgroundColors,
-            themePaperColor = null
+            themePaperColor = null,
+            isMint = isMintPaper
         )
         // Every rendering branch letterboxes with the selected paper colour.
         // For PDF this is the lighting-aware pdfPaperColor above (Dark/White/

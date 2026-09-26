@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.size
@@ -1307,14 +1308,16 @@ fun ReaderSettingsScreen(
                         val swatches = listOf(
                             Triple("White", Color.White, Color(0xFF141414)),
                             Triple("Sepia", Color(0xFFFBF0D9), Color(0xFF423224)),
+                            Triple("Mint", Color(0xFFE5F3EA), Color(0xFF14251D)),
                             Triple("Dark", Color(0xFF181818), Color(0xFFE6E6E6)),
                             Triple("Black", Color.Black, Color.White)
                         )
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             swatches.forEach { (name, bg, fg) ->
                                 val isSelected = when (name) {
@@ -1322,6 +1325,7 @@ fun ReaderSettingsScreen(
                                         settings.reader.usePurePageBackgroundColors
                                     "Sepia", "Theme", "Paper" -> settings.reader.pageBackground == PageBackground.Paper &&
                                         !settings.reader.usePurePageBackgroundColors
+                                    "Mint" -> settings.reader.pageBackground == PageBackground.Mint
                                     "Dark" -> settings.reader.pageBackground == PageBackground.Dark &&
                                         !settings.reader.usePurePageBackgroundColors
                                     "Black" -> settings.reader.pageBackground == PageBackground.Dark &&
@@ -1340,6 +1344,10 @@ fun ReaderSettingsScreen(
                                                 }
                                                 "Sepia", "Theme", "Paper" -> {
                                                     settingsStore.setPageBackground(PageBackground.Paper)
+                                                    settingsStore.setUsePurePageBackgroundColors(false)
+                                                }
+                                                "Mint" -> {
+                                                    settingsStore.setPageBackground(PageBackground.Mint)
                                                     settingsStore.setUsePurePageBackgroundColors(false)
                                                 }
                                                 "Dark" -> {

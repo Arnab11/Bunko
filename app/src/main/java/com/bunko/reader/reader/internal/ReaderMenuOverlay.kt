@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -1186,17 +1187,21 @@ internal fun ReaderMenuOverlay(
                                     val themes = listOf(
                                         Triple("White", Color.White, Color(0xFF141414)),
                                         Triple("Sepia", Color(0xFFFBF0D9), Color(0xFF423224)),
+                                        Triple("Mint", Color(0xFFE5F3EA), Color(0xFF14251D)),
                                         Triple("Dark", Color(0xFF181818), Color(0xFFE6E6E6)),
                                         Triple("Black", Color.Black, Color.White)
                                     )
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                                     ) {
                                         themes.forEach { (name, bg, fg) ->
                                             val isSelected = when (name) {
                                                 "White" -> pageBackground == PageBackground.Paper && usePureColors
                                                 "Sepia", "Theme", "Paper" -> pageBackground == PageBackground.Paper && !usePureColors
+                                                "Mint" -> pageBackground == PageBackground.Mint
                                                 "Dark" -> pageBackground == PageBackground.Dark && !usePureColors
                                                 "Black" -> pageBackground == PageBackground.Dark && usePureColors
                                                 else -> false
@@ -1212,6 +1217,10 @@ internal fun ReaderMenuOverlay(
                                                         }
                                                         "Sepia", "Theme", "Paper" -> {
                                                             onSetPageBackground(PageBackground.Paper)
+                                                            onSetUsePureColors(false)
+                                                        }
+                                                        "Mint" -> {
+                                                            onSetPageBackground(PageBackground.Mint)
                                                             onSetUsePureColors(false)
                                                         }
                                                         "Dark" -> {
