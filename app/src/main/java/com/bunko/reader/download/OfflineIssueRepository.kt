@@ -74,7 +74,9 @@ data class OfflineIssueRecord(
     val progressPending: Boolean = false,
     val markReadPending: Boolean = false,
     val markUnreadPending: Boolean = false,
-    val coverPath: String = ""
+    val coverPath: String = "",
+    // Exact EPUB resume anchor (Bunko bookScrollId format). Empty when unknown.
+    val scrollId: String = ""
 ) {
     val progressFraction: Float?
         get() = totalBytes.takeIf { it > 0 }?.let {
@@ -340,7 +342,8 @@ class OfflineIssueRepository(context: Context) {
         session: KavitaSession,
         chapterId: Int,
         page: Int,
-        markRead: Boolean = false
+        markRead: Boolean = false,
+        scrollId: String = ""
     ) {
         val key = sessionKey(session)
         mutateRecord(key, chapterId) { record ->
@@ -348,7 +351,8 @@ class OfflineIssueRepository(context: Context) {
                 localPage = page.coerceAtLeast(0),
                 progressPending = true,
                 markReadPending = record.markReadPending || markRead,
-                markUnreadPending = if (markRead) false else record.markUnreadPending
+                markUnreadPending = if (markRead) false else record.markUnreadPending,
+                scrollId = if (scrollId.isNotBlank()) scrollId else record.scrollId
             )
         }
     }
@@ -360,7 +364,8 @@ class OfflineIssueRepository(context: Context) {
                 localPage = 0,
                 progressPending = true,
                 markReadPending = false,
-                markUnreadPending = true
+                markUnreadPending = true,
+                scrollId = ""
             )
         }
     }
@@ -406,7 +411,8 @@ class OfflineIssueRepository(context: Context) {
                         seriesId = record.seriesId,
                         volumeId = record.volumeId,
                         chapterId = record.chapterId,
-                        pageNum = record.localPage
+                        pageNum = record.localPage,
+                        bookScrollId = record.scrollId.takeIf { it.isNotBlank() }
                     )
                 )
             }.onFailure {

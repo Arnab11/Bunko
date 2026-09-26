@@ -204,8 +204,100 @@ private data class ReaderRemoteProgressTarget(
     val pageCount: Int,
     val offline: Boolean,
     val revision: Long,
-    val revisionClock: AtomicLong
+    val revisionClock: AtomicLong,
+    // Exact EPUB resume anchor (Kavita bookScrollId). Null for non-EPUB.
+    val scrollId: String? = null
 )
+
+// Exact EPUB resume anchor persisted through Kavita's bookScrollId (and the
+// offline record). Bunko's paginated subpage numbers depend on font/viewport,
+// so a raw subpage index can't round-trip exactly; the spine index alone only
+// restores approximately (e.g. p.313 reopening at p.321). The anchor carries
+// the spine, the position inside the spine and a text snippet so reopening
+// lands on the exact subpage when pagination is stable, and degrades to a
+// ratio mapping when fonts/layout changed.
+private data class ReaderEpubScrollAnchor(
+    val spine: Int,
+    val subInSpine: Int,
+    val totalInSpine: Int,
+    val ratioInSpine: Float,
+    val overallRatio: Float,
+    val snippet: String
+)
+
+private const val ReaderEpubScrollPrefix = "bunko1"
+
+private fun buildReaderEpubScrollAnchor(
+    subpage: EpubSubpage,
+    overallRatio: Float
+): String {
+    val snippet = subpage.blocks.firstNotNullOfOrNull { block ->
+        when (block) {
+            is com.bunko.reader.reader.internal.EpubBlock.TextBlock ->
+                block.text.text.trim().replace(Regex("\\s+"), " ").take(60).takeIf { it.isNotBlank() }
+            is com.bunko.reader.reader.internal.EpubBlock.ImageBlock ->
+                "[img]${block.url.takeLast(40)}"
+            else -> null
+        }
+    }.orEmpty().replace("|", "/").replace("\n", " ")
+    val ratio = subpage.progressRatio.coerceIn(0f, 1f).let { "%.4f".format(it) }
+    val overall = overallRatio.coerceIn(0f, 1f).let { "%.4f".format(it) }
+    return "$ReaderEpubScrollPrefix|spine=${subpage.spineIndex}|sub=${subpage.subpageIndex}|n=${subpage.totalSubpagesInSpine}|r=$ratio|g=$overall|snip=$snippet"
+}
+
+private fun parseReaderEpubScrollAnchor(raw: String?): ReaderEpubScrollAnchor? {
+    if (raw.isNullOrBlank() || !raw.startsWith("$ReaderEpubScrollPrefix|")) return null
+    return try {
+        val parts = raw.split("|").drop(1).associate { part ->
+            val idx = part.indexOf('=')
+            if (idx <= 0) "" to "" else part.substring(0, idx) to part.substring(idx + 1)
+        }
+        ReaderEpubScrollAnchor(
+            spine = parts["spine"]?.toIntOrNull() ?: return null,
+            subInSpine = parts["sub"]?.toIntOrNull() ?: 0,
+            totalInSpine = parts["n"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+            ratioInSpine = parts["r"]?.toFloatOrNull()?.coerceIn(0f, 1f) ?: 0f,
+            overallRatio = parts["g"]?.toFloatOrNull()?.coerceIn(0f, 1f) ?: 0f,
+            snippet = parts["snip"].orEmpty()
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+private fun resolveReaderEpubScrollTarget(
+    anchor: ReaderEpubScrollAnchor,
+    allSubpages: List<EpubSubpage>
+): Int? {
+    if (allSubpages.isEmpty()) return null
+    val total = allSubpages.size
+    val inSpine = allSubpages.mapIndexedNotNull { idx, sub ->
+        if (sub.spineIndex == anchor.spine) idx to sub else null
+    }
+    if (inSpine.isEmpty()) {
+        // Unknown spine (book updated?) — fall back to the overall ratio.
+        return (anchor.overallRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+    }
+    if (anchor.snippet.isNotBlank() && anchor.snippet != "[img]") {
+        val needle = anchor.snippet.take(24)
+        inSpine.firstOrNull { (_, sub) ->
+            sub.blocks.any { block ->
+                block is com.bunko.reader.reader.internal.EpubBlock.TextBlock &&
+                    block.text.text.contains(needle)
+            }
+        }?.let { return it.first }
+    }
+    // Position inside the spine by ratio, clamped to the spine's subpages.
+    val spineSize = inSpine.size
+    val byRatio = (anchor.ratioInSpine * (spineSize - 1)).roundToInt().coerceIn(0, spineSize - 1)
+    // Prefer the saved sub index when the spine paginated identically.
+    val byIndex = if (spineSize == anchor.totalInSpine) {
+        anchor.subInSpine.coerceIn(0, spineSize - 1)
+    } else {
+        byRatio
+    }
+    return inSpine[byIndex].first
+}
 
 private data class PendingReaderRemoteProgress(
     val target: ReaderRemoteProgressTarget,
@@ -344,6 +436,10 @@ fun ReaderScreen(
     var pendingRemoteProgress by remember { mutableStateOf<PendingReaderRemoteProgress?>(null) }
     val lastRemoteProgressPages = remember { ConcurrentHashMap<Int, Int>() }
     val progressRevisionClocks = remember { mutableMapOf<Int, AtomicLong>() }
+    // Exact EPUB resume anchor (from Kavita bookScrollId or the offline record),
+    // consumed by the pagination effect once subpages are computed.
+    var pendingEpubScrollRestore by remember { mutableStateOf<ReaderEpubScrollAnchor?>(null) }
+    val lastRemoteScrollIds = remember { ConcurrentHashMap<Int, String>() }
 
     var isEpub by remember { mutableStateOf(false) }
     var isPdf by remember { mutableStateOf(false) }
@@ -406,9 +502,12 @@ fun ReaderScreen(
             ttsManager.shutdown()
             activeLoader?.shutdown()
             com.bunko.reader.engine.pdf.PdfDocumentEngine.closeActiveSession()
-            if (localBookId != null && localRepository != null && pages > 0) {
-                ReaderExitWriteScope.launch {
-                    localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
+            if (localBookId != null && localRepository != null && pages > 0 && page in 0 until pages) {
+                val canSaveLocal = !isEpub || epubSubpages.isNotEmpty() || epubSpineBlocks.isEmpty()
+                if (canSaveLocal) {
+                    ReaderExitWriteScope.launch {
+                        localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
+                    }
                 }
             }
         }
@@ -430,43 +529,22 @@ fun ReaderScreen(
         }
     }
 
-    val handleBack = {
-        stopTts()
-        val activity = ctx.findActivity()
-        if (activity != null) {
-            val lp = activity.window.attributes
-            if (lp.screenBrightness != WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) {
-                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                activity.window.attributes = lp
-            }
-            WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
-                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
-                show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-        if (localBookId != null && localRepository != null && pages > 0) {
-            ReaderExitWriteScope.launch {
-                localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
-            }
-        }
-        onBack()
+    fun epubSpineForSubpage(subpage: Int): Int {
+        return epubSubpages.getOrNull(subpage)?.spineIndex ?: subpage
     }
-
-    BackHandler {
-        if (showReaderMenu) {
-            showReaderMenu = false
-        } else {
-            handleBack()
-        }
+    fun epubScrollForSubpage(subpage: Int): String? {
+        val sub = epubSubpages.getOrNull(subpage) ?: return null
+        val overall = if (pages > 1) subpage.toFloat() / (pages - 1).toFloat() else 0f
+        return buildReaderEpubScrollAnchor(sub, overall)
     }
-
     fun clampPage(value: Int): Int = value.coerceIn(0, (pages - 1).coerceAtLeast(0))
     fun newRemoteProgressTarget(
         targetChapterId: Int,
         targetVolumeId: Int,
         targetPage: Int,
         targetPageCount: Int,
-        offline: Boolean
+        offline: Boolean,
+        scrollId: String? = null
     ): ReaderRemoteProgressTarget {
         val revisionClock = progressRevisionClocks.getOrPut(targetChapterId) { AtomicLong(0L) }
         return ReaderRemoteProgressTarget(
@@ -476,7 +554,8 @@ fun ReaderScreen(
             pageCount = targetPageCount,
             offline = offline,
             revision = revisionClock.incrementAndGet(),
-            revisionClock = revisionClock
+            revisionClock = revisionClock,
+            scrollId = scrollId
         )
     }
     suspend fun saveRemoteProgress(
@@ -487,7 +566,9 @@ fun ReaderScreen(
     ): Boolean {
         if (incognito) return false
         if (target.pageCount <= 0 || target.page !in 0 until target.pageCount) return false
-        if (lastRemoteProgressPages[target.chapterId] == target.page) {
+        if (lastRemoteProgressPages[target.chapterId] == target.page &&
+            (target.scrollId == null || lastRemoteScrollIds[target.chapterId] == target.scrollId)
+        ) {
             if (clearPending && pendingRemoteProgress?.target == target) {
                 pendingRemoteProgress = null
             }
@@ -503,10 +584,14 @@ fun ReaderScreen(
                         seriesId = seriesId,
                         volumeId = target.volumeId,
                         chapterId = target.chapterId,
-                        pageNum = target.page
+                        pageNum = target.page,
+                        bookScrollId = target.scrollId
                     )
                 )
                 lastRemoteProgressPages[target.chapterId] = target.page
+                if (target.scrollId != null) {
+                    lastRemoteScrollIds[target.chapterId] = target.scrollId
+                }
                 if (clearPending && pendingRemoteProgress?.target == target) {
                     pendingRemoteProgress = null
                 }
@@ -529,6 +614,64 @@ fun ReaderScreen(
             }
         }
     }
+    suspend fun flushPendingRemoteProgressNow() {
+        val pending = pendingRemoteProgress ?: return
+        // Flush immediately on exit/back/stop — don't require the 3s debounce age.
+        // Otherwise leaving the reader quickly silently drops progress.
+        saveRemoteProgress(pending.target)
+    }
+
+    val handleBack = {
+        stopTts()
+        val activity = ctx.findActivity()
+        if (activity != null) {
+            val lp = activity.window.attributes
+            if (lp.screenBrightness != WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) {
+                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                activity.window.attributes = lp
+            }
+            WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        if (localBookId != null && localRepository != null && pages > 0) {
+            // Don't persist a pre-pagination EPUB position (pages == spine count with
+            // no subpages yet) — it would corrupt the saved ratio.
+            val canSaveLocal = !isEpub || epubSubpages.isNotEmpty() || epubSpineBlocks.isEmpty()
+            if (canSaveLocal && page in 0 until pages) {
+                ReaderExitWriteScope.launch {
+                    localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
+                }
+            }
+        } else if (localBookId == null && pendingRemoteProgress != null && !incognito) {
+            val pending = pendingRemoteProgress
+            val loadedApi = api
+            val loadedSession = session
+            if (pending != null && loadedApi != null) {
+                ReaderExitWriteScope.launch {
+                    saveRemoteProgress(
+                        target = pending.target,
+                        targetApi = loadedApi,
+                        targetSession = loadedSession
+                    )
+                }
+            } else if (pending != null && offlineChapter != null) {
+                // Offline-only: local progress was already saved synchronously on
+                // every page turn; syncPending on next launch will push it.
+            }
+        }
+        onBack()
+    }
+
+    BackHandler {
+        if (showReaderMenu) {
+            showReaderMenu = false
+        } else {
+            handleBack()
+        }
+    }
+
     fun completeChapter(exitAfter: Boolean = true) {
         if (completingRead || pages <= 0) return
         completingRead = true
@@ -536,12 +679,26 @@ fun ReaderScreen(
         val completedChapterId = currentChapterId
         val completedVolumeId = currentVolumeId
         val finalPage = pages - 1
+        // For EPUB the server tracks spine index, not paginated subpage index.
+        val remoteFinalPage = if (isEpub && epubSpineBlocks.isNotEmpty()) {
+            if (epubSubpages.isNotEmpty()) epubSpineForSubpage(finalPage.coerceIn(0, (pages - 1).coerceAtLeast(0)))
+            else (epubSpineBlocks.size - 1).coerceAtLeast(0)
+        } else {
+            finalPage
+        }
+        val remoteFinalCount = if (isEpub && epubSpineBlocks.isNotEmpty()) epubSpineBlocks.size else pages
+        val remoteFinalScroll = if (isEpub && epubSubpages.isNotEmpty()) {
+            epubScrollForSubpage(finalPage.coerceIn(0, (pages - 1).coerceAtLeast(0)))
+        } else {
+            null
+        }
         val progressTarget = newRemoteProgressTarget(
             targetChapterId = completedChapterId,
             targetVolumeId = completedVolumeId,
-            targetPage = finalPage,
-            targetPageCount = pages,
-            offline = offlineChapter != null
+            targetPage = remoteFinalPage,
+            targetPageCount = remoteFinalCount,
+            offline = offlineChapter != null,
+            scrollId = remoteFinalScroll
         )
         pendingRemoteProgress = null
         if (localBookId != null && localRepository != null) {
@@ -560,8 +717,9 @@ fun ReaderScreen(
                     offlineRepository.saveLocalProgress(
                         session = loadedSession,
                         chapterId = completedChapterId,
-                        page = finalPage,
-                        markRead = true
+                        page = remoteFinalPage,
+                        markRead = true,
+                        scrollId = remoteFinalScroll.orEmpty()
                     )
                 }
                 val progressSaved = loadedApi != null && saveRemoteProgress(
@@ -585,7 +743,7 @@ fun ReaderScreen(
                     offlineRepository.markProgressSynced(
                         session = loadedSession,
                         chapterId = completedChapterId,
-                        expectedPage = finalPage,
+                        expectedPage = remoteFinalPage,
                         markedRead = readMarked
                     )
                 }
@@ -804,6 +962,8 @@ fun ReaderScreen(
                     epubSubpages = emptyList()
                 }
 
+                // Flush any unsynced progress for the outgoing chapter before dropping it.
+                runCatching { pendingRemoteProgress?.let { flushPendingRemoteProgressNow() } }
                 pendingRemoteProgress = null
                 readerReady = false
                 activeTransition = null
@@ -1023,7 +1183,22 @@ fun ReaderScreen(
                             return@LaunchedEffect
                         }
                         epubSpineBlocks = spineBlocks
-                        pages = spineBlocks.size
+                        // For reflow EPUB the paginated subpage total is only known after
+                        // pagination (see pagination LaunchedEffect). Until then keep the
+                        // previously saved total so the resume ratio stays intact.
+                        // Using spineBlocks.size here would clamp a saved subpage index
+                        // (e.g. 6/100 = 6%) into spine range (e.g. 0..7) and remap it to
+                        // ~85-100% on reopen.
+                        val spineCount = spineBlocks.size
+                        pages = if (book.pageCount > spineCount) {
+                            book.pageCount
+                        } else if (book.pageCount > 0) {
+                            // Previously corrupted saves stored spineCount as pageCount.
+                            // Keep the larger of the two so we never shrink below spine count.
+                            maxOf(book.pageCount, spineCount)
+                        } else {
+                            spineCount
+                        }
 
                         val tocChapters = if (document.tableOfContents.isNotEmpty()) {
                             document.tableOfContents.map { toc ->
@@ -1125,9 +1300,24 @@ fun ReaderScreen(
             } else {
                 page
             }
-            page = resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
+            // Same EPUB out-of-range preservation as the online path: a stale
+            // subpage index must not be clamped into spine range.
+            page = if (isLocalEpub && pages > 0 && resumePage >= pages) {
+                resumePage.coerceAtLeast(0).also { pages = resumePage + 1 }
+            } else {
+                resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
+            }
             if (!local.record.progressPending) {
                 lastRemoteProgressPages[currentChapterId] = page
+            }
+            if (isLocalEpub) {
+                pendingEpubScrollRestore = parseReaderEpubScrollAnchor(local.record.scrollId)
+                // Seed the sent-scroll cache only when there is nothing pending:
+                // otherwise the save effect would wrongly skip uploading the
+                // exact anchor the server hasn't seen yet.
+                if (!local.record.progressPending) {
+                    pendingEpubScrollRestore?.let { lastRemoteScrollIds[currentChapterId] = local.record.scrollId }
+                }
             }
             if (isLocalEpub && archiveFile.isFile) {
                 val parsed = runCatching {
@@ -1274,14 +1464,30 @@ fun ReaderScreen(
                 val pageCount = info.pages ?: 0
                 pages = pageCount
                 pageDimensions = info.pageDimensions.toPageDimensionMap()
-                val savedPage = loadedApi.getProgress(currentChapterId).pageNum
+                val savedProgress = loadedApi.getProgress(currentChapterId)
+                val savedPage = savedProgress.pageNum
+                if (isEpubChapter) {
+                    pendingEpubScrollRestore = parseReaderEpubScrollAnchor(savedProgress.bookScrollId)
+                    pendingEpubScrollRestore?.let { lastRemoteScrollIds[currentChapterId] = savedProgress.bookScrollId.orEmpty() }
+                }
                 val resumePage = if (!hasAppliedInitialPage) {
                     hasAppliedInitialPage = true
                     initialPage ?: savedPage
                 } else {
                     page
                 }
-                page = if (pages > 0) resumePage.coerceIn(0, pages - 1) else 0
+                // For EPUB, pageCount here is the spine count while `page` becomes a
+                // paginated subpage index after pagination. Previously-saved buggy
+                // values may hold a subpage index (>= spine count). Don't clamp those
+                // away — keep them so the pagination effect can map them directly
+                // into the new subpage total instead of jumping to 99%.
+                page = if (isEpubChapter && pages > 0 && resumePage >= pages) {
+                    resumePage.coerceAtLeast(0).also { pages = resumePage + 1 }
+                } else if (pages > 0) {
+                    resumePage.coerceIn(0, pages - 1)
+                } else {
+                    0
+                }
                 lastRemoteProgressPages[currentChapterId] = page
 
                 if (isEpubChapter) {
@@ -1295,7 +1501,7 @@ fun ReaderScreen(
                     )
                 }
             } else if (!local.record.progressPending) {
-                val savedPage = runCatching { loadedApi.getProgress(currentChapterId).pageNum }
+                val savedProgress = runCatching { loadedApi.getProgress(currentChapterId) }
                     .onFailure {
                         BunkoLog.w(
                             "Could not load remote reader progress for chapter $currentChapterId.",
@@ -1303,17 +1509,28 @@ fun ReaderScreen(
                         )
                     }
                     .getOrNull()
-                val targetPage = savedPage ?: local.record.localPage
+                if (isEpubChapter || isEpub) {
+                    val remoteScroll = parseReaderEpubScrollAnchor(savedProgress?.bookScrollId)
+                    pendingEpubScrollRestore = remoteScroll ?: parseReaderEpubScrollAnchor(local.record.scrollId)
+                    (savedProgress?.bookScrollId?.takeIf { remoteScroll != null }
+                        ?: local.record.scrollId.takeIf { it.isNotBlank() })?.let {
+                        lastRemoteScrollIds[currentChapterId] = it
+                    }
+                }
+                val targetPage = savedProgress?.pageNum ?: local.record.localPage
                 val resumePage = if (!hasAppliedInitialPage) {
                     hasAppliedInitialPage = true
                     initialPage ?: targetPage
                 } else {
                     page
                 }
-                page = resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
+                page = if ((isEpubChapter || isEpub) && pages > 0 && resumePage >= pages) {
+                    resumePage.coerceAtLeast(0).also { pages = resumePage + 1 }
+                } else {
+                    resumePage.coerceIn(0, (pages - 1).coerceAtLeast(0))
+                }
                 lastRemoteProgressPages[currentChapterId] = page
             }
-            chapterMetadataJob.join()
             val effectiveDirection = if (isEpubChapter) {
                 ReaderReadingDirection.LeftToRight
             } else if (hasExplicitProfile) {
@@ -1382,18 +1599,29 @@ fun ReaderScreen(
         page,
         incognito,
         session,
-        offlineChapter
+        offlineChapter,
+        isEpub,
+        epubSubpages
     ) {
         if (!readerReady) return@LaunchedEffect
         if (incognito) return@LaunchedEffect
         if (pages <= 0 || page !in 0 until pages) return@LaunchedEffect
+        // Don't persist EPUB positions before pagination produces subpages —
+        // pages is still the spine count / stale total and would corrupt the ratio.
+        if (isEpub && epubSpineBlocks.isNotEmpty() && epubSubpages.isEmpty()) return@LaunchedEffect
         if (localBookId != null && localRepository != null) {
             localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
             return@LaunchedEffect
         }
         val loadedSession = session ?: return@LaunchedEffect
         if (offlineChapter != null) {
-            offlineRepository.saveLocalProgress(loadedSession, currentChapterId, page)
+            val offlinePage = if (isEpub && epubSubpages.isNotEmpty()) epubSpineForSubpage(page) else page
+            val scrollId = if (isEpub && epubSubpages.isNotEmpty()) {
+                epubScrollForSubpage(page).orEmpty()
+            } else {
+                ""
+            }
+            offlineRepository.saveLocalProgress(loadedSession, currentChapterId, offlinePage, scrollId = scrollId)
         }
     }
 
@@ -1405,20 +1633,34 @@ fun ReaderScreen(
         pages,
         page,
         incognito,
-        chapterSwitching
+        chapterSwitching,
+        isEpub,
+        epubSubpages
     ) {
         if (!readerReady) return@LaunchedEffect
         if (incognito) return@LaunchedEffect
         if (chapterSwitching) return@LaunchedEffect
         if (pages <= 0 || page !in 0 until pages) return@LaunchedEffect
+        // Same EPUB pre-pagination guard as above.
+        if (isEpub && epubSpineBlocks.isNotEmpty() && epubSubpages.isEmpty()) return@LaunchedEffect
         if (api == null) return@LaunchedEffect
-        if (lastRemoteProgressPages[currentChapterId] == page) return@LaunchedEffect
+        // For EPUB the server tracks spine index, not paginated subpage index.
+        // The exact subpage rides along in bookScrollId so reopening lands on
+        // the exact page instead of a spine-ratio approximation.
+        val savePage = if (isEpub && epubSubpages.isNotEmpty()) epubSpineForSubpage(page) else page
+        val saveCount = if (isEpub && epubSpineBlocks.isNotEmpty()) epubSpineBlocks.size else pages
+        if (saveCount <= 0 || savePage !in 0 until saveCount) return@LaunchedEffect
+        val saveScroll = if (isEpub && epubSubpages.isNotEmpty()) epubScrollForSubpage(page) else null
+        if (lastRemoteProgressPages[currentChapterId] == savePage &&
+            (saveScroll == null || lastRemoteScrollIds[currentChapterId] == saveScroll)
+        ) return@LaunchedEffect
         val target = newRemoteProgressTarget(
             targetChapterId = currentChapterId,
             targetVolumeId = currentVolumeId,
-            targetPage = page,
-            targetPageCount = pages,
-            offline = offlineChapter != null
+            targetPage = savePage,
+            targetPageCount = saveCount,
+            offline = offlineChapter != null,
+            scrollId = saveScroll
         )
         pendingRemoteProgress = PendingReaderRemoteProgress(
             target = target,
@@ -1429,13 +1671,9 @@ fun ReaderScreen(
     }
 
     val latestFlushProgress by rememberUpdatedState<suspend () -> Unit>({
-        val pending = pendingRemoteProgress
-        if (pending != null) {
-            val pendingAge = SystemClock.elapsedRealtime() - pending.sinceMillis
-            if (pendingAge >= ReaderProgressSyncDelayMillis) {
-                saveRemoteProgress(pending.target)
-            }
-        }
+        // Always flush on stop/dispose, regardless of debounce age — otherwise
+        // progress is lost when the user leaves within 3s of the last page turn.
+        flushPendingRemoteProgressNow()
     })
 
     DisposableEffect(lifecycleOwner) {
@@ -1730,6 +1968,26 @@ fun ReaderScreen(
                 epubSubpages = allSubpages
                 pages = total
 
+                // Exact resume via the saved scroll anchor (Kavita bookScrollId /
+                // offline record). Takes precedence over the spine-ratio estimate
+                // so reopening lands on the exact subpage (p.313 -> p.313).
+                val pendingRestore = pendingEpubScrollRestore
+                if (pendingRestore != null) {
+                    pendingEpubScrollRestore = null
+                    val exact = resolveReaderEpubScrollTarget(pendingRestore, allSubpages)
+                    if (exact != null) {
+                        var resolved = exact.coerceIn(0, total - 1)
+                        if (!portrait && resolved % 2 != 0 && resolved > 0) {
+                            resolved -= 1
+                        }
+                        page = resolved
+                        lastRemoteProgressPages[currentChapterId] = resolved
+                        readerReady = true
+                        return@LaunchedEffect
+                    }
+                    // Anchor unresolvable (book changed?) — fall through to estimates.
+                }
+
                 val targetPage = if (anchorSpineIndex != null) {
                     val spineSubpagesWithIndex = allSubpages.mapIndexed { idx, subpage -> idx to subpage }
                         .filter { it.second.spineIndex == anchorSpineIndex }
@@ -1757,7 +2015,13 @@ fun ReaderScreen(
                         (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
                     }
                 } else {
-                    if (oldProgressRatio == 0f && page > 0 && page < epubSpineBlocks.size) {
+                    if (page >= epubSpineBlocks.size) {
+                        // `page` holds a stale paginated subpage index (e.g. from a
+                        // previous buggy save or a local book resume) rather than a
+                        // spine index. Map it directly into the new total instead of
+                        // treating it as a ratio against spine count (which jumps to 99%).
+                        page.coerceIn(0, total - 1)
+                    } else if (oldProgressRatio == 0f && page > 0 && page < epubSpineBlocks.size) {
                         allSubpages.indexOfFirst { it.spineIndex == page }.takeIf { it >= 0 }
                             ?: (oldProgressRatio * (total - 1)).roundToInt().coerceIn(0, total - 1)
                     } else {
@@ -1918,9 +2182,17 @@ fun ReaderScreen(
             currentChapterId,
             readingDirection,
             verticalRestoreNonce,
-            pages
+            pages,
+            // EPUB subpages arrive asynchronously via pagination (pages may stay
+            // identical while subpages go 0 -> total). Without these keys the list
+            // keeps the scroll position computed against blank items and the first
+            // paint stays empty until the user touches to scroll.
+            page,
+            epubSubpages.size
         ) {
             if (vertical && pages > 0) {
+                // Don't scroll while EPUB content isn't paginated yet.
+                if (isEpub && epubSpineBlocks.isNotEmpty() && epubSubpages.isEmpty()) return@LaunchedEffect
                 verticalBoundariesEnabled = false
                 verticalListState.scrollToItem((page + 1).coerceIn(1, pages))
                 withFrameNanos { }
