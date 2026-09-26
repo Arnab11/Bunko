@@ -3361,6 +3361,7 @@ fun ReaderScreen(
                         epubContentPadding = portraitPadding,
                         density = density,
                         isEpub = isEpub,
+                        epubSubpages = epubSubpages,
                         host = playCurlHost,
                         onPageTurned = ::onPlayCurlSettled,
                         modifier = Modifier.fillMaxSize()

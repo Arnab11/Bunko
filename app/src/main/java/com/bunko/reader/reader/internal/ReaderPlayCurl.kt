@@ -242,7 +242,8 @@ internal fun PlayCurlPage(
     epubTextAlign: EpubTextAlign = EpubTextAlign.Left,
     epubContentPadding: PaddingValues? = null,
     density: Density? = null,
-    isEpub: Boolean = false
+    isEpub: Boolean = false,
+    epubSubpages: List<EpubSubpage> = emptyList()
 ) {
     val scope = rememberCoroutineScope()
     val appContext = LocalContext.current.applicationContext
@@ -338,10 +339,15 @@ internal fun PlayCurlPage(
         invertMode, whiteThreshold, ePaperMode, imageScaleType, cropBorders,
         nightModeEnabled, nightLightIntensity, pageDimensions,
         epubFontSizeSp, epubFontFamily, epubTextAlign, epubContentPadding,
-        capabilitiesAvailable, isEpub
+        capabilitiesAvailable, isEpub,
+        epubSubpages.size
     ) {
         val surface = host.view ?: return@LaunchedEffect
         if (pageCount <= 0) return@LaunchedEffect
+        if (isEpub && epubSubpages.isEmpty()) {
+            host.ready = false
+            return@LaunchedEffect
+        }
         if (!capabilitiesAvailable) {
             host.ready = false
             return@LaunchedEffect
