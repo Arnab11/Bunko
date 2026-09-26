@@ -62,6 +62,8 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.ui.res.painterResource
+import com.bunko.reader.R
 import androidx.compose.material3.VerticalDivider
 import com.bunko.reader.library.detail.LocalBookDetailContent
 import com.bunko.reader.offline.LocalBook
@@ -871,10 +873,25 @@ internal fun HomeTopBar(
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
+                                if (isOffline) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Folder,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_kavita_logo),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 Text(
-                                    text = if (isOffline) "Offline" else "Kavita",
+                                    text = if (isOffline) "Local" else "Kavita",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -892,11 +909,12 @@ internal fun HomeTopBar(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Kavita Server", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
+                                text = { Text("Kavita", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
                                 leadingIcon = {
                                     Icon(
-                                        imageVector = Icons.Filled.CloudSync,
+                                        painter = painterResource(R.drawable.ic_kavita_logo),
                                         contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
                                         tint = if (!isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
@@ -915,11 +933,12 @@ internal fun HomeTopBar(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Offline Library", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
+                                text = { Text("Local", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Filled.Folder,
                                         contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
                                         tint = if (isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },

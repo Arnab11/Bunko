@@ -51,10 +51,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.R
 import com.bunko.reader.offline.LocalBookRepository
 import kotlinx.coroutines.launch
 
@@ -141,9 +143,9 @@ fun SettingsSourcesScreen(
                             )
                         }
                     ) {
-                        Icon(Icons.Filled.AutoStories, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Offline", fontWeight = if (isOffline) FontWeight.Bold else FontWeight.Normal)
+                        Text("Local", fontWeight = if (isOffline) FontWeight.Bold else FontWeight.Normal)
                     }
 
                     Button(
@@ -167,7 +169,12 @@ fun SettingsSourcesScreen(
                             )
                         }
                     ) {
-                        Icon(Icons.Filled.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(
+                            painter = painterResource(R.drawable.ic_kavita_logo),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (!isOffline) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(Modifier.width(6.dp))
                         Text("Kavita", fontWeight = if (!isOffline) FontWeight.Bold else FontWeight.Normal)
                     }
