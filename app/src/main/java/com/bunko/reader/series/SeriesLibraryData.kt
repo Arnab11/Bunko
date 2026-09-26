@@ -64,18 +64,17 @@ internal fun SeriesDto.matchesSeriesTitle(query: String): Boolean {
 
 internal enum class SeriesLibrarySort(val label: String) {
     Title("Title"),
-    UnreadFirst("Unread first"),
-    InProgressFirst("In progress first"),
-    ReadFirst("Read first")
+    InProgressFirst("Recent"),
+    ReadFirst("Date"),
+    UnreadFirst("Unread")
 }
 
-internal fun List<SeriesDto>.sortedForLibrary(sort: SeriesLibrarySort): List<SeriesDto> {
-    return when (sort) {
+internal fun List<SeriesDto>.sortedForLibrary(
+    sort: SeriesLibrarySort,
+    isDescending: Boolean = false
+): List<SeriesDto> {
+    val sorted = when (sort) {
         SeriesLibrarySort.Title -> sortedByTitle()
-        SeriesLibrarySort.UnreadFirst -> sortedWith(
-            compareByDescending<SeriesDto> { it.isUnreadSeries() }
-                .thenBy { it.titleSortKey() }
-        )
         SeriesLibrarySort.InProgressFirst -> sortedWith(
             compareByDescending<SeriesDto> { it.isInProgressSeries() }
                 .thenBy { it.titleSortKey() }
@@ -84,7 +83,12 @@ internal fun List<SeriesDto>.sortedForLibrary(sort: SeriesLibrarySort): List<Ser
             compareByDescending<SeriesDto> { it.isReadSeries() }
                 .thenBy { it.titleSortKey() }
         )
+        SeriesLibrarySort.UnreadFirst -> sortedWith(
+            compareByDescending<SeriesDto> { it.isUnreadSeries() }
+                .thenBy { it.titleSortKey() }
+        )
     }
+    return if (isDescending) sorted.reversed() else sorted
 }
 
 internal fun Int.seriesCountLabel(): String = "$this series"

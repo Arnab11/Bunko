@@ -524,6 +524,7 @@ fun AppRoot(
                     initialSearchQuery = backStack.arguments!!.getString("search").orEmpty(),
                     initialDestination = initialDestination,
                     onOpenSettings = { nav.navigate("settings") },
+                    onOpenManageServers = { nav.navigate("settings?category=SOURCES") },
                     onOpenShelf = { shelfKind -> nav.navigate("shelf/${shelfKind.routeValue}") },
                     onOpenBookmarks = { nav.navigate("bookmarks") },
                     onOpenCollections = { nav.navigate("collections") },
@@ -769,6 +770,28 @@ fun AppRoot(
                 )
             }
 
+            composable(
+                "settings?category={category}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("category") {
+                        type = androidx.navigation.NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) { backStack ->
+                val categoryName = backStack.arguments?.getString("category")
+                val initialCat = com.bunko.reader.settings.SettingsCategory.entries.firstOrNull { it.name.equals(categoryName, ignoreCase = true) }
+                SettingsAdaptiveScreen(
+                    settingsStore = settingsStore,
+                    localRepository = localRepository,
+                    sessionStore = sessionStore,
+                    initialCategory = initialCat,
+                    onConfigureServerDetails = { nav.navigate("settings/server") },
+                    onBack = { nav.popBackStack() },
+                    updateController = updateController
+                )
+            }
             composable("settings") {
                 SettingsAdaptiveScreen(
                     settingsStore = settingsStore,

@@ -164,6 +164,10 @@ class KavitaSessionStore(private val context: Context) {
         writeProfiles(nextProfiles)
     }
 
+    suspend fun setDefaultProfile(profileId: String) {
+        setOpenByDefault(profileId, true)
+    }
+
     suspend fun clearJwt() {
         clearCredentials(activeProfileId, clearUsername = false, clearApiKey = false)
     }

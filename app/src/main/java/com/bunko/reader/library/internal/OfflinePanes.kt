@@ -83,14 +83,73 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 
 enum class LocalBookSort(val label: String) {
     Title("Title"),
-    Recent("Recently Read"),
-    Size("File Size"),
-    Modified("Date Modified")
+    Recent("Recent"),
+    Modified("Date"),
+    Unread("Unread"),
+    Size("Size")
+}
+
+internal fun localBookComparator(sort: LocalBookSort): Comparator<LocalBook> {
+    return Comparator { left, right ->
+        when (sort) {
+            LocalBookSort.Title -> left.title.lowercase().compareTo(right.title.lowercase())
+            LocalBookSort.Recent -> {
+                val timeA = if (left.lastReadTime > 0L) left.lastReadTime else if (left.lastReadPage > 0) left.lastModified else 0L
+                val timeB = if (right.lastReadTime > 0L) right.lastReadTime else if (right.lastReadPage > 0) right.lastModified else 0L
+                timeB.compareTo(timeA)
+            }
+            LocalBookSort.Modified -> right.lastModified.compareTo(left.lastModified)
+            LocalBookSort.Unread -> {
+                val unreadA = left.lastReadPage == 0 && !left.isCompleted
+                val unreadB = right.lastReadPage == 0 && !right.isCompleted
+                if (unreadA != unreadB) {
+                    if (unreadA) -1 else 1
+                } else {
+                    left.title.lowercase().compareTo(right.title.lowercase())
+                }
+            }
+            LocalBookSort.Size -> right.sizeBytes.compareTo(left.sizeBytes)
+        }
+    }
+}
+
+internal fun localBookStackComparator(sort: LocalBookSort): Comparator<LocalBookStack> {
+    return Comparator { left, right ->
+        when (sort) {
+            LocalBookSort.Title -> left.title.lowercase().compareTo(right.title.lowercase())
+            LocalBookSort.Recent -> {
+                val timeA = left.books.maxOfOrNull { if (it.lastReadTime > 0L) it.lastReadTime else if (it.lastReadPage > 0) it.lastModified else 0L } ?: 0L
+                val timeB = right.books.maxOfOrNull { if (it.lastReadTime > 0L) it.lastReadTime else if (it.lastReadPage > 0) it.lastModified else 0L } ?: 0L
+                timeB.compareTo(timeA)
+            }
+            LocalBookSort.Modified -> {
+                val modA = left.books.maxOfOrNull { it.lastModified } ?: 0L
+                val modB = right.books.maxOfOrNull { it.lastModified } ?: 0L
+                modB.compareTo(modA)
+            }
+            LocalBookSort.Unread -> {
+                val unreadA = left.books.any { it.lastReadPage == 0 && !it.isCompleted }
+                val unreadB = right.books.any { it.lastReadPage == 0 && !it.isCompleted }
+                if (unreadA != unreadB) {
+                    if (unreadA) -1 else 1
+                } else {
+                    left.title.lowercase().compareTo(right.title.lowercase())
+                }
+            }
+            LocalBookSort.Size -> {
+                val sizeA = left.books.sumOf { it.sizeBytes }
+                val sizeB = right.books.sumOf { it.sizeBytes }
+                sizeB.compareTo(sizeA)
+            }
+        }
+    }
 }
 
 @Composable
 internal fun OfflineHomePane(
     books: List<LocalBook>,
+    sort: LocalBookSort = LocalBookSort.Modified,
+    isSortDescending: Boolean = false,
     isGridView: Boolean = true,
     onOpenBook: (LocalBook) -> Unit,
     onSeeAll: () -> Unit,
@@ -112,16 +171,14 @@ internal fun OfflineHomePane(
         return
     }
 
-    val continueReading = remember(books) {
-        books.filter { (it.lastReadPage > 0 || it.lastReadTime > 0L) && !it.isCompleted }
-            .sortedWith { a, b ->
-                val timeA = if (a.lastReadTime > 0L) a.lastReadTime else a.lastModified
-                val timeB = if (b.lastReadTime > 0L) b.lastReadTime else b.lastModified
-                timeB.compareTo(timeA)
-            }
+    val continueReading = remember(books, sort, isSortDescending) {
+        val target = books.filter { (it.lastReadPage > 0 || it.lastReadTime > 0L) && !it.isCompleted }
+        val comparator = localBookComparator(sort)
+        if (isSortDescending) target.sortedWith(comparator.reversed()) else target.sortedWith(comparator)
     }
-    val recentlyAdded = remember(libraryBooks) {
-        libraryBooks.sortedByDescending { it.lastModified }
+    val recentlyAdded = remember(libraryBooks, sort, isSortDescending) {
+        val comparator = localBookComparator(sort)
+        if (isSortDescending) libraryBooks.sortedWith(comparator.reversed()) else libraryBooks.sortedWith(comparator)
     }
 
     LazyColumn(
@@ -315,38 +372,23 @@ internal fun OfflineHomePane(
 internal fun OfflineHistoryPane(
     books: List<LocalBook>,
     sort: LocalBookSort = LocalBookSort.Recent,
+    isSortDescending: Boolean = false,
     isGridView: Boolean = true,
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val libraryHistory = remember(books, sort) {
+    val libraryHistory = remember(books, sort, isSortDescending) {
         val libraryOnly = books.filter { !it.isExternalFile && (it.lastReadPage > 0 || it.lastReadTime > 0L) }
         val inProgress = libraryOnly.filter { !it.isCompleted }
         val targetList = if (inProgress.isNotEmpty()) inProgress else libraryOnly
-        when (sort) {
-            LocalBookSort.Title -> targetList.sortedBy { it.title.lowercase() }
-            LocalBookSort.Recent -> targetList.sortedWith { a, b ->
-                val timeA = if (a.lastReadTime > 0L) a.lastReadTime else a.lastModified
-                val timeB = if (b.lastReadTime > 0L) b.lastReadTime else b.lastModified
-                timeB.compareTo(timeA)
-            }
-            LocalBookSort.Modified -> targetList.sortedByDescending { it.lastModified }
-            LocalBookSort.Size -> targetList.sortedByDescending { it.sizeBytes }
-        }
+        val comparator = localBookComparator(sort)
+        if (isSortDescending) targetList.sortedWith(comparator.reversed()) else targetList.sortedWith(comparator)
     }
 
-    val openedFiles = remember(books, sort) {
+    val openedFiles = remember(books, sort, isSortDescending) {
         val externalList = books.filter { it.isExternalFile && (it.lastReadPage > 0 || it.lastReadTime > 0L) }
-        when (sort) {
-            LocalBookSort.Title -> externalList.sortedBy { it.title.lowercase() }
-            LocalBookSort.Recent -> externalList.sortedWith { a, b ->
-                val timeA = if (a.lastReadTime > 0L) a.lastReadTime else a.lastModified
-                val timeB = if (b.lastReadTime > 0L) b.lastReadTime else b.lastModified
-                timeB.compareTo(timeA)
-            }
-            LocalBookSort.Modified -> externalList.sortedByDescending { it.lastModified }
-            LocalBookSort.Size -> externalList.sortedByDescending { it.sizeBytes }
-        }
+        val comparator = localBookComparator(sort)
+        if (isSortDescending) externalList.sortedWith(comparator.reversed()) else externalList.sortedWith(comparator)
     }
 
     if (libraryHistory.isEmpty() && openedFiles.isEmpty()) {
@@ -534,6 +576,7 @@ internal fun OfflineHistoryPane(
 internal fun OfflineBrowsePane(
     books: List<LocalBook>,
     sort: LocalBookSort,
+    isSortDescending: Boolean = false,
     isGridView: Boolean,
     onOpenBook: (LocalBook) -> Unit,
     onChangeFolder: () -> Unit,
@@ -541,18 +584,12 @@ internal fun OfflineBrowsePane(
     modifier: Modifier = Modifier
 ) {
     val libraryBooks = remember(books) { books.filter { !it.isExternalFile } }
-    val sortedBooks = remember(libraryBooks, sort) {
-        libraryBooks.sortedWith { left, right ->
-            when (sort) {
-                LocalBookSort.Title -> left.title.lowercase().compareTo(right.title.lowercase())
-                LocalBookSort.Recent -> {
-                    val timeA = if (left.lastReadTime > 0L) left.lastReadTime else if (left.lastReadPage > 0) left.lastModified else 0L
-                    val timeB = if (right.lastReadTime > 0L) right.lastReadTime else if (right.lastReadPage > 0) right.lastModified else 0L
-                    timeB.compareTo(timeA)
-                }
-                LocalBookSort.Size -> right.sizeBytes.compareTo(left.sizeBytes)
-                LocalBookSort.Modified -> right.lastModified.compareTo(left.lastModified)
-            }
+    val sortedBooks = remember(libraryBooks, sort, isSortDescending) {
+        val comparator = localBookComparator(sort)
+        if (isSortDescending) {
+            libraryBooks.sortedWith(comparator.reversed())
+        } else {
+            libraryBooks.sortedWith(comparator)
         }
     }
 
@@ -732,6 +769,8 @@ internal fun OfflineLibrariesPane(
     folderName: String?,
     folders: List<LocalFolder> = emptyList(),
     books: List<LocalBook>,
+    sort: LocalBookSort = LocalBookSort.Title,
+    isSortDescending: Boolean = false,
     isScanning: Boolean,
     isGridView: Boolean = true,
     onChangeFolder: () -> Unit,
@@ -742,6 +781,10 @@ internal fun OfflineLibrariesPane(
 ) {
     val libraryBooks = remember(books) { books.filter { !it.isExternalFile } }
     val bookStacks = remember(libraryBooks) { groupBooksIntoStacks(libraryBooks) }
+    val sortedBookStacks = remember(bookStacks, sort, isSortDescending) {
+        val comparator = localBookStackComparator(sort)
+        if (isSortDescending) bookStacks.sortedWith(comparator.reversed()) else bookStacks.sortedWith(comparator)
+    }
     var selectedStackForSheet by remember { mutableStateOf<LocalBookStack?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -753,7 +796,7 @@ internal fun OfflineLibrariesPane(
             )
         } else if (isGridView) {
             PosterGrid(
-                items = bookStacks,
+                items = sortedBookStacks,
                 key = { it.key }
             ) { stack ->
                 val primaryBook = stack.primaryBook
@@ -779,7 +822,7 @@ internal fun OfflineLibrariesPane(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(bookStacks, key = { it.key }) { stack ->
+                items(sortedBookStacks, key = { it.key }) { stack ->
                     val primaryBook = stack.primaryBook
                     val mediaItem = primaryBook.toUnifiedMediaItem(
                         isStack = stack.isStack,
@@ -849,12 +892,18 @@ internal fun OfflineLibrariesPane(
 @Composable
 internal fun OfflineWantToReadPane(
     books: List<LocalBook>,
+    sort: LocalBookSort = LocalBookSort.Title,
+    isSortDescending: Boolean = false,
     isGridView: Boolean,
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val libraryBooks = remember(books) { books.filter { !it.isExternalFile } }
-    val unreadBooks = remember(libraryBooks) { libraryBooks.filter { it.lastReadPage == 0 && !it.isCompleted } }
+    val unreadBooks = remember(libraryBooks, sort, isSortDescending) {
+        val unread = libraryBooks.filter { it.lastReadPage == 0 && !it.isCompleted }
+        val comparator = localBookComparator(sort)
+        if (isSortDescending) unread.sortedWith(comparator.reversed()) else unread.sortedWith(comparator)
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         if (unreadBooks.isEmpty()) {

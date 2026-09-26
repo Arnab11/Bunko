@@ -375,6 +375,7 @@ internal fun HomeContent(
     onRescanOffline: () -> Unit = {},
     selectedSort: LocalBookSort = LocalBookSort.Title,
     kavitaSort: SeriesLibrarySort = SeriesLibrarySort.Title,
+    isSortDescending: Boolean = false,
     isGridView: Boolean = true,
     onSelectDestination: (HomeDestination) -> Unit = {},
     modifier: Modifier = Modifier
@@ -410,6 +411,8 @@ internal fun HomeContent(
                     HomeDestination.Home -> {
                         OfflineHomePane(
                             books = offlineBooks,
+                            sort = selectedSort,
+                            isSortDescending = isSortDescending,
                             isGridView = isGridView,
                             onOpenBook = onOpenOfflineBook,
                             onSeeAll = { onSelectDestination(HomeDestination.Browse) },
@@ -423,6 +426,7 @@ internal fun HomeContent(
                         OfflineHistoryPane(
                             books = offlineBooks,
                             sort = selectedSort,
+                            isSortDescending = isSortDescending,
                             isGridView = isGridView,
                             onOpenBook = onOpenOfflineBook,
                             modifier = Modifier.fillMaxSize()
@@ -433,6 +437,8 @@ internal fun HomeContent(
                             folderName = offlineFolderName,
                             folders = offlineFolders,
                             books = offlineBooks,
+                            sort = selectedSort,
+                            isSortDescending = isSortDescending,
                             isScanning = isOfflineScanning,
                             isGridView = isGridView,
                             onChangeFolder = onChangeOfflineFolder,
@@ -445,6 +451,8 @@ internal fun HomeContent(
                     HomeDestination.WantToRead -> {
                         OfflineWantToReadPane(
                             books = offlineBooks,
+                            sort = selectedSort,
+                            isSortDescending = isSortDescending,
                             isGridView = isGridView,
                             onOpenBook = onOpenOfflineBook,
                             modifier = Modifier.fillMaxSize()
@@ -454,6 +462,7 @@ internal fun HomeContent(
                         OfflineBrowsePane(
                             books = offlineBooks,
                             sort = selectedSort,
+                            isSortDescending = isSortDescending,
                             isGridView = isGridView,
                             onOpenBook = onOpenOfflineBook,
                             onChangeFolder = onChangeOfflineFolder,
@@ -490,10 +499,10 @@ internal fun HomeContent(
             return@Column
         }
 
-        val displayOnDeck = remember(onDeck) { onDeck }
-        val displayRecentlyUpdated = remember(recentlyUpdated, kavitaSort) { recentlyUpdated.sortedForLibrary(kavitaSort) }
-        val displayNewlyAdded = remember(newlyAdded, kavitaSort) { newlyAdded.sortedForLibrary(kavitaSort) }
-        val displayWantToRead = remember(wantToRead, kavitaSort) { wantToRead.sortedForLibrary(kavitaSort) }
+        val displayOnDeck = remember(onDeck, kavitaSort, isSortDescending) { onDeck.sortedForLibrary(kavitaSort, isSortDescending) }
+        val displayRecentlyUpdated = remember(recentlyUpdated, kavitaSort, isSortDescending) { recentlyUpdated.sortedForLibrary(kavitaSort, isSortDescending) }
+        val displayNewlyAdded = remember(newlyAdded, kavitaSort, isSortDescending) { newlyAdded.sortedForLibrary(kavitaSort, isSortDescending) }
+        val displayWantToRead = remember(wantToRead, kavitaSort, isSortDescending) { wantToRead.sortedForLibrary(kavitaSort, isSortDescending) }
 
         when (destination) {
             HomeDestination.Home -> {
@@ -593,6 +602,7 @@ internal fun HomeContent(
                                         navigationBarPadding = false,
                                         showTopBar = false,
                                         externalSort = kavitaSort,
+                                        externalSortDescending = isSortDescending,
                                         isGridView = isGridView,
                                         onSelect = { s ->
                                             val sWithLib = if (s.libraryId == null || s.libraryId == 0) s.copy(libraryId = activeLibrary.id) else s
@@ -620,6 +630,7 @@ internal fun HomeContent(
                                 navigationBarPadding = false,
                                 showTopBar = false,
                                 externalSort = kavitaSort,
+                                externalSortDescending = isSortDescending,
                                 isGridView = isGridView,
                                 onSelect = { s ->
                                     val sWithLib = if (s.libraryId == null || s.libraryId == 0) s.copy(libraryId = selectedLibrary.id) else s

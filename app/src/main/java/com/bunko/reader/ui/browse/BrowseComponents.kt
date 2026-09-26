@@ -176,6 +176,7 @@ fun <T> PosterGrid(
     items: List<T>,
     key: (T) -> Any,
     modifier: Modifier = Modifier,
+    columns: GridCells? = null,
     minSize: Dp = 130.dp,
     horizontalSpacing: Dp = 16.dp,
     verticalSpacing: Dp = 20.dp,
@@ -185,7 +186,7 @@ fun <T> PosterGrid(
     itemContent: @Composable (T) -> Unit
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = minSize),
+        columns = columns ?: GridCells.Adaptive(minSize = minSize),
         state = state,
         modifier = modifier.fillMaxSize(),
         contentPadding = contentPadding,

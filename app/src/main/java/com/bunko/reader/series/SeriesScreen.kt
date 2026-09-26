@@ -116,6 +116,7 @@ internal fun SeriesScreen(
     navigationBarPadding: Boolean = true,
     showTopBar: Boolean = statusBarPadding,
     externalSort: SeriesLibrarySort? = null,
+    externalSortDescending: Boolean = false,
     isGridView: Boolean = true,
     onSelect: (SeriesDto) -> Unit
 ) {
@@ -196,13 +197,13 @@ internal fun SeriesScreen(
 
     val activeSort = externalSort ?: sort
     val normalizedQuery = remember(query) { normalizeSeriesSearchQuery(query) }
-    val visibleSeries = remember(series, normalizedQuery, activeSort) {
+    val visibleSeries = remember(series, normalizedQuery, activeSort, externalSortDescending) {
         val filtered = if (normalizedQuery.isBlank()) {
             series
         } else {
             series.filter { it.matchesSeriesTitle(normalizedQuery) }
         }
-        filtered.sortedForLibrary(activeSort)
+        filtered.sortedForLibrary(activeSort, externalSortDescending)
     }
 
     LaunchedEffect(searchActive) {

@@ -61,16 +61,20 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.res.painterResource
 import com.bunko.reader.R
 import androidx.compose.material3.VerticalDivider
 import com.bunko.reader.library.detail.LocalBookDetailContent
+import com.bunko.reader.library.dialogs.BunkoSortViewDialog
 import com.bunko.reader.offline.LocalBook
 import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.LocalFolder
 import com.bunko.reader.series.ChapterPickScreen
 import com.bunko.reader.series.SeriesLibrarySort
+import com.bunko.reader.KavitaServerProfile
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -178,6 +182,7 @@ internal fun HomeShell(
     searchHistoryStore: SearchHistoryStore,
     initialSearchQuery: String = "",
     onOpenSettings: () -> Unit,
+    onOpenManageServers: () -> Unit = onOpenSettings,
     onOpenShelf: (HomeShelfKind) -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenCollections: () -> Unit,
@@ -237,9 +242,18 @@ internal fun HomeShell(
 
     var reselectionCount by remember { mutableIntStateOf(0) }
     var isGridView by rememberSaveable { mutableStateOf(true) }
-    var selectedSort by rememberSaveable { mutableStateOf(LocalBookSort.Title) }
+    var isSortDescending by rememberSaveable { mutableStateOf(false) }
+    var selectedSort by rememberSaveable { mutableStateOf(LocalBookSort.Modified) }
     var kavitaSort by rememberSaveable { mutableStateOf(SeriesLibrarySort.Title) }
-    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var isSortViewDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var kavitaProfiles by remember { mutableStateOf<List<KavitaServerProfile>>(emptyList()) }
+    var activeKavitaProfile by remember { mutableStateOf<KavitaServerProfile?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(sessionStore) {
+        kavitaProfiles = sessionStore.profiles()
+        activeKavitaProfile = sessionStore.activeProfile()
+    }
 
     var browseDrilldown by rememberSaveable { mutableStateOf<BrowseDrilldown?>(null) }
     var selectedLibrary by remember { mutableStateOf<LibraryDto?>(null) }
@@ -324,98 +338,28 @@ internal fun HomeShell(
         searchQuery = ""
     }
 
+    if (isSortViewDialogOpen) {
+        BunkoSortViewDialog(
+            isOffline = isOffline,
+            selectedLocalSort = selectedSort,
+            onLocalSortChange = { selectedSort = it },
+            selectedKavitaSort = kavitaSort,
+            onKavitaSortChange = { kavitaSort = it },
+            isSortDescending = isSortDescending,
+            onSortDescendingChange = { isSortDescending = it },
+            isGridView = isGridView,
+            onGridViewChange = { isGridView = it },
+            onDismissRequest = { isSortViewDialogOpen = false }
+        )
+    }
+
     val topBarActions: @Composable RowScope.() -> Unit = {
-        if (isOffline) {
-            Box {
-                IconButton(onClick = { sortMenuExpanded = true }) {
-                    Icon(
-                        imageVector = Icons.Filled.Sort,
-                        contentDescription = "Sort options",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                DropdownMenu(
-                    expanded = sortMenuExpanded,
-                    onDismissRequest = { sortMenuExpanded = false },
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    LocalBookSort.entries.forEach { sortOption ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = sortOption.label,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = if (sortOption == selectedSort) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            trailingIcon = {
-                                if (sortOption == selectedSort) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            },
-                            onClick = {
-                                selectedSort = sortOption
-                                sortMenuExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            IconButton(onClick = { isGridView = !isGridView }) {
+        val showSortViewAction = isOffline || (destination == HomeDestination.Home || destination == HomeDestination.History || destination == HomeDestination.Libraries || destination == HomeDestination.WantToRead)
+        if (showSortViewAction) {
+            IconButton(onClick = { isSortViewDialogOpen = true }) {
                 Icon(
-                    imageVector = if (isGridView) Icons.Filled.ViewList else Icons.Filled.GridView,
-                    contentDescription = if (isGridView) "Switch to list view" else "Switch to grid view",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        } else if (destination == HomeDestination.Home || destination == HomeDestination.History || destination == HomeDestination.Libraries || destination == HomeDestination.WantToRead) {
-            Box {
-                IconButton(onClick = { sortMenuExpanded = true }) {
-                    Icon(
-                        imageVector = Icons.Filled.Sort,
-                        contentDescription = "Sort options",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                DropdownMenu(
-                    expanded = sortMenuExpanded,
-                    onDismissRequest = { sortMenuExpanded = false },
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    SeriesLibrarySort.entries.forEach { sortOption ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = sortOption.label,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = if (sortOption == kavitaSort) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            trailingIcon = {
-                                if (sortOption == kavitaSort) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            },
-                            onClick = {
-                                kavitaSort = sortOption
-                                sortMenuExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            IconButton(onClick = { isGridView = !isGridView }) {
-                Icon(
-                    imageVector = if (isGridView) Icons.Filled.ViewList else Icons.Filled.GridView,
-                    contentDescription = if (isGridView) "Switch to list view" else "Switch to grid view",
+                    imageVector = Icons.Filled.Sort,
+                    contentDescription = "Sort and view options",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -567,6 +511,7 @@ internal fun HomeShell(
                 onRescanOffline = onRescanOffline,
                 selectedSort = selectedSort,
                 kavitaSort = kavitaSort,
+                isSortDescending = isSortDescending,
                 isGridView = isGridView,
                 onSelectDestination = ::selectDestination,
                 modifier = Modifier.fillMaxSize()
@@ -579,7 +524,32 @@ internal fun HomeShell(
                 onBack = topBarBackAction,
                 showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
                 isOffline = isOffline,
+                activeServerName = if (isOffline) "Local" else (activeKavitaProfile?.name?.ifBlank { "Kavita" } ?: "Kavita"),
+                kavitaProfiles = kavitaProfiles,
+                activeKavitaProfileId = activeKavitaProfile?.id,
+                onSelectModeAndProfile = { mode, profileId ->
+                    coroutineScope.launch {
+                        if (mode == "kavita") {
+                            if (profileId != null) {
+                                sessionStore.selectProfile(profileId)
+                                sessionStore.setDefaultProfile(profileId)
+                            }
+                            localRepository.setActiveMode("kavita")
+                            if (isOffline) {
+                                onToggleLibraryMode()
+                            }
+                        } else {
+                            localRepository.setActiveMode("offline")
+                            if (!isOffline) {
+                                onToggleLibraryMode()
+                            }
+                        }
+                        kavitaProfiles = sessionStore.profiles()
+                        activeKavitaProfile = sessionStore.activeProfile()
+                    }
+                },
                 onOpenSettings = onOpenSettings,
+                onOpenManageServers = onOpenManageServers,
                 onSearch = ::openInlineSearch,
                 isSearchActive = isSearching,
                 searchQuery = searchQuery,
@@ -785,7 +755,12 @@ internal fun HomeTopBar(
     onBack: (() -> Unit)? = null,
     showModeSwitch: Boolean = onBack == null,
     isOffline: Boolean = false,
+    activeServerName: String = if (isOffline) "Local" else "Kavita",
+    kavitaProfiles: List<KavitaServerProfile> = emptyList(),
+    activeKavitaProfileId: String? = null,
+    onSelectModeAndProfile: ((String, String?) -> Unit)? = null,
     onOpenSettings: () -> Unit,
+    onOpenManageServers: () -> Unit = onOpenSettings,
     onSearch: (() -> Unit)? = null,
     isSearchActive: Boolean = false,
     searchQuery: String = "",
@@ -867,38 +842,33 @@ internal fun HomeTopBar(
                         Surface(
                             onClick = { modeMenuExpanded = true },
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = Color.Transparent
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 if (isOffline) {
                                     Icon(
                                         imageVector = Icons.Filled.Folder,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
+                                        contentDescription = "Active source: Local Storage",
+                                        modifier = Modifier.size(24.dp),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 } else {
                                     Icon(
                                         painter = painterResource(R.drawable.ic_kavita_logo),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
+                                        contentDescription = "Active source: Kavita",
+                                        modifier = Modifier.size(24.dp),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
-                                Text(
-                                    text = if (isOffline) "Local" else "Kavita",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Medium
-                                )
                                 Icon(
                                     imageVector = Icons.Filled.ArrowDropDown,
-                                    contentDescription = "Switch library mode",
-                                    modifier = Modifier.size(16.dp)
+                                    contentDescription = "Switch library source",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -909,31 +879,7 @@ internal fun HomeTopBar(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Kavita", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
-                                leadingIcon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_kavita_logo),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                        tint = if (!isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                trailingIcon = {
-                                    if (!isOffline) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    modeMenuExpanded = false
-                                    if (isOffline) onSwitchMode?.invoke()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Local", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium) },
+                                text = { Text("Local Storage", color = MaterialTheme.colorScheme.onSurface, fontWeight = if (isOffline) FontWeight.Bold else FontWeight.Normal) },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Filled.Folder,
@@ -953,7 +899,93 @@ internal fun HomeTopBar(
                                 },
                                 onClick = {
                                     modeMenuExpanded = false
-                                    if (!isOffline) onSwitchMode?.invoke()
+                                    onSelectModeAndProfile?.invoke("offline", null) ?: run {
+                                        if (!isOffline) onSwitchMode?.invoke()
+                                    }
+                                }
+                            )
+
+                            if (kavitaProfiles.isNotEmpty()) {
+                                kavitaProfiles.forEach { profile ->
+                                    val isSelected = !isOffline && (activeKavitaProfileId == profile.id || (activeKavitaProfileId == null && profile.openByDefault))
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = profile.name.ifBlank { "Kavita Server" },
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_kavita_logo),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp),
+                                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Check,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            modeMenuExpanded = false
+                                            onSelectModeAndProfile?.invoke("kavita", profile.id)
+                                        }
+                                    )
+                                }
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Kavita", color = MaterialTheme.colorScheme.onSurface, fontWeight = if (!isOffline) FontWeight.Bold else FontWeight.Normal) },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_kavita_logo),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                            tint = if (!isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        if (!isOffline) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        modeMenuExpanded = false
+                                        onSelectModeAndProfile?.invoke("kavita", null) ?: run {
+                                            if (isOffline) onSwitchMode?.invoke()
+                                        }
+                                    }
+                                )
+                            }
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Manage Servers", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                onClick = {
+                                    modeMenuExpanded = false
+                                    onOpenManageServers()
                                 }
                             )
                         }
