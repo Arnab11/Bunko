@@ -204,6 +204,7 @@ internal fun HomeShell(
     offlineFolderName: String? = null,
     isOfflineScanning: Boolean = false,
     onOpenOfflineBook: (LocalBook) -> Unit = {},
+    onOpenOfflineReader: (LocalBook, Int) -> Unit = { _, _ -> },
     onChangeOfflineFolder: () -> Unit = {},
     onAddOfflineFolder: () -> Unit = onChangeOfflineFolder,
     onRescanOffline: () -> Unit = {},
@@ -587,7 +588,7 @@ internal fun HomeShell(
                         onOpenFilteredSeries = onOpenFilteredSeries,
                         onOpenSettings = onOpenSettings,
                         onPickIssue = onPickIssue,
-                        onOpenOfflineBookReader = onOpenOfflineBook,
+                        onOpenOfflineReader = onOpenOfflineReader,
                         topBarContent = topBarBlock,
                         listContent = mainListContent,
                         modifier = Modifier.weight(1f)
@@ -617,7 +618,7 @@ internal fun HomeShell(
                     onOpenFilteredSeries = onOpenFilteredSeries,
                     onOpenSettings = onOpenSettings,
                     onPickIssue = onPickIssue,
-                    onOpenOfflineBookReader = onOpenOfflineBook,
+                    onOpenOfflineReader = onOpenOfflineReader,
                     topBarContent = topBarBlock,
                     listContent = mainListContent,
                     modifier = Modifier.fillMaxSize()
@@ -646,7 +647,7 @@ internal fun HomeShell(
                     onOpenFilteredSeries = onOpenFilteredSeries,
                     onOpenSettings = onOpenSettings,
                     onPickIssue = onPickIssue,
-                    onOpenOfflineBookReader = onOpenOfflineBook,
+                    onOpenOfflineReader = onOpenOfflineReader,
                     topBarContent = topBarBlock,
                     listContent = mainListContent,
                     modifier = Modifier.weight(1f)
@@ -675,7 +676,7 @@ private fun DualPaneOrSingleContent(
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onOpenSettings: () -> Unit,
     onPickIssue: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, incognito: Boolean) -> Unit,
-    onOpenOfflineBookReader: (LocalBook) -> Unit,
+    onOpenOfflineReader: (LocalBook, Int) -> Unit,
     topBarContent: @Composable () -> Unit,
     listContent: @Composable () -> Unit
 ) {
@@ -712,7 +713,7 @@ private fun DualPaneOrSingleContent(
                         allBooks = offlineBooks,
                         localRepository = localRepository,
                         onBack = onCloseDetail,
-                        onOpenReader = { targetBook, startPage -> onOpenOfflineBookReader(targetBook) },
+                        onOpenReader = { targetBook, startPage -> onOpenOfflineReader(targetBook, startPage) },
                         isDualPane = true,
                         onSelectBook = onSelectOfflineBook,
                         modifier = Modifier.fillMaxSize()

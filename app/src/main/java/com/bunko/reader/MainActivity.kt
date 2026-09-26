@@ -552,6 +552,9 @@ fun AppRoot(
                     onOpenOfflineBook = { book ->
                         nav.navigate("book-details/${Uri.encode(book.id)}")
                     },
+                    onOpenOfflineReader = { book, startPage ->
+                        nav.navigate("local-reader/${Uri.encode(book.id)}?page=$startPage")
+                    },
                     onRequireLogin = {
                         nav.navigate("login")
                     },
