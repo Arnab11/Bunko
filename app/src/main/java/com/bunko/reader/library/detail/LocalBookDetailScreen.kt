@@ -60,6 +60,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.asPaddingValues
+import com.bunko.reader.offline.extractTrailingNumber
+import com.bunko.reader.offline.findSiblingOfflineBooks
 import com.bunko.reader.ui.browse.CoverProgressBadge
 import com.bunko.reader.ui.browse.UnifiedPosterCard
 import com.bunko.reader.ui.browse.toUnifiedMediaItem
@@ -732,11 +734,12 @@ fun OfflineIssuesSection(
     onSelectBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Siblings exclude the open book itself; empty for standalone singles.
     val siblingBooks = remember(currentBook, allBooks) {
-        findRelatedOfflineBooks(currentBook, allBooks)
+        findSiblingOfflineBooks(currentBook, allBooks)
     }
 
-    if (siblingBooks.size <= 1) return
+    if (siblingBooks.isEmpty()) return
 
     val (specialBooks, regularBooks) = remember(siblingBooks) {
         siblingBooks.partition { isOfflineSpecialBook(it) }
@@ -808,24 +811,16 @@ fun OfflineIssuesSection(
             contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
         ) {
             items(activeList.distinctBy { it.id }, key = { it.id }) { item ->
-                val isCurrent = item.id == currentBook.id
-                val displayTitle = if (item.volumeOrIssue.isNotBlank()) "Issue #${item.volumeOrIssue}" else item.title
+                val numberLabel = item.volumeOrIssue.trim().takeIf { it.isNotBlank() }
+                    ?: extractTrailingNumber(item.title)?.toString()
+                val displayTitle = if (numberLabel != null) "Issue #$numberLabel" else item.title
                 val mediaItem = remember(item, displayTitle) {
                     item.toUnifiedMediaItem(displayTitle = displayTitle)
                 }
                 Box(
                     modifier = Modifier
                         .width(136.dp)
-                        .then(
-                            if (isCurrent) {
-                                Modifier
-                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                                    .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                                    .padding(4.dp)
-                            } else {
-                                Modifier.padding(4.dp)
-                            }
-                        )
+                        .padding(4.dp)
                 ) {
                     UnifiedPosterCard(
                         item = mediaItem,
@@ -835,56 +830,6 @@ fun OfflineIssuesSection(
             }
         }
     }
-}
-
-private fun findRelatedOfflineBooks(currentBook: LocalBook, allBooks: List<LocalBook>): List<LocalBook> {
-    val distinctBooks = allBooks.distinctBy { it.id }.distinctBy { it.uriString.ifBlank { it.id } }
-
-    // 1. Explicit seriesName match
-    if (currentBook.seriesName.isNotBlank()) {
-        val series = currentBook.seriesName.trim()
-        val matches = distinctBooks.filter { 
-            it.seriesName.isNotBlank() && it.seriesName.trim().equals(series, ignoreCase = true) 
-        }
-        if (matches.size > 1) {
-            return matches.distinctBy { it.id }.sortedWith(
-                compareBy<LocalBook> { it.volumeOrIssue.toIntOrNull() ?: extractTrailingNumber(it.title) ?: Int.MAX_VALUE }
-                    .thenBy { it.title }
-            )
-        }
-    }
-
-    // 2. Similar title / series base match
-    val baseTitle = extractSeriesBaseTitle(currentBook.title)
-    if (baseTitle.isNotBlank() && baseTitle.length >= 3) {
-        val matches = distinctBooks.filter { book ->
-            val otherBase = extractSeriesBaseTitle(book.title)
-            otherBase.isNotBlank() && otherBase.equals(baseTitle, ignoreCase = true)
-        }
-        if (matches.size > 1) {
-            return matches.distinctBy { it.id }.sortedWith(
-                compareBy<LocalBook> { it.volumeOrIssue.toIntOrNull() ?: extractTrailingNumber(it.title) ?: Int.MAX_VALUE }
-                    .thenBy { it.title }
-            )
-        }
-    }
-
-    return emptyList()
-}
-
-private fun extractSeriesBaseTitle(title: String): String {
-    var s = title.trim()
-    s = s.substringBeforeLast('.')
-    // Remove volume / chapter / issue prefixes and trailing numbers
-    s = s.replace(Regex("(?i)\\s*[\\[\\(]?(?:vol(?:ume)?|v|ch(?:apter)?|issue|#)\\s*\\.?\\s*\\d+.*$"), "")
-    s = s.replace(Regex("\\s*-\\s*\\d+\\s*$"), "")
-    s = s.replace(Regex("\\s+\\d+\\s*$"), "")
-    return s.trim()
-}
-
-private fun extractTrailingNumber(title: String): Int? {
-    val match = Regex("(?:vol(?:ume)?|v|ch(?:apter)?|issue|#|-)?\\s*\\.?\\s*(\\d+)", RegexOption.IGNORE_CASE).findAll(title).lastOrNull()
-    return match?.groupValues?.getOrNull(1)?.toIntOrNull()
 }
 
 private fun isOfflineSpecialBook(book: LocalBook): Boolean {

@@ -123,6 +123,8 @@ class LocalBookRepository(context: Context) {
                     lastReadPage = existingItem.lastReadPage,
                     isCompleted = existingItem.isCompleted,
                     coverPath = if (existingItem.hasCover) existingItem.coverPath else created.coverPath,
+                    seriesName = if (existingItem.seriesName.isNotBlank()) existingItem.seriesName else created.seriesName,
+                    volumeOrIssue = if (existingItem.volumeOrIssue.isNotBlank()) existingItem.volumeOrIssue else created.volumeOrIssue,
                     lastReadTime = existingItem.lastReadTime
                 )
             } else {
@@ -249,6 +251,8 @@ class LocalBookRepository(context: Context) {
                             coverPath = if (existing.hasCover) existing.coverPath else "",
                             lastReadTime = existing.lastReadTime,
                             author = if (existing.author.isNotBlank()) existing.author else scanned.author,
+                            seriesName = if (existing.seriesName.isNotBlank()) existing.seriesName else scanned.seriesName,
+                            volumeOrIssue = if (existing.volumeOrIssue.isNotBlank()) existing.volumeOrIssue else scanned.volumeOrIssue,
                             description = if (existing.description.isNotBlank()) existing.description else scanned.description,
                             tagsCsv = if (existing.tagsCsv.isNotBlank()) existing.tagsCsv else scanned.tagsCsv,
                             rating = existing.rating,

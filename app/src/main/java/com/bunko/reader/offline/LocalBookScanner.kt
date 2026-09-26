@@ -94,6 +94,7 @@ object LocalBookScanner {
                                     lastModified = modified,
                                     folderUriString = folderUriStr,
                                     folderName = folderName,
+                                    volumeOrIssue = parseVolumeOrIssue(cleanTitle),
                                     isWebtoon = isWebtoonCandidate
                                 )
                                 books.add(localBook)
@@ -368,6 +369,7 @@ object LocalBookScanner {
             format = effectiveFormat,
             sizeBytes = sizeBytes,
             lastModified = lastModified,
+            volumeOrIssue = parseVolumeOrIssue(cleanTitle),
             isWebtoon = isWebtoonCandidate,
             isExternalFile = true
         )

@@ -65,6 +65,7 @@ import coil.compose.AsyncImage
 import com.bunko.reader.offline.LocalBook
 import com.bunko.reader.offline.LocalBookFormat
 import com.bunko.reader.offline.LocalFolder
+import com.bunko.reader.offline.extractSeriesBaseTitle
 import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.browse.CoverProgressBadge
 import com.bunko.reader.ui.browse.PosterGrid
@@ -723,14 +724,7 @@ internal fun groupBooksIntoStacks(books: List<LocalBook>): List<LocalBookStack> 
     }
 }
 
-internal fun extractSeriesBaseTitle(title: String): String {
-    var cleaned = title
-        .replace(Regex("""\s*[\(\[](?:vol(?:ume)?|ch(?:apter)?|issue|ep(?:isode)?|v|c|#)\s*\d+[\)\]]""", RegexOption.IGNORE_CASE), "")
-        .replace(Regex("""[\s_\-]+(?:vol(?:ume)?|ch(?:apter)?|issue|ep(?:isode)?|v|c|#)\s*\.?\s*\d+.*$""", RegexOption.IGNORE_CASE), "")
-        .replace(Regex("""[\s_\-]+#?\d+\s*$"""), "")
-        .trim()
-    return if (cleaned.isBlank()) title else cleaned
-}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
