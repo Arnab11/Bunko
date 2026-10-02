@@ -32,10 +32,13 @@ import com.bunko.reader.FileDimensionDto
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaApi
 import com.bunko.reader.KavitaSession
+import com.bunko.reader.KomgaIdMapper
+import com.bunko.reader.KomgaSession
 import com.bunko.reader.MarkChapterReadDto
 import com.bunko.reader.MarkVolumesReadDto
 import com.bunko.reader.ProgressDto
 import com.bunko.reader.normalizeKavitaBaseUrl
+import com.bunko.reader.normalizeKomgaBaseUrl
 
 private val Context.offlineIssueDataStore by preferencesDataStore("offline_issues")
 
@@ -147,7 +150,14 @@ class OfflineIssueRepository(context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun observe(session: KavitaSession, chapterId: Int): Flow<OfflineIssueRecord?> {
-        val key = sessionKey(session)
+        return observeForKey(sessionKey(session), chapterId)
+    }
+
+    fun observe(session: KomgaSession, chapterId: Int): Flow<OfflineIssueRecord?> {
+        return observeForKey(komgaSessionKey(session), chapterId)
+    }
+
+    private fun observeForKey(key: String, chapterId: Int): Flow<OfflineIssueRecord?> {
         return appContext.offlineIssueDataStore.data.map { preferences ->
             decode(preferences[recordsKey]).firstOrNull {
                 it.serverKey == key && it.chapterId == chapterId
@@ -156,7 +166,14 @@ class OfflineIssueRepository(context: Context) {
     }
 
     fun observeDownloaded(session: KavitaSession): Flow<List<OfflineIssueRecord>> {
-        val key = sessionKey(session)
+        return observeDownloadedForKey(sessionKey(session))
+    }
+
+    fun observeDownloaded(session: KomgaSession): Flow<List<OfflineIssueRecord>> {
+        return observeDownloadedForKey(komgaSessionKey(session))
+    }
+
+    private fun observeDownloadedForKey(key: String): Flow<List<OfflineIssueRecord>> {
         return appContext.offlineIssueDataStore.data.map { preferences ->
             decode(preferences[recordsKey])
                 .filter { it.serverKey == key && it.status == OfflineDownloadStatus.Ready }
@@ -167,9 +184,17 @@ class OfflineIssueRepository(context: Context) {
     }
 
     suspend fun cleanupUnavailableDownload(session: KavitaSession, chapterId: Int): Boolean {
-        val record = current(sessionKey(session), chapterId) ?: return false
+        return cleanupUnavailableDownloadForKey(sessionKey(session), chapterId)
+    }
+
+    suspend fun cleanupUnavailableDownload(session: KomgaSession, chapterId: Int): Boolean {
+        return cleanupUnavailableDownloadForKey(komgaSessionKey(session), chapterId)
+    }
+
+    private suspend fun cleanupUnavailableDownloadForKey(key: String, chapterId: Int): Boolean {
+        val record = current(key, chapterId) ?: return false
         if (record.errorMessage != LegacyUnavailableDownloadMessage) return false
-        remove(session, chapterId)
+        removeForKey(key, chapterId)
         return true
     }
 
@@ -183,8 +208,84 @@ class OfflineIssueRepository(context: Context) {
         issueName: String,
         expectedBytes: Long? = null,
         expectedPageCount: Int? = null
+    ): OfflineIssueRecord {
+        val root = normalizeKavitaBaseUrl(session.baseUrl)
+        val url = "$root/api/Download/chapter?chapterId=$chapterId"
+        val authHeader = when {
+            session.apiKey.isNotBlank() -> "x-api-key" to session.apiKey
+            session.jwt.isNotBlank() -> "Authorization" to "Bearer ${session.jwt}"
+            else -> null
+        }
+        return enqueueCore(
+            key = sessionKey(session),
+            url = url,
+            authHeader = authHeader,
+            libraryId = libraryId,
+            seriesId = seriesId,
+            volumeId = volumeId,
+            chapterId = chapterId,
+            seriesName = seriesName,
+            issueName = issueName,
+            expectedBytes = expectedBytes,
+            expectedPageCount = expectedPageCount
+        )
+    }
+
+    suspend fun enqueue(
+        session: KomgaSession,
+        libraryId: Int,
+        seriesId: Int,
+        volumeId: Int,
+        chapterId: Int,
+        seriesName: String,
+        issueName: String,
+        expectedBytes: Long? = null,
+        expectedPageCount: Int? = null
+    ): OfflineIssueRecord {
+        val bookKomgaId = KomgaIdMapper.komgaBookId(chapterId)
+            ?: throw IllegalArgumentException("Unknown Komga book id $chapterId")
+        val root = normalizeKomgaBaseUrl(session.baseUrl)
+        val url = "$root/api/v1/books/$bookKomgaId/file"
+        val authHeader = when {
+            session.apiKey.isNotBlank() -> "X-API-Key" to session.apiKey
+            session.username.isNotBlank() -> {
+                val credentials = "${session.username}:${session.password}"
+                val encoded = android.util.Base64.encodeToString(
+                    credentials.toByteArray(Charsets.UTF_8),
+                    android.util.Base64.NO_WRAP
+                )
+                "Authorization" to "Basic $encoded"
+            }
+            else -> null
+        }
+        return enqueueCore(
+            key = komgaSessionKey(session),
+            url = url,
+            authHeader = authHeader,
+            libraryId = libraryId,
+            seriesId = seriesId,
+            volumeId = volumeId,
+            chapterId = chapterId,
+            seriesName = seriesName,
+            issueName = issueName,
+            expectedBytes = expectedBytes,
+            expectedPageCount = expectedPageCount
+        )
+    }
+
+    private suspend fun enqueueCore(
+        key: String,
+        url: String,
+        authHeader: Pair<String, String>?,
+        libraryId: Int,
+        seriesId: Int,
+        volumeId: Int,
+        chapterId: Int,
+        seriesName: String,
+        issueName: String,
+        expectedBytes: Long? = null,
+        expectedPageCount: Int? = null
     ): OfflineIssueRecord = withContext(Dispatchers.IO) {
-        val key = sessionKey(session)
         val previous = current(key, chapterId)
         previous?.let { existing ->
             if (existing.status in setOf(
@@ -196,8 +297,6 @@ class OfflineIssueRepository(context: Context) {
             removeFiles(existing)
         }
 
-        val root = normalizeKavitaBaseUrl(session.baseUrl)
-        val url = "$root/api/Download/chapter?chapterId=$chapterId"
         val safeName = "$seriesName - $issueName"
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
             .take(120)
@@ -225,9 +324,8 @@ class OfflineIssueRepository(context: Context) {
                 Environment.DIRECTORY_DOWNLOADS,
                 archive.name
             )
-        when {
-            session.apiKey.isNotBlank() -> request.addRequestHeader("x-api-key", session.apiKey)
-            session.jwt.isNotBlank() -> request.addRequestHeader("Authorization", "Bearer ${session.jwt}")
+        if (authHeader != null) {
+            request.addRequestHeader(authHeader.first, authHeader.second)
         }
 
         val downloadId = manager.enqueue(request)
@@ -251,9 +349,16 @@ class OfflineIssueRepository(context: Context) {
         record
     }
 
-    suspend fun reconcile(session: KavitaSession, chapterId: Int): OfflineIssueRecord? =
+    suspend fun reconcile(session: KavitaSession, chapterId: Int): OfflineIssueRecord? {
+        return reconcileForKey(sessionKey(session), chapterId)
+    }
+
+    suspend fun reconcile(session: KomgaSession, chapterId: Int): OfflineIssueRecord? {
+        return reconcileForKey(komgaSessionKey(session), chapterId)
+    }
+
+    private suspend fun reconcileForKey(key: String, chapterId: Int): OfflineIssueRecord? =
         withContext(Dispatchers.IO) {
-            val key = sessionKey(session)
             val record = current(key, chapterId) ?: return@withContext null
             if (record.status == OfflineDownloadStatus.Ready) return@withContext record
             if (record.status == OfflineDownloadStatus.Unsupported) return@withContext record
@@ -262,7 +367,7 @@ class OfflineIssueRepository(context: Context) {
             val cursor = manager.query(DownloadManager.Query().setFilterById(record.downloadId))
             cursor.use {
                 if (!it.moveToFirst()) {
-                    remove(session, chapterId)
+                    removeForKey(key, chapterId)
                     return@withContext null
                 }
                 val status = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
@@ -302,9 +407,17 @@ class OfflineIssueRepository(context: Context) {
             }
         }
 
-    suspend fun localChapter(session: KavitaSession, chapterId: Int): OfflineChapter? =
+    suspend fun localChapter(session: KavitaSession, chapterId: Int): OfflineChapter? {
+        return localChapterForKey(sessionKey(session), chapterId)
+    }
+
+    suspend fun localChapter(session: KomgaSession, chapterId: Int): OfflineChapter? {
+        return localChapterForKey(komgaSessionKey(session), chapterId)
+    }
+
+    private suspend fun localChapterForKey(key: String, chapterId: Int): OfflineChapter? =
         withContext(Dispatchers.IO) {
-            val reconciled = reconcile(session, chapterId) ?: return@withContext null
+            val reconciled = reconcileForKey(key, chapterId) ?: return@withContext null
             if (reconciled.status != OfflineDownloadStatus.Ready) return@withContext null
             val archive = File(reconciled.archivePath)
             val chapter = runCatching { inspectOfflineFile(archive, reconciled) }
@@ -320,8 +433,15 @@ class OfflineIssueRepository(context: Context) {
             chapter
         }
 
-    suspend fun ensureLocalCovers(session: KavitaSession) = withContext(Dispatchers.IO) {
-        val key = sessionKey(session)
+    suspend fun ensureLocalCovers(session: KavitaSession) {
+        return ensureLocalCoversForKey(sessionKey(session))
+    }
+
+    suspend fun ensureLocalCovers(session: KomgaSession) {
+        return ensureLocalCoversForKey(komgaSessionKey(session))
+    }
+
+    private suspend fun ensureLocalCoversForKey(key: String) = withContext(Dispatchers.IO) {
         records()
             .filter { it.serverKey == key && it.status == OfflineDownloadStatus.Ready }
             .forEach { record ->
@@ -345,7 +465,26 @@ class OfflineIssueRepository(context: Context) {
         markRead: Boolean = false,
         scrollId: String = ""
     ) {
-        val key = sessionKey(session)
+        saveLocalProgressForKey(sessionKey(session), chapterId, page, markRead, scrollId)
+    }
+
+    suspend fun saveLocalProgress(
+        session: KomgaSession,
+        chapterId: Int,
+        page: Int,
+        markRead: Boolean = false,
+        scrollId: String = ""
+    ) {
+        saveLocalProgressForKey(komgaSessionKey(session), chapterId, page, markRead, scrollId)
+    }
+
+    private suspend fun saveLocalProgressForKey(
+        key: String,
+        chapterId: Int,
+        page: Int,
+        markRead: Boolean = false,
+        scrollId: String = ""
+    ) {
         mutateRecord(key, chapterId) { record ->
             record.copy(
                 localPage = page.coerceAtLeast(0),
@@ -358,7 +497,14 @@ class OfflineIssueRepository(context: Context) {
     }
 
     suspend fun markLocalUnread(session: KavitaSession, chapterId: Int) {
-        val key = sessionKey(session)
+        markLocalUnreadForKey(sessionKey(session), chapterId)
+    }
+
+    suspend fun markLocalUnread(session: KomgaSession, chapterId: Int) {
+        markLocalUnreadForKey(komgaSessionKey(session), chapterId)
+    }
+
+    private suspend fun markLocalUnreadForKey(key: String, chapterId: Int) {
         mutateRecord(key, chapterId) { record ->
             record.copy(
                 localPage = 0,
@@ -377,7 +523,26 @@ class OfflineIssueRepository(context: Context) {
         markedRead: Boolean = false,
         markedUnread: Boolean = false
     ) {
-        val key = sessionKey(session)
+        markProgressSyncedForKey(sessionKey(session), chapterId, expectedPage, markedRead, markedUnread)
+    }
+
+    suspend fun markProgressSynced(
+        session: KomgaSession,
+        chapterId: Int,
+        expectedPage: Int,
+        markedRead: Boolean = false,
+        markedUnread: Boolean = false
+    ) {
+        markProgressSyncedForKey(komgaSessionKey(session), chapterId, expectedPage, markedRead, markedUnread)
+    }
+
+    private suspend fun markProgressSyncedForKey(
+        key: String,
+        chapterId: Int,
+        expectedPage: Int,
+        markedRead: Boolean = false,
+        markedUnread: Boolean = false
+    ) {
         appContext.offlineIssueDataStore.edit { preferences ->
             val updated = decode(preferences[recordsKey]).mapNotNull { record ->
                 if (record.serverKey != key || record.chapterId != chapterId) return@mapNotNull record
@@ -398,7 +563,14 @@ class OfflineIssueRepository(context: Context) {
     }
 
     suspend fun syncPending(session: KavitaSession, api: KavitaApi) {
-        val key = sessionKey(session)
+        syncPendingForKey(sessionKey(session), api)
+    }
+
+    suspend fun syncPending(session: KomgaSession, api: KavitaApi) {
+        syncPendingForKey(komgaSessionKey(session), api)
+    }
+
+    private suspend fun syncPendingForKey(key: String, api: KavitaApi) {
         val pending = records().filter {
             it.serverKey == key &&
                 (it.progressPending || it.markReadPending || it.markUnreadPending)
@@ -444,8 +616,8 @@ class OfflineIssueRepository(context: Context) {
                 (record.markReadPending && readMarked) ||
                 (record.markUnreadPending && unreadMarked)
             ) {
-                markProgressSynced(
-                    session = session,
+                markProgressSyncedForKey(
+                    key = key,
                     chapterId = record.chapterId,
                     expectedPage = record.localPage,
                     markedRead = record.markReadPending && readMarked,
@@ -455,8 +627,15 @@ class OfflineIssueRepository(context: Context) {
         }
     }
 
-    suspend fun remove(session: KavitaSession, chapterId: Int) = withContext(Dispatchers.IO) {
-        val key = sessionKey(session)
+    suspend fun remove(session: KavitaSession, chapterId: Int) {
+        removeForKey(sessionKey(session), chapterId)
+    }
+
+    suspend fun remove(session: KomgaSession, chapterId: Int) {
+        removeForKey(komgaSessionKey(session), chapterId)
+    }
+
+    private suspend fun removeForKey(key: String, chapterId: Int) = withContext(Dispatchers.IO) {
         val record = current(key, chapterId) ?: return@withContext
         if (record.downloadId > 0) manager.remove(record.downloadId)
         removeFiles(record)
@@ -756,6 +935,20 @@ class OfflineIssueRepository(context: Context) {
                     .joinToString("") { "%02x".format(it) }
             }
             val normalized = "${normalizeKavitaBaseUrl(session.baseUrl).lowercase()}|$identity"
+            return MessageDigest.getInstance("SHA-256")
+                .digest(normalized.toByteArray())
+                .take(8)
+                .joinToString("") { "%02x".format(it) }
+        }
+
+        fun komgaSessionKey(session: KomgaSession): String {
+            val identity = session.username.trim().lowercase().ifBlank {
+                MessageDigest.getInstance("SHA-256")
+                    .digest(session.apiKey.ifBlank { session.password }.toByteArray())
+                    .take(8)
+                    .joinToString("") { "%02x".format(it) }
+            }
+            val normalized = "komga|${normalizeKomgaBaseUrl(session.baseUrl).lowercase()}|$identity"
             return MessageDigest.getInstance("SHA-256")
                 .digest(normalized.toByteArray())
                 .take(8)

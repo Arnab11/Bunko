@@ -98,6 +98,10 @@ import com.bunko.reader.KavitaClient
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaSession
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.ServerBackend
+import com.bunko.reader.serverBackend
 import com.bunko.reader.MarkChapterReadDto
 import com.bunko.reader.MarkVolumesReadDto
 import com.bunko.reader.PageTurnMode
@@ -342,6 +346,7 @@ internal fun readerPortraitBackPageContentAlpha(showContent: Boolean): Float {
 @Composable
 fun ReaderScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     settingsStore: AppSettingsStore,
     libraryId: Int = 0,
     seriesId: Int = 0,
@@ -361,6 +366,8 @@ fun ReaderScreen(
     val settings by settingsStore.flow.collectAsState(initial = AppSettings())
 
     var session by remember { mutableStateOf<KavitaSession?>(null) }
+    var komgaSession by remember { mutableStateOf(KomgaSession()) }
+    var backend by remember { mutableStateOf<ServerBackend?>(null) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
     var currentChapterId by rememberSaveable { mutableIntStateOf(chapterId) }
     var currentVolumeId by rememberSaveable { mutableIntStateOf(volumeId) }
@@ -602,11 +609,19 @@ fun ReaderScreen(
                     pendingRemoteProgress = null
                 }
                 if (target.offline && targetSession != null) {
-                    offlineRepository.markProgressSynced(
-                        session = targetSession,
-                        chapterId = target.chapterId,
-                        expectedPage = target.page
-                    )
+                    if (backend?.isKomga == true) {
+                        offlineRepository.markProgressSynced(
+                            session = komgaSession,
+                            chapterId = target.chapterId,
+                            expectedPage = target.page
+                        )
+                    } else {
+                        offlineRepository.markProgressSynced(
+                            session = targetSession,
+                            chapterId = target.chapterId,
+                            expectedPage = target.page
+                        )
+                    }
                 }
                 true
             } catch (cancelled: CancellationException) {
@@ -720,13 +735,23 @@ fun ReaderScreen(
         ReaderExitWriteScope.launch {
             runCatching {
                 if (hasOffline && loadedSession != null) {
-                    offlineRepository.saveLocalProgress(
-                        session = loadedSession,
-                        chapterId = completedChapterId,
-                        page = remoteFinalPage,
-                        markRead = true,
-                        scrollId = remoteFinalScroll.orEmpty()
-                    )
+                    if (backend?.isKomga == true) {
+                        offlineRepository.saveLocalProgress(
+                            session = komgaSession,
+                            chapterId = completedChapterId,
+                            page = remoteFinalPage,
+                            markRead = true,
+                            scrollId = remoteFinalScroll.orEmpty()
+                        )
+                    } else {
+                        offlineRepository.saveLocalProgress(
+                            session = loadedSession,
+                            chapterId = completedChapterId,
+                            page = remoteFinalPage,
+                            markRead = true,
+                            scrollId = remoteFinalScroll.orEmpty()
+                        )
+                    }
                 }
                 val progressSaved = loadedApi != null && saveRemoteProgress(
                     target = progressTarget,
@@ -746,12 +771,21 @@ fun ReaderScreen(
                     BunkoLog.w("Could not mark chapter $completedChapterId as read.", it)
                 }.isSuccess
                 if (hasOffline && loadedSession != null && progressSaved) {
-                    offlineRepository.markProgressSynced(
-                        session = loadedSession,
-                        chapterId = completedChapterId,
-                        expectedPage = remoteFinalPage,
-                        markedRead = readMarked
-                    )
+                    if (backend?.isKomga == true) {
+                        offlineRepository.markProgressSynced(
+                            session = komgaSession,
+                            chapterId = completedChapterId,
+                            expectedPage = remoteFinalPage,
+                            markedRead = readMarked
+                        )
+                    } else {
+                        offlineRepository.markProgressSynced(
+                            session = loadedSession,
+                            chapterId = completedChapterId,
+                            expectedPage = remoteFinalPage,
+                            markedRead = readMarked
+                        )
+                    }
                 }
             }
         }
@@ -777,7 +811,11 @@ fun ReaderScreen(
         ReaderExitWriteScope.launch {
             runCatching {
                 if (hasOffline && loadedSession != null) {
-                    offlineRepository.markLocalUnread(loadedSession, resetChapterId)
+                    if (backend?.isKomga == true) {
+                        offlineRepository.markLocalUnread(komgaSession, resetChapterId)
+                    } else {
+                        offlineRepository.markLocalUnread(loadedSession, resetChapterId)
+                    }
                 }
                 val unreadMarked = loadedApi != null && runCatching {
                     ReaderProgressWriteMutex.withLock {
@@ -792,12 +830,21 @@ fun ReaderScreen(
                     BunkoLog.w("Could not mark chapter $resetChapterId as unread.", it)
                 }.isSuccess
                 if (hasOffline && loadedSession != null && unreadMarked) {
-                    offlineRepository.markProgressSynced(
-                        session = loadedSession,
-                        chapterId = resetChapterId,
-                        expectedPage = 0,
-                        markedUnread = true
-                    )
+                    if (backend?.isKomga == true) {
+                        offlineRepository.markProgressSynced(
+                            session = komgaSession,
+                            chapterId = resetChapterId,
+                            expectedPage = 0,
+                            markedUnread = true
+                        )
+                    } else {
+                        offlineRepository.markProgressSynced(
+                            session = loadedSession,
+                            chapterId = resetChapterId,
+                            expectedPage = 0,
+                            markedUnread = true
+                        )
+                    }
                 }
             }
         }
@@ -884,8 +931,10 @@ fun ReaderScreen(
             try {
                 val loadedSession = session ?: sessionStore.load()
                 val loadedApi = api
+                val komgaBackend = backend
                 val local = runCatching {
-                    offlineRepository.localChapter(loadedSession, target.chapterId)
+                    if (komgaBackend != null && komgaBackend.isKomga) offlineRepository.localChapter(komgaSession, target.chapterId)
+                    else offlineRepository.localChapter(loadedSession, target.chapterId)
                 }.onFailure {
                     BunkoLog.w("Could not load local offline chapter ${target.chapterId}.", it)
                 }.getOrNull()
@@ -1251,6 +1300,9 @@ fun ReaderScreen(
 
         val loadedSession = sessionStore.load()
         session = loadedSession
+        val resolvedBackend = ctx.serverBackend(sessionStore, komgaSessionStore)
+        backend = resolvedBackend
+        komgaSession = komgaSessionStore.load()
         val activeProfileId = runCatching { sessionStore.activeProfile()?.id }.getOrNull()
         val preferenceKey = readerSessionPreferenceKey(loadedSession, activeProfileId, seriesId)
         sessionPreferenceKey = preferenceKey
@@ -1270,7 +1322,8 @@ fun ReaderScreen(
             }
         }
         val local = runCatching {
-            offlineRepository.localChapter(loadedSession, currentChapterId)
+            if (resolvedBackend.isKomga) offlineRepository.localChapter(komgaSession, currentChapterId)
+            else offlineRepository.localChapter(loadedSession, currentChapterId)
         }.onFailure {
             BunkoLog.w("Could not load local offline chapter $currentChapterId.", it)
         }.getOrNull()
@@ -1347,12 +1400,16 @@ fun ReaderScreen(
         }
 
         try {
-            val client = KavitaClient(ctx, sessionStore)
-            val (loadedApi, okHttp) = client.buildApi()
+            val loadedApi = resolvedBackend.api
             api = loadedApi
-            readerImageLoader = client.buildReaderImageLoader(okHttp, loadedSession)
-            runCatching { offlineRepository.syncPending(loadedSession, loadedApi) }
-                .onFailure { BunkoLog.w("Could not sync pending offline progress from Reader.", it) }
+            readerImageLoader = resolvedBackend.readerImageLoader()
+            if (resolvedBackend.isKomga) {
+                runCatching { offlineRepository.syncPending(komgaSession, loadedApi) }
+                    .onFailure { BunkoLog.w("Could not sync pending offline progress from Reader.", it) }
+            } else {
+                runCatching { offlineRepository.syncPending(loadedSession, loadedApi) }
+                    .onFailure { BunkoLog.w("Could not sync pending offline progress from Reader.", it) }
+            }
             var seriesMetadata: SeriesMetadataDto? = null
             val chapterMetadataJob = launch {
                 seriesName = runCatching { loadedApi.series(seriesId).name }
@@ -1372,7 +1429,10 @@ fun ReaderScreen(
                         currentVolumeId = it.volumeId
                     }
                 } else {
-                    val offlineRecords = runCatching { offlineRepository.observeDownloaded(loadedSession).first() }.getOrDefault(emptyList())
+                    val offlineRecords = runCatching {
+                        if (resolvedBackend.isKomga) offlineRepository.observeDownloaded(komgaSession).first()
+                        else offlineRepository.observeDownloaded(loadedSession).first()
+                    }.getOrDefault(emptyList())
                         .filter { it.seriesId == seriesId }
                         .sortedWith(compareBy<OfflineIssueRecord> { it.volumeId }.thenBy { it.chapterId })
                     if (offlineRecords.isNotEmpty()) {
@@ -1503,7 +1563,7 @@ fun ReaderScreen(
                         spineCount = spineCount,
                         loadedApi = loadedApi,
                         loadedSession = loadedSession,
-                        client = client
+                        client = KavitaClient(ctx, sessionStore)
                     )
                 }
             } else if (!local.record.progressPending) {
@@ -1556,7 +1616,10 @@ fun ReaderScreen(
         } catch (t: Throwable) {
             BunkoLog.w("Could not initialize Reader for chapter $currentChapterId.", t)
             if (chapterSequence.isEmpty() && local != null) {
-                val offlineRecords = runCatching { offlineRepository.observeDownloaded(loadedSession).first() }.getOrDefault(emptyList())
+                val offlineRecords = runCatching {
+                    if (resolvedBackend.isKomga) offlineRepository.observeDownloaded(komgaSession).first()
+                    else offlineRepository.observeDownloaded(loadedSession).first()
+                }.getOrDefault(emptyList())
                     .filter { it.seriesId == seriesId }
                     .sortedWith(compareBy<OfflineIssueRecord> { it.volumeId }.thenBy { it.chapterId })
                 if (offlineRecords.isNotEmpty()) {
@@ -1627,7 +1690,12 @@ fun ReaderScreen(
             } else {
                 ""
             }
-            offlineRepository.saveLocalProgress(loadedSession, currentChapterId, offlinePage, scrollId = scrollId)
+            val komgaBackend = backend
+            if (komgaBackend != null && komgaBackend.isKomga) {
+                offlineRepository.saveLocalProgress(komgaSession, currentChapterId, offlinePage, scrollId = scrollId)
+            } else {
+                offlineRepository.saveLocalProgress(loadedSession, currentChapterId, offlinePage, scrollId = scrollId)
+            }
         }
     }
 
@@ -1710,20 +1778,25 @@ fun ReaderScreen(
         return
     }
 
-    val client = remember { KavitaClient(ctx, sessionStore) }
+    val kavitaPageClient = remember { KavitaClient(ctx, sessionStore) }
+    val komgaPageBackend = backend
     val activeImageLoader = readerImageLoader ?: fallbackImageLoader
     fun pageModel(index: Int): Any? = if (isEpub) {
         epubSubpages.getOrNull(index)
     } else {
         offlineChapter?.pages?.getOrNull(index)
             ?: if (s != null && index in 0 until pages) {
-                client.pageImageUrl(
-                    s.baseUrl,
-                    s.apiKey,
-                    currentChapterId,
-                    index,
-                    extractPdf = isPdf
-                )
+                if (komgaPageBackend != null && komgaPageBackend.isKomga) {
+                    komgaPageBackend.imageUrls.pageImageUrl(currentChapterId, index, false)
+                } else {
+                    kavitaPageClient.pageImageUrl(
+                        s.baseUrl,
+                        s.apiKey,
+                        currentChapterId,
+                        index,
+                        extractPdf = isPdf
+                    )
+                }
             } else {
                 null
             }
@@ -4331,7 +4404,7 @@ fun ReaderScreen(
                         )
                         if (s != null && s.baseUrl.isNotBlank() && seriesId > 0 && currentChapterId > 0) {
                             runCatching {
-                                val (kApi, _) = client.buildApi()
+                                val kApi = api ?: return@runCatching
                                 val dto = BookmarkDto(
                                     seriesId = seriesId,
                                     volumeId = currentVolumeId,
@@ -4353,7 +4426,7 @@ fun ReaderScreen(
                         bookmarkRepo.removeBookmark(bookmarkId)
                         if (targetBm != null && s != null && s.baseUrl.isNotBlank() && seriesId > 0 && targetBm.chapterId > 0) {
                             runCatching {
-                                val (kApi, _) = client.buildApi()
+                                val kApi = api ?: return@runCatching
                                 kApi.unBookmark(
                                     BookmarkDto(
                                         seriesId = seriesId,

@@ -96,7 +96,9 @@ import coil.compose.AsyncImage
 import com.bunko.reader.ChapterDto
 import com.bunko.reader.library.SearchSeriesTarget
 import com.bunko.reader.KavitaApi
-import com.bunko.reader.KavitaClient
+import com.bunko.reader.KomgaSession
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.serverBackend
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
@@ -161,6 +163,7 @@ import com.bunko.reader.ui.theme.themeToggleModifier
 @Composable
 fun ChapterPickScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     libraryId: Int,
     seriesId: Int,
     seriesName: String,
@@ -183,6 +186,8 @@ fun ChapterPickScreen(
     var loading by remember { mutableStateOf(true) }
     var refreshing by remember { mutableStateOf(false) }
     var session by remember { mutableStateOf(KavitaSession()) }
+    var komgaSession by remember { mutableStateOf(KomgaSession()) }
+    var useKomga by remember { mutableStateOf(false) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
     var isAdmin by remember { mutableStateOf(false) }
     var issueActionBusy by remember { mutableStateOf(false) }
@@ -207,11 +212,18 @@ fun ChapterPickScreen(
         try {
             val loadedSession = sessionStore.load()
             session = loadedSession
-            val client = KavitaClient(ctx, sessionStore)
-            val (loadedApi, _) = client.buildApi()
+            komgaSession = komgaSessionStore.load()
+            val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+            useKomga = backend.isKomga
+            val loadedApi = backend.api
             api = loadedApi
-            runCatching { offlineRepository.syncPending(loadedSession, loadedApi) }
-                .onFailure { BunkoLog.w("Could not sync pending offline progress from Series detail.", it) }
+            if (backend.isKomga) {
+                runCatching { offlineRepository.syncPending(komgaSession, loadedApi) }
+                    .onFailure { BunkoLog.w("Could not sync pending offline progress from Series detail.", it) }
+            } else {
+                runCatching { offlineRepository.syncPending(loadedSession, loadedApi) }
+                    .onFailure { BunkoLog.w("Could not sync pending offline progress from Series detail.", it) }
+            }
             isAdmin = runCatching {
                 loadedApi.currentUser().roles.orEmpty().any { it.equals("Admin", ignoreCase = true) }
             }.onFailure {
@@ -256,7 +268,7 @@ fun ChapterPickScreen(
     }.distinctBy { it.chapter.id }
     val displaySeries = series ?: SeriesDto(id = seriesId, name = seriesName, libraryId = libraryId)
     val loadedApi = api
-    val downloadedList by offlineRepository.observeDownloaded(session).collectAsState(initial = emptyList())
+    val downloadedList by (if (useKomga) offlineRepository.observeDownloaded(komgaSession) else offlineRepository.observeDownloaded(session)).collectAsState(initial = emptyList())
     val downloadedChapterIds = remember(downloadedList) {
         downloadedList.filter { it.status == OfflineDownloadStatus.Ready }.mapTo(mutableSetOf()) { it.chapterId }
     }
@@ -344,17 +356,31 @@ fun ChapterPickScreen(
         issueActionBusy = true
         scope.launch {
             try {
-                offlineRepository.enqueue(
-                    session = session,
-                    libraryId = libraryId,
-                    seriesId = seriesId,
-                    volumeId = item.volume.id,
-                    chapterId = item.chapter.id,
-                    seriesName = displaySeries.name,
-                    issueName = item.volume.displayName() ?: item.chapter.displayTitle(),
-                    expectedBytes = null,
-                    expectedPageCount = item.chapter.pages
-                )
+                if (useKomga) {
+                    offlineRepository.enqueue(
+                        session = komgaSession,
+                        libraryId = libraryId,
+                        seriesId = seriesId,
+                        volumeId = item.volume.id,
+                        chapterId = item.chapter.id,
+                        seriesName = displaySeries.name,
+                        issueName = item.volume.displayName() ?: item.chapter.displayTitle(),
+                        expectedBytes = null,
+                        expectedPageCount = item.chapter.pages
+                    )
+                } else {
+                    offlineRepository.enqueue(
+                        session = session,
+                        libraryId = libraryId,
+                        seriesId = seriesId,
+                        volumeId = item.volume.id,
+                        chapterId = item.chapter.id,
+                        seriesName = displaySeries.name,
+                        issueName = item.volume.displayName() ?: item.chapter.displayTitle(),
+                        expectedBytes = null,
+                        expectedPageCount = item.chapter.pages
+                    )
+                }
                 showMessage("Download queued")
             } catch (c: CancellationException) {
                 throw c
@@ -377,7 +403,8 @@ fun ChapterPickScreen(
             )
             if (result == SnackbarResult.ActionPerformed) return@launch
             try {
-                offlineRepository.remove(session, item.chapter.id)
+                if (useKomga) offlineRepository.remove(komgaSession, item.chapter.id)
+                else offlineRepository.remove(session, item.chapter.id)
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {

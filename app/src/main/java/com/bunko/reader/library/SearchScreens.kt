@@ -61,7 +61,8 @@ import com.bunko.reader.CollectionDto
 import com.bunko.reader.GenreTagDto
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaApi
-import com.bunko.reader.KavitaClient
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.serverBackend
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
 import com.bunko.reader.ReadingListDto
@@ -480,6 +481,7 @@ private fun SearchSectionHeader(title: String) {
 @Composable
 internal fun SearchSeriesScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     target: SearchSeriesTarget,
     targetId: Int,
     label: String,
@@ -535,7 +537,8 @@ internal fun SearchSeriesScreen(
         series = emptyList()
         try {
             session = sessionStore.load()
-            val (loadedApi, _) = KavitaClient(ctx, sessionStore).buildApi()
+            val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+            val loadedApi = backend.api
             api = loadedApi
             val page = loadedApi.loadSearchSeriesPage(target, targetId, pageNumber = 0)
             series = page.items.sortedBy { it.name }

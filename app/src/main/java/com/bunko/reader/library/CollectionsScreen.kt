@@ -41,8 +41,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.bunko.reader.CollectionDto
 import com.bunko.reader.BunkoLog
-import com.bunko.reader.KavitaClient
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.serverBackend
 import com.bunko.reader.ui.DarkLoadingState
 import com.bunko.reader.ui.DarkMessageState
 import com.bunko.reader.ui.BunkoPullToRefreshIndicator
@@ -53,6 +54,7 @@ import com.bunko.reader.ui.theme.BunkoSurface
 @Composable
 internal fun CollectionsScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onBack: () -> Unit,
     statusBarPadding: Boolean = true,
     onOpenCollection: (CollectionDto) -> Unit
@@ -70,8 +72,8 @@ internal fun CollectionsScreen(
         if (initialLoad) loading = true else refreshing = true
         if (initialLoad) error = null
         try {
-            val (api, _) = KavitaClient(ctx, sessionStore).buildApi()
-            collections = api.collections().sortedBy { it.title }
+            val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+            collections = backend.api.collections().sortedBy { it.title }
             error = null
         } catch (c: CancellationException) {
             throw c

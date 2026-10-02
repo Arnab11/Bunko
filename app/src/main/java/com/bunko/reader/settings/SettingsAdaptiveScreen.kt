@@ -54,6 +54,7 @@ import com.bunko.reader.AppSettings
 import com.bunko.reader.AppSettingsStore
 import com.bunko.reader.CacheSettingsScreen
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaSessionStore
 import com.bunko.reader.ReaderSettingsScreen
 import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.update.UpdateController
@@ -72,7 +73,7 @@ enum class SettingsCategory(
     ),
     SOURCES(
         title = "Library Sources",
-        subtitle = "Offline folder & Kavita media servers",
+        subtitle = "Offline folder, Kavita & Komga servers",
         icon = Icons.Filled.Storage
     ),
     READER(
@@ -98,6 +99,7 @@ fun SettingsAdaptiveScreen(
     settingsStore: AppSettingsStore,
     localRepository: LocalBookRepository,
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onConfigureServerDetails: () -> Unit,
     onBack: () -> Unit,
     initialCategory: SettingsCategory? = null,
@@ -216,6 +218,7 @@ fun SettingsAdaptiveScreen(
                             appSettings = appSettings,
                             localRepository = localRepository,
                             sessionStore = sessionStore,
+                            komgaSessionStore = komgaSessionStore,
                             onConfigureServerDetails = onConfigureServerDetails,
                             onActiveModeChanged = onActiveModeChanged,
                             updateController = updateController
@@ -305,6 +308,7 @@ fun SettingsAdaptiveScreen(
                         appSettings = appSettings,
                         localRepository = localRepository,
                         sessionStore = sessionStore,
+                        komgaSessionStore = komgaSessionStore,
                         onConfigureServerDetails = onConfigureServerDetails,
                         onActiveModeChanged = onActiveModeChanged,
                         updateController = updateController
@@ -322,6 +326,7 @@ private fun SettingsCategoryContent(
     appSettings: AppSettings,
     localRepository: LocalBookRepository,
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onConfigureServerDetails: () -> Unit,
     onActiveModeChanged: suspend (String) -> Unit,
     updateController: UpdateController? = null
@@ -353,6 +358,7 @@ private fun SettingsCategoryContent(
             SettingsSourcesScreen(
                 localRepository = localRepository,
                 sessionStore = sessionStore,
+                komgaSessionStore = komgaSessionStore,
                 onConfigureServerDetails = onConfigureServerDetails,
                 onActiveModeChanged = onActiveModeChanged
             )

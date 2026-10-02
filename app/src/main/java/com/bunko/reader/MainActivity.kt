@@ -190,6 +190,8 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         val sessionStore = KavitaSessionStore(this)
+        val komgaSessionStore = KomgaSessionStore(this)
+        KomgaIdMapper.init(this)
         val settingsStore = AppSettingsStore(this)
         val allowIntentLogin = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val loginDefaults = LoginDefaults(
@@ -248,6 +250,7 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalToggleTheme provides toggleTheme) {
                     AppRoot(
                         sessionStore = sessionStore,
+                        komgaSessionStore = komgaSessionStore,
                         settingsStore = settingsStore,
                         loginDefaults = loginDefaults,
                         incomingFile = incomingFile,
@@ -267,6 +270,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppRoot(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     settingsStore: AppSettingsStore,
     loginDefaults: LoginDefaults = LoginDefaults(),
     incomingFile: StateFlow<MainActivity.IncomingFile?> = MutableStateFlow(null),
@@ -323,18 +327,41 @@ fun AppRoot(
         }.onFailure {
             BunkoLog.w("Could not sync pending offline progress during app startup.", it)
         }
+        runCatching {
+            val komgaSession = komgaSessionStore.load()
+            if (komgaSession.baseUrl.isNotBlank() && (komgaSession.username.isNotBlank() || komgaSession.apiKey.isNotBlank())) {
+                val komgaClient = KomgaClient(ctx, komgaSessionStore)
+                val (komgaApi, komgaOkHttp) = komgaClient.buildApi()
+                val adapter = KomgaKavitaAdapter(komgaApi, komgaOkHttp, normalizeKomgaBaseUrl(komgaSession.baseUrl))
+                offlineRepository.syncPending(komgaSession, adapter)
+            }
+        }.onFailure {
+            BunkoLog.w("Could not sync pending Komga offline progress during app startup.", it)
+        }
     }
 
     suspend fun refreshActiveServer() {
         sessionRevision += 1
         val nextImageLoader = try {
-            val session = sessionStore.load()
-            if (session.baseUrl.isBlank() || (session.jwt.isBlank() && session.apiKey.isBlank())) {
-                null
+            val mode = localRepository.activeModeFlow.first()
+            if (mode == "komga") {
+                val komgaSession = komgaSessionStore.load()
+                if (komgaSession.baseUrl.isBlank() || (komgaSession.username.isBlank() && komgaSession.apiKey.isBlank())) {
+                    null
+                } else {
+                    val komgaClient = KomgaClient(ctx, komgaSessionStore)
+                    val (_, okHttp) = komgaClient.buildApi()
+                    komgaClient.buildImageLoader(okHttp, komgaSession)
+                }
             } else {
-                val client = KavitaClient(ctx, sessionStore)
-                val (_, okHttp) = client.buildApi()
-                client.buildImageLoader(okHttp, session)
+                val session = sessionStore.load()
+                if (session.baseUrl.isBlank() || (session.jwt.isBlank() && session.apiKey.isBlank())) {
+                    null
+                } else {
+                    val client = KavitaClient(ctx, sessionStore)
+                    val (_, okHttp) = client.buildApi()
+                    client.buildImageLoader(okHttp, session)
+                }
             }
         } catch (t: Throwable) {
             BunkoLog.w("Could not refresh active server image loader.", t)
@@ -347,6 +374,26 @@ fun AppRoot(
     val startupCompleted by localRepository.startupCompletedFlow.collectAsState(initial = null)
     val activeMode by localRepository.activeModeFlow.collectAsState(initial = null)
 
+    // Publish the active source before any cover URL is composed, so the shared
+    // helpers build Komga URLs on the very first paint in Komga mode.
+    LaunchedEffect(Unit) {
+        val mode = localRepository.activeModeFlow.first()
+        ActiveServerRuntime.mode = mode
+        ActiveServerRuntime.komgaBaseUrl = if (mode == "komga") {
+            runCatching { normalizeKomgaBaseUrl(komgaSessionStore.load().baseUrl) }.getOrDefault("")
+        } else {
+            ""
+        }
+    }
+
+    // (Re)install the global image loader whenever the active source changes, so
+    // Komga covers/pages always carry auth headers. Also bumps the session
+    // revision so Home reloads for Kavita<->Komga switches from the top-bar menu.
+    LaunchedEffect(activeMode) {
+        if (activeMode == null) return@LaunchedEffect
+        refreshActiveServer()
+    }
+
     val forceStartup = (ctx as? android.app.Activity)?.intent?.getBooleanExtra("force_startup", false) ?: false
 
     LaunchedEffect(forceStartup) {
@@ -354,6 +401,11 @@ fun AppRoot(
             val session = sessionStore.load()
             if (session.baseUrl.isNotBlank() && (session.jwt.isNotBlank() || session.apiKey.isNotBlank())) {
                 localRepository.setStartupCompleted(true)
+            } else {
+                val komgaSession = komgaSessionStore.load()
+                if (komgaSession.baseUrl.isNotBlank() && (komgaSession.username.isNotBlank() || komgaSession.apiKey.isNotBlank())) {
+                    localRepository.setStartupCompleted(true)
+                }
             }
         }
     }
@@ -409,6 +461,7 @@ fun AppRoot(
             OfflineStartupScreen(
                 localRepository = localRepository,
                 sessionStore = sessionStore,
+                komgaSessionStore = komgaSessionStore,
                 offlineRepository = offlineRepository,
                 onOpenOfflineLibrary = {
                     scope.launch { localRepository.setActiveMode("offline") }
@@ -436,6 +489,17 @@ fun AppRoot(
                         popUpTo("startup") { inclusive = true }
                     }
                 },
+                onConnectKomga = {
+                    scope.launch { localRepository.setActiveMode("komga") }
+                    val komgaClient = KomgaClient(ctx, komgaSessionStore)
+                    val komgaSession = komgaSessionStore.load()
+                    val (_, komgaOkHttp) = komgaClient.buildApi()
+                    installImageLoader(komgaClient.buildImageLoader(komgaOkHttp, komgaSession))
+                    sessionRevision += 1
+                    nav.navigate("libraries") {
+                        popUpTo("startup") { inclusive = true }
+                    }
+                },
                 onOpenServerSettings = { nav.navigate("settings/server") }
             )
         }
@@ -454,6 +518,7 @@ fun AppRoot(
             val initialPage = backStack.arguments!!.getInt("page").takeIf { it >= 0 }
             ReaderScreen(
                 sessionStore = sessionStore,
+                komgaSessionStore = komgaSessionStore,
                 settingsStore = settingsStore,
                 localBookId = bookId,
                 localRepository = localRepository,
@@ -518,6 +583,7 @@ fun AppRoot(
                 val initialDestination = HomeDestination.entries.firstOrNull { it.name.equals(tabArg, ignoreCase = true) }
                 LibraryScreen(
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     sessionRevision = sessionRevision,
                     localRepository = localRepository,
                     initialIsOffline = (activeMode == "offline"),
@@ -583,6 +649,7 @@ fun AppRoot(
             composable("bookmarks") {
                 BookmarksScreen(
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     onBack = { nav.popBackStack() },
                     onOpenBookmark = { libraryId, seriesId, volumeId, chapterId, page ->
                         nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=false&page=$page")
@@ -596,6 +663,7 @@ fun AppRoot(
             composable("collections") {
                 CollectionsScreen(
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     onBack = { nav.popBackStack() },
                     onOpenCollection = { collection ->
                         nav.navigate(
@@ -609,6 +677,7 @@ fun AppRoot(
             composable("downloaded") {
                 DownloadedScreen(
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     onBack = { nav.popBackStack() },
                     onPickIssue = { libraryId, seriesId, volumeId, chapterId, incognito ->
                         nav.navigate("reader/$libraryId/$seriesId/$volumeId/$chapterId?incognito=$incognito")
@@ -627,12 +696,16 @@ fun AppRoot(
                 ) ?: HomeShelfKind.OnDeck
                 SeriesShelfScreen(
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     shelfKind = shelfKind,
                     onBack = { nav.popBackStack() },
                     onSelectSeries = { series ->
                         val libraryId = series.libraryId ?: 0
                         val tab = if (shelfKind == HomeShelfKind.OnDeck) "History" else "Home"
                         nav.navigate("chapters/$libraryId/${series.id}/${Uri.encode(series.name)}?fromTab=$tab")
+                    },
+                    onOpenBook = { bookLibraryId, seriesId, volumeId, chapterId ->
+                        nav.navigate("reader/$bookLibraryId/$seriesId/$volumeId/$chapterId?incognito=false")
                     }
                 )
             }
@@ -652,6 +725,7 @@ fun AppRoot(
                 val label = backStack.arguments!!.getString("label") ?: ""
                 SearchSeriesScreen(
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     target = target,
                     targetId = targetId,
                     label = label,
@@ -674,6 +748,7 @@ fun AppRoot(
                 val libraryName = backStack.arguments!!.getString("libraryName") ?: ""
                 SeriesScreen(
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     libraryId = libraryId,
                     libraryName = libraryName,
                     onBack = { nav.popBackStack() },
@@ -688,6 +763,9 @@ fun AppRoot(
                     onSelect = { s ->
                         val resolvedLib = s.libraryId?.takeIf { it > 0 } ?: libraryId
                         nav.navigate("chapters/$resolvedLib/${s.id}/${Uri.encode(s.name)}?fromTab=Libraries")
+                    },
+                    onOpenBook = { bookLibraryId, seriesId, volumeId, chapterId ->
+                        nav.navigate("reader/$bookLibraryId/$seriesId/$volumeId/$chapterId?incognito=false")
                     }
                 )
             }
@@ -712,6 +790,7 @@ fun AppRoot(
                     ?: HomeDestination.Libraries
                 ChapterPickScreen(
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     libraryId = libraryId,
                     seriesId = seriesId,
                     seriesName = seriesName,
@@ -761,12 +840,13 @@ fun AppRoot(
                 val incognito = backStack.arguments!!.getBoolean("incognito")
                 val initialPage = backStack.arguments!!.getInt("page").takeIf { it >= 0 }
                 ReaderScreen(
-                    sessionStore,
-                    settingsStore,
-                    libraryId,
-                    seriesId,
-                    volumeId,
-                    chapterId,
+                    sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
+                    settingsStore = settingsStore,
+                    libraryId = libraryId,
+                    seriesId = seriesId,
+                    volumeId = volumeId,
+                    chapterId = chapterId,
                     incognito = incognito,
                     initialPage = initialPage,
                     onBack = { nav.popBackStack() }
@@ -789,6 +869,7 @@ fun AppRoot(
                     settingsStore = settingsStore,
                     localRepository = localRepository,
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     initialCategory = initialCat,
                     onConfigureServerDetails = { nav.navigate("settings/server") },
                     onBack = { nav.popBackStack() },
@@ -800,6 +881,7 @@ fun AppRoot(
                     settingsStore = settingsStore,
                     localRepository = localRepository,
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     onConfigureServerDetails = { nav.navigate("settings/server") },
                     onBack = { nav.popBackStack() },
                     updateController = updateController

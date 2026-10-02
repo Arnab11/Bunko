@@ -3,11 +3,14 @@ package com.bunko.reader.series
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -41,6 +44,10 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
@@ -49,6 +56,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
@@ -70,21 +78,42 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import kotlin.math.roundToInt
+import com.bunko.reader.ChapterDto
 import com.bunko.reader.KavitaApi
-import com.bunko.reader.KavitaClient
+import com.bunko.reader.ActiveServerRuntime
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaBookDto
+import com.bunko.reader.KomgaBookRoute
+import com.bunko.reader.KomgaIdMapper
+import com.bunko.reader.KomgaKavitaAdapter
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.MarkChapterReadDto
+import com.bunko.reader.MarkVolumesReadDto
 import com.bunko.reader.normalizeKavitaBaseUrl
+import com.bunko.reader.normalizeKomgaBaseUrl
+import com.bunko.reader.serverBackend
+import com.bunko.reader.series.internal.displayTitle
+import com.bunko.reader.ui.KavitaCoverAspectRatio
+import com.bunko.reader.ui.hasRemoteCovers
+import com.bunko.reader.ui.seriesInitial
 import com.bunko.reader.SeriesDto
 import com.bunko.reader.ui.DarkLoadingState
 import com.bunko.reader.ui.DarkMessageState
@@ -99,6 +128,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 internal fun chapterCoverUrl(session: KavitaSession, chapterId: Int): String {
+    // Komga mode: the shared UI passes Int ids mapped from Komga book ids.
+    if (ActiveServerRuntime.mode == "komga" && ActiveServerRuntime.komgaBaseUrl.isNotBlank()) {
+        val komgaId = KomgaIdMapper.komgaBookId(chapterId)
+        if (komgaId != null) {
+            return "${normalizeKomgaBaseUrl(ActiveServerRuntime.komgaBaseUrl)}/api/v1/books/$komgaId/thumbnail"
+        }
+    }
     val root = normalizeKavitaBaseUrl(session.baseUrl)
     val apiKey = session.apiKey.takeIf { it.isNotBlank() }?.let { "&apiKey=${Uri.encode(it)}" }.orEmpty()
     return "$root/api/Image/chapter-cover?chapterId=$chapterId$apiKey"
@@ -108,6 +144,7 @@ internal fun chapterCoverUrl(session: KavitaSession, chapterId: Int): String {
 @Composable
 internal fun SeriesScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     libraryId: Int,
     libraryName: String,
     onBack: (() -> Unit)? = null,
@@ -118,7 +155,8 @@ internal fun SeriesScreen(
     externalSort: SeriesLibrarySort? = null,
     externalSortDescending: Boolean = false,
     isGridView: Boolean = true,
-    onSelect: (SeriesDto) -> Unit
+    onSelect: (SeriesDto) -> Unit,
+    onOpenBook: ((libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int) -> Unit)? = null
 ) {
     val ctx = LocalContext.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -126,6 +164,8 @@ internal fun SeriesScreen(
     val searchFocusRequester = remember { FocusRequester() }
 
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
+    var komgaBooks by remember { mutableStateOf<List<KomgaLibraryBook>?>(null) }
+    var komgaAdapter by remember { mutableStateOf<KomgaKavitaAdapter?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var refreshing by remember { mutableStateOf(false) }
@@ -162,22 +202,40 @@ internal fun SeriesScreen(
         }
         try {
             session = sessionStore.load()
-            val client = KavitaClient(ctx, sessionStore)
-            val (loadedApi, _) = client.buildApi()
+            val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+            val loadedApi = backend.api
             api = loadedApi
-            isAdmin = runCatching {
-                loadedApi.currentUser().roles.orEmpty().any { it.equals("Admin", ignoreCase = true) }
-            }.onFailure {
-                BunkoLog.w("Could not load current user roles on Library series screen.", it)
-            }.getOrDefault(false)
-            series = loadedApi.loadAllSeriesForLibrary(libraryId)
+            if (backend.isKomga && loadedApi is KomgaKavitaAdapter) {
+                // Komga libraries list individual books (tap = read).
+                komgaAdapter = loadedApi
+                komgaBooks = loadedApi.booksForLibrary(libraryId)
+                    .sortedWith(compareBy({ it.seriesTitle.lowercase() }, { it.number }))
+                    .map { book ->
+                        KomgaLibraryBook(
+                            book = book,
+                            chapter = loadedApi.bookToChapter(book),
+                            route = loadedApi.routeForBook(book)
+                        )
+                    }
+                series = emptyList()
+                isAdmin = false
+            } else {
+                komgaAdapter = null
+                komgaBooks = null
+                isAdmin = runCatching {
+                    loadedApi.currentUser().roles.orEmpty().any { it.equals("Admin", ignoreCase = true) }
+                }.onFailure {
+                    BunkoLog.w("Could not load current user roles on Library series screen.", it)
+                }.getOrDefault(false)
+                series = loadedApi.loadAllSeriesForLibrary(libraryId)
+            }
             error = null
         } catch (c: CancellationException) {
             throw c
         } catch (t: Throwable) {
             BunkoLog.w("Could not load library $libraryId series.", t)
             val message = t.message ?: t.toString()
-            if (initialLoad || series.isEmpty()) {
+            if (initialLoad || (series.isEmpty() && komgaBooks.isNullOrEmpty())) {
                 error = message
             } else {
                 showMessage("Could not refresh library")
@@ -204,6 +262,96 @@ internal fun SeriesScreen(
             series.filter { it.matchesSeriesTitle(normalizedQuery) }
         }
         filtered.sortedForLibrary(activeSort, externalSortDescending)
+    }
+
+    val booksSnapshot = komgaBooks
+    val visibleBooks = remember(booksSnapshot, normalizedQuery, activeSort, externalSortDescending) {
+        val list = booksSnapshot ?: emptyList()
+        val filtered = if (normalizedQuery.isBlank()) {
+            list
+        } else {
+            list.filter {
+                it.chapter.displayTitle().contains(normalizedQuery, ignoreCase = true) ||
+                    it.book.seriesTitle.contains(normalizedQuery, ignoreCase = true)
+            }
+        }
+        val sorted = when (activeSort) {
+            SeriesLibrarySort.Title -> filtered.sortedBy { it.chapter.displayTitle().lowercase() }
+            SeriesLibrarySort.InProgressFirst -> filtered.sortedWith(
+                compareByDescending<KomgaLibraryBook> { it.isInProgress() }
+                    .thenBy { it.chapter.displayTitle().lowercase() }
+            )
+            SeriesLibrarySort.ReadFirst -> filtered.sortedWith(
+                compareByDescending<KomgaLibraryBook> { it.isRead() }
+                    .thenBy { it.chapter.displayTitle().lowercase() }
+            )
+            SeriesLibrarySort.UnreadFirst -> filtered.sortedWith(
+                compareByDescending<KomgaLibraryBook> { it.isUnread() }
+                    .thenBy { it.chapter.displayTitle().lowercase() }
+            )
+        }
+        if (externalSortDescending) sorted.reversed() else sorted
+    }
+
+    fun openKomgaBook(entry: KomgaLibraryBook) {
+        val openBook = onOpenBook
+        if (openBook != null) {
+            openBook(
+                entry.route.libraryId,
+                entry.route.seriesId,
+                entry.route.volumeId,
+                entry.route.chapterId
+            )
+        } else {
+            onSelect(
+                SeriesDto(
+                    id = entry.route.seriesId,
+                    name = entry.book.seriesTitle,
+                    libraryId = entry.route.libraryId
+                )
+            )
+        }
+    }
+
+    fun updateKomgaBookProgress(entry: KomgaLibraryBook, pagesRead: Int) {
+        komgaBooks = komgaBooks?.map { existing ->
+            if (existing.route.chapterId == entry.route.chapterId) {
+                existing.copy(chapter = existing.chapter.copy(pagesRead = pagesRead))
+            } else {
+                existing
+            }
+        }
+    }
+
+    fun toggleKomgaBookRead(entry: KomgaLibraryBook) {
+        scope.launch {
+            try {
+                val adapter = komgaAdapter ?: return@launch
+                if (entry.isRead()) {
+                    adapter.markChaptersUnread(
+                        MarkVolumesReadDto(
+                            seriesId = entry.route.seriesId,
+                            chapterIds = listOf(entry.route.chapterId)
+                        )
+                    )
+                    updateKomgaBookProgress(entry, pagesRead = 0)
+                } else {
+                    adapter.markChapterRead(
+                        MarkChapterReadDto(
+                            seriesId = entry.route.seriesId,
+                            chapterId = entry.route.chapterId,
+                            generateReadingSession = false
+                        )
+                    )
+                    updateKomgaBookProgress(entry, pagesRead = entry.chapter.pages ?: 0)
+                }
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                BunkoLog.w("Could not toggle read state for Komga book ${entry.route.chapterId}.", t)
+                showMessage("Could not update read state")
+            }
+        }
     }
 
     LaunchedEffect(searchActive) {
@@ -412,11 +560,61 @@ internal fun SeriesScreen(
                 ) {
                     when {
                         error != null -> DarkMessageState(
-                            title = "Could not load series",
+                            title = if (booksSnapshot != null) "Could not load books" else "Could not load series",
                             body = error ?: "Unknown error",
                             actionLabel = "Retry",
                             onAction = { scope.launch { loadLibrarySeries(initialLoad = true) } }
                         )
+                        booksSnapshot != null -> {
+                            if (visibleBooks.isEmpty()) {
+                                DarkMessageState(
+                                    "No books",
+                                    if (normalizedQuery.isBlank()) {
+                                        "This library did not return any visible books."
+                                    } else {
+                                        "This library does not contain a book matching \"$normalizedQuery\"."
+                                    }
+                                )
+                            } else if (isGridView) {
+                                KomgaBookGrid(
+                                    books = visibleBooks,
+                                    session = session,
+                                    gridState = gridState,
+                                    onRead = ::openKomgaBook,
+                                    onToggleRead = ::toggleKomgaBookRead,
+                                    onViewSeries = { entry ->
+                                        onSelect(
+                                            SeriesDto(
+                                                id = entry.route.seriesId,
+                                                name = entry.book.seriesTitle,
+                                                libraryId = entry.route.libraryId
+                                            )
+                                        )
+                                    },
+                                    onSearchHome = onSearchHome,
+                                    query = normalizedQuery
+                                )
+                            } else {
+                                KomgaBookList(
+                                    books = visibleBooks,
+                                    session = session,
+                                    listState = listState,
+                                    onRead = ::openKomgaBook,
+                                    onToggleRead = ::toggleKomgaBookRead,
+                                    onViewSeries = { entry ->
+                                        onSelect(
+                                            SeriesDto(
+                                                id = entry.route.seriesId,
+                                                name = entry.book.seriesTitle,
+                                                libraryId = entry.route.libraryId
+                                            )
+                                        )
+                                    },
+                                    onSearchHome = onSearchHome,
+                                    query = normalizedQuery
+                                )
+                            }
+                        }
                         series.isEmpty() -> DarkMessageState(
                             "No series",
                             "This library did not return any visible series."
@@ -605,5 +803,356 @@ private fun SeriesLibraryList(
                 HomeSearchLink(query = query, onSearchHome = onSearchHome)
             }
         }
+    }
+}
+
+/** A single Komga book in flat library-browsing mode (tap = read). */
+internal data class KomgaLibraryBook(
+    val book: KomgaBookDto,
+    val chapter: ChapterDto,
+    val route: KomgaBookRoute
+)
+
+internal fun KomgaLibraryBook.isUnread(): Boolean {
+    val total = chapter.pages ?: 0
+    return total <= 0 || (chapter.pagesRead ?: 0) <= 0
+}
+
+internal fun KomgaLibraryBook.isInProgress(): Boolean {
+    val total = chapter.pages ?: 0
+    val read = chapter.pagesRead ?: 0
+    return total > 0 && read in 1 until total
+}
+
+internal fun KomgaLibraryBook.isRead(): Boolean {
+    val total = chapter.pages ?: 0
+    return total > 0 && (chapter.pagesRead ?: 0) >= total
+}
+
+@Composable
+internal fun KomgaBookGrid(
+    books: List<KomgaLibraryBook>,
+    session: KavitaSession,
+    gridState: LazyGridState,
+    onRead: (KomgaLibraryBook) -> Unit,
+    onToggleRead: (KomgaLibraryBook) -> Unit,
+    onViewSeries: (KomgaLibraryBook) -> Unit,
+    onSearchHome: (String) -> Unit,
+    query: String
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 130.dp),
+        state = gridState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        gridItems(items = books, key = { it.route.chapterId }) { item ->
+            KomgaBookGridCard(
+                entry = item,
+                session = session,
+                onRead = { onRead(item) },
+                onToggleRead = { onToggleRead(item) },
+                onViewSeries = { onViewSeries(item) }
+            )
+        }
+        if (query.isNotBlank()) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                HomeSearchLink(query = query, onSearchHome = onSearchHome)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun KomgaBookList(
+    books: List<KomgaLibraryBook>,
+    session: KavitaSession,
+    listState: LazyListState,
+    onRead: (KomgaLibraryBook) -> Unit,
+    onToggleRead: (KomgaLibraryBook) -> Unit,
+    onViewSeries: (KomgaLibraryBook) -> Unit,
+    onSearchHome: (String) -> Unit,
+    query: String
+) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        items(items = books, key = { it.route.chapterId }) { item ->
+            KomgaBookListRow(
+                entry = item,
+                session = session,
+                onRead = { onRead(item) },
+                onToggleRead = { onToggleRead(item) },
+                onViewSeries = { onViewSeries(item) }
+            )
+        }
+        if (query.isNotBlank()) {
+            item {
+                HomeSearchLink(query = query, onSearchHome = onSearchHome)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun KomgaBookGridCard(
+    entry: KomgaLibraryBook,
+    session: KavitaSession,
+    onRead: () -> Unit,
+    onToggleRead: () -> Unit,
+    onViewSeries: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Card(
+        modifier = modifier,
+        shape = RectangleShape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Column(Modifier.clickable(onClick = onRead)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(KavitaCoverAspectRatio)
+                    .clip(RectangleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                contentAlignment = Alignment.Center
+            ) {
+                if (hasRemoteCovers(session)) {
+                    val context = LocalContext.current
+                    val request = remember(context, entry.route.chapterId) {
+                        ImageRequest.Builder(context)
+                            .data(chapterCoverUrl(session, entry.chapter.id))
+                            .crossfade(180)
+                            .build()
+                    }
+                    AsyncImage(
+                        model = request,
+                        contentDescription = entry.chapter.displayTitle(),
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        seriesInitial(entry.chapter.displayTitle()),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+            KomgaBookProgressBar(entry = entry)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entry.chapter.displayTitle(),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = entry.book.seriesTitle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = "Book actions",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    KomgaBookMenu(
+                        expanded = menuExpanded,
+                        isRead = entry.isRead(),
+                        onDismiss = { menuExpanded = false },
+                        onRead = { menuExpanded = false; onRead() },
+                        onToggleRead = { menuExpanded = false; onToggleRead() },
+                        onViewSeries = { menuExpanded = false; onViewSeries() }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun KomgaBookListRow(
+    entry: KomgaLibraryBook,
+    session: KavitaSession,
+    onRead: () -> Unit,
+    onToggleRead: () -> Unit,
+    onViewSeries: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onRead)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(80.dp)
+                    .aspectRatio(KavitaCoverAspectRatio)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                contentAlignment = Alignment.Center
+            ) {
+                if (hasRemoteCovers(session)) {
+                    val context = LocalContext.current
+                    val request = remember(context, entry.route.chapterId) {
+                        ImageRequest.Builder(context)
+                            .data(chapterCoverUrl(session, entry.chapter.id))
+                            .crossfade(180)
+                            .build()
+                    }
+                    AsyncImage(
+                        model = request,
+                        contentDescription = entry.chapter.displayTitle(),
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        seriesInitial(entry.chapter.displayTitle()),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = entry.chapter.displayTitle(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = entry.book.seriesTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                // Same status line as the Kavita list view.
+                val total = entry.chapter.pages ?: 0
+                val read = entry.chapter.pagesRead ?: 0
+                val statusText = when {
+                    total > 0 && read >= total -> "Completed"
+                    read > 0 -> {
+                        val pct = if (total > 0) ((read.toFloat() / total.toFloat()) * 100f).roundToInt().coerceIn(1, 99) else null
+                        if (pct != null) "In Progress ($pct%)" else "In Progress"
+                    }
+                    else -> "Unread"
+                }
+                val statusColor = when {
+                    statusText == "Completed" -> Color(0xFF66BB6A)
+                    statusText.startsWith("In Progress") -> Color(0xFF42A5F5)
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = statusColor,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                KomgaBookProgressBar(entry = entry, modifier = Modifier.padding(top = 6.dp))
+            }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = "Book actions",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                KomgaBookMenu(
+                    expanded = menuExpanded,
+                    isRead = entry.isRead(),
+                    onDismiss = { menuExpanded = false },
+                    onRead = { menuExpanded = false; onRead() },
+                    onToggleRead = { menuExpanded = false; onToggleRead() },
+                    onViewSeries = { menuExpanded = false; onViewSeries() }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun KomgaBookProgressBar(entry: KomgaLibraryBook, modifier: Modifier = Modifier) {
+    val total = entry.chapter.pages ?: 0
+    val read = entry.chapter.pagesRead ?: 0
+    if (total > 0) {
+        LinearProgressIndicator(
+            progress = { (read.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
+            modifier = modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp)),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        )
+    }
+}
+
+@Composable
+internal fun KomgaBookMenu(
+    expanded: Boolean,
+    isRead: Boolean,
+    onDismiss: () -> Unit,
+    onRead: () -> Unit,
+    onToggleRead: () -> Unit,
+    onViewSeries: () -> Unit
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss
+    ) {
+        DropdownMenuItem(
+            text = { Text("Read") },
+            onClick = onRead
+        )
+        DropdownMenuItem(
+            text = { Text(if (isRead) "Mark as unread" else "Mark as read") },
+            onClick = onToggleRead
+        )
+        DropdownMenuItem(
+            text = { Text("View series") },
+            onClick = onViewSeries
+        )
     }
 }

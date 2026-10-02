@@ -46,9 +46,10 @@ import com.bunko.reader.offline.BookmarkRepository
 import com.bunko.reader.offline.ReaderBookmark
 import com.bunko.reader.BookmarkDto
 import com.bunko.reader.BunkoLog
-import com.bunko.reader.KavitaClient
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.serverBackend
 import com.bunko.reader.normalizeKavitaBaseUrl
 import com.bunko.reader.ui.DarkLoadingState
 import com.bunko.reader.ui.DarkMessageState
@@ -61,6 +62,7 @@ import com.bunko.reader.ui.browse.PosterGrid
 @Composable
 internal fun BookmarksScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onBack: () -> Unit,
     statusBarPadding: Boolean = true,
     onOpenBookmark: (
@@ -89,11 +91,11 @@ internal fun BookmarksScreen(
         if (initialLoad) error = null
         try {
             localBookmarks = bookmarkRepo.getAllBookmarks()
+            val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
             val loadedSession = sessionStore.load()
             session = loadedSession
-            if (loadedSession.baseUrl.isNotBlank()) {
-                val (api, _) = KavitaClient(ctx, sessionStore).buildApi()
-                bookmarks = api.allBookmarks()
+            if (backend.isConfigured) {
+                bookmarks = backend.api.allBookmarks()
                     .filter { it.seriesId > 0 && it.chapterId > 0 }
                     .sortedWith(
                         compareBy<BookmarkDto> { it.series?.name.orEmpty() }

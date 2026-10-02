@@ -120,6 +120,7 @@ import com.bunko.reader.library.SearchSeriesTarget
 import com.bunko.reader.normalizeKavitaBaseUrl
 import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.seriesCoverUrl
+import com.bunko.reader.ui.hasRemoteCovers
 import com.bunko.reader.ui.seriesInitial
 import com.bunko.reader.ui.theme.BunkoBackground
 
@@ -1248,7 +1249,7 @@ private fun SeriesCover(
             .background(MaterialTheme.colorScheme.surfaceContainerLowest),
         contentAlignment = Alignment.Center
     ) {
-        if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+        if (hasRemoteCovers(session)) {
             val url = seriesCoverUrl(session, series.id)
             val fullUrl = if (coverKey > 0L) "$url&t=$coverKey" else url
             val request = remember(context, fullUrl) {

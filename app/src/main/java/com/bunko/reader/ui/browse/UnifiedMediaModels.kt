@@ -5,6 +5,7 @@ import com.bunko.reader.SeriesDto
 import com.bunko.reader.offline.LocalBook
 import com.bunko.reader.series.internal.readingProgress
 import com.bunko.reader.ui.seriesCoverUrl
+import com.bunko.reader.ui.hasRemoteCovers
 
 enum class MediaStorageSource {
     Kavita,
@@ -33,7 +34,7 @@ data class UnifiedMediaItem(
  * Extension to convert Kavita [SeriesDto] to [UnifiedMediaItem].
  */
 fun SeriesDto.toUnifiedMediaItem(session: KavitaSession): UnifiedMediaItem {
-    val coverUrl = if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+    val coverUrl = if (hasRemoteCovers(session)) {
         seriesCoverUrl(session, id)
     } else {
         null

@@ -56,6 +56,7 @@ import com.bunko.reader.KavitaSession
 import com.bunko.reader.VolumeDto
 import com.bunko.reader.series.chapterCoverUrl
 import com.bunko.reader.ui.KavitaCoverAspectRatio
+import com.bunko.reader.ui.hasRemoteCovers
 import com.bunko.reader.ui.browse.CoverProgressBadge
 
 import com.bunko.reader.NavigationBarStyle
@@ -210,7 +211,7 @@ internal fun ChapterGridCard(
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
-                if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+                if (hasRemoteCovers(session)) {
                     val request = remember(context, session.baseUrl, session.apiKey, chapter.id) {
                         ImageRequest.Builder(context)
                             .data(chapterCoverUrl(session, chapter.id))

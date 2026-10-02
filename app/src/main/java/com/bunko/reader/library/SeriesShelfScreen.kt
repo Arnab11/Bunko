@@ -99,7 +99,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import com.bunko.reader.ChapterDto
 import com.bunko.reader.GroupedSeriesDto
 import com.bunko.reader.KavitaApi
-import com.bunko.reader.KavitaClient
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.KomgaKavitaAdapter
+import com.bunko.reader.serverBackend
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
@@ -117,7 +119,10 @@ import com.bunko.reader.download.OfflineIssueRepository
 import com.bunko.reader.download.localCoverFile
 import com.bunko.reader.normalizeKavitaBaseUrl
 import com.bunko.reader.series.IssueDetailSideSheet
+import com.bunko.reader.series.KomgaBookGrid
+import com.bunko.reader.series.KomgaLibraryBook
 import com.bunko.reader.series.chapterCoverUrl
+import com.bunko.reader.series.isRead
 import com.bunko.reader.series.internal.coverActionColor
 import com.bunko.reader.ui.DarkLoadingState
 import com.bunko.reader.ui.DarkMessageState
@@ -132,16 +137,20 @@ import com.bunko.reader.ui.theme.BunkoBackground
 @Composable
 internal fun SeriesShelfScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     shelfKind: HomeShelfKind,
     onBack: () -> Unit,
     statusBarPadding: Boolean = true,
     navigationBarPadding: Boolean = true,
-    onSelectSeries: (SeriesDto) -> Unit
+    onSelectSeries: (SeriesDto) -> Unit,
+    onOpenBook: ((libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int) -> Unit)? = null
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
+    var komgaBooks by remember { mutableStateOf<List<KomgaLibraryBook>?>(null) }
+    var komgaAdapter by remember { mutableStateOf<KomgaKavitaAdapter?>(null) }
     var session by remember { mutableStateOf(KavitaSession()) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -154,6 +163,7 @@ internal fun SeriesShelfScreen(
     var pagingRevision by remember { mutableIntStateOf(0) }
 
     suspend fun loadNextPage() {
+        if (komgaBooks != null) return
         val currentApi = api ?: return
         if (!hasMore || loadingMore) return
         val requestRevision = pagingRevision
@@ -187,12 +197,33 @@ internal fun SeriesShelfScreen(
         series = emptyList()
         try {
             session = sessionStore.load()
-            val (loadedApi, _) = KavitaClient(ctx, sessionStore).buildApi()
+            val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+            val loadedApi = backend.api
             api = loadedApi
-            val page = loadedApi.loadShelfSeriesPage(shelfKind, pageNumber = 0)
-            series = page.items
-            nextPage = 1
-            hasMore = page.hasMore
+            if (backend.isKomga && loadedApi is KomgaKavitaAdapter) {
+                // Komga shelves list individual books (History = on-deck books).
+                komgaAdapter = loadedApi
+                val rawBooks = when (shelfKind) {
+                    HomeShelfKind.OnDeck -> loadedApi.onDeckBooks(page = 0, size = 200)
+                    else -> loadedApi.latestBooks(page = 0, size = 200)
+                }
+                komgaBooks = rawBooks.map { book ->
+                    KomgaLibraryBook(
+                        book = book,
+                        chapter = loadedApi.bookToChapter(book),
+                        route = loadedApi.routeForBook(book)
+                    )
+                }
+                series = emptyList()
+                hasMore = false
+            } else {
+                komgaAdapter = null
+                komgaBooks = null
+                val page = loadedApi.loadShelfSeriesPage(shelfKind, pageNumber = 0)
+                series = page.items
+                nextPage = 1
+                hasMore = page.hasMore
+            }
         } catch (c: CancellationException) {
             throw c
         } catch (t: Throwable) {
@@ -218,6 +249,63 @@ internal fun SeriesShelfScreen(
             .then(if (navigationBarPadding) Modifier.navigationBarsPadding() else Modifier)
             .background(BunkoBackground)
     ) {
+        val booksSnapshot = komgaBooks
+        fun openKomgaBook(entry: KomgaLibraryBook) {
+            val openBook = onOpenBook
+            if (openBook != null) {
+                openBook(
+                    entry.route.libraryId,
+                    entry.route.seriesId,
+                    entry.route.volumeId,
+                    entry.route.chapterId
+                )
+            } else {
+                onSelectSeries(
+                    SeriesDto(
+                        id = entry.route.seriesId,
+                        name = entry.book.seriesTitle,
+                        libraryId = entry.route.libraryId
+                    )
+                )
+            }
+        }
+        fun toggleKomgaBookRead(entry: KomgaLibraryBook) {
+            scope.launch {
+                try {
+                    val adapter = komgaAdapter ?: return@launch
+                    if (entry.isRead()) {
+                        adapter.markChaptersUnread(
+                            MarkVolumesReadDto(
+                                seriesId = entry.route.seriesId,
+                                chapterIds = listOf(entry.route.chapterId)
+                            )
+                        )
+                        komgaBooks = komgaBooks?.map { existing ->
+                            if (existing.route.chapterId == entry.route.chapterId) {
+                                existing.copy(chapter = existing.chapter.copy(pagesRead = 0))
+                            } else existing
+                        }
+                    } else {
+                        adapter.markChapterRead(
+                            MarkChapterReadDto(
+                                seriesId = entry.route.seriesId,
+                                chapterId = entry.route.chapterId,
+                                generateReadingSession = false
+                            )
+                        )
+                        komgaBooks = komgaBooks?.map { existing ->
+                            if (existing.route.chapterId == entry.route.chapterId) {
+                                existing.copy(chapter = existing.chapter.copy(pagesRead = existing.chapter.pages ?: 0))
+                            } else existing
+                        }
+                    }
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (t: Throwable) {
+                    BunkoLog.w("Could not toggle read state for Komga book ${entry.route.chapterId}.", t)
+                }
+            }
+        }
         BrowsePageScaffold(title = shelfKind.title, onBack = onBack, statusBarPadding = statusBarPadding) {
             when {
                 loading -> DarkLoadingState()
@@ -227,6 +315,30 @@ internal fun SeriesShelfScreen(
                     actionLabel = "Retry",
                     onAction = { retryKey++ }
                 )
+                booksSnapshot != null -> {
+                    if (booksSnapshot.isEmpty()) {
+                        DarkMessageState(shelfKind.title, shelfKind.emptyMessage)
+                    } else {
+                        KomgaBookGrid(
+                            books = booksSnapshot,
+                            session = session,
+                            gridState = gridState,
+                            onRead = ::openKomgaBook,
+                            onToggleRead = ::toggleKomgaBookRead,
+                            onViewSeries = { entry ->
+                                onSelectSeries(
+                                    SeriesDto(
+                                        id = entry.route.seriesId,
+                                        name = entry.book.seriesTitle,
+                                        libraryId = entry.route.libraryId
+                                    )
+                                )
+                            },
+                            onSearchHome = {},
+                            query = ""
+                        )
+                    }
+                }
                 series.isEmpty() -> DarkMessageState(shelfKind.title, shelfKind.emptyMessage)
                 else -> PosterGrid(
                     items = series,

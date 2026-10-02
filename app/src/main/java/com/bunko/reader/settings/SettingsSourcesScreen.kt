@@ -76,7 +76,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bunko.reader.KavitaServerProfile
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaClient
+import com.bunko.reader.KomgaServerProfile
+import com.bunko.reader.KomgaSession
+import com.bunko.reader.KomgaSessionStore
 import com.bunko.reader.R
+import com.bunko.reader.normalizeKomgaBaseUrl
 import com.bunko.reader.offline.LocalBookRepository
 import kotlinx.coroutines.launch
 
@@ -84,6 +89,7 @@ import kotlinx.coroutines.launch
 fun SettingsSourcesScreen(
     localRepository: LocalBookRepository,
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onConfigureServerDetails: () -> Unit,
     onActiveModeChanged: suspend (String) -> Unit,
     modifier: Modifier = Modifier
@@ -100,9 +106,19 @@ fun SettingsSourcesScreen(
     var activeProfile by remember { mutableStateOf<KavitaServerProfile?>(null) }
     var profileToDelete by remember { mutableStateOf<KavitaServerProfile?>(null) }
 
+    var komgaProfiles by remember { mutableStateOf<List<KomgaServerProfile>>(emptyList()) }
+    var activeKomgaProfile by remember { mutableStateOf<KomgaServerProfile?>(null) }
+    var komgaProfileToDelete by remember { mutableStateOf<KomgaServerProfile?>(null) }
+    var komgaProfileToEdit by remember { mutableStateOf<KomgaServerProfile?>(null) }
+    var isKomgaConnectOpen by remember { mutableStateOf(false) }
+    var isKomgaConnecting by remember { mutableStateOf(false) }
+    var komgaConnectError by remember { mutableStateOf<String?>(null) }
+
     suspend fun reloadProfiles() {
         kavitaProfiles = sessionStore.profiles()
         activeProfile = sessionStore.activeProfile()
+        komgaProfiles = komgaSessionStore.profiles()
+        activeKomgaProfile = komgaSessionStore.activeProfile()
     }
 
     LaunchedEffect(Unit) {
@@ -155,6 +171,101 @@ fun SettingsSourcesScreen(
         )
     }
 
+    if (komgaProfileToDelete != null) {
+        val target = komgaProfileToDelete!!
+        AlertDialog(
+            onDismissRequest = { komgaProfileToDelete = null },
+            title = { Text("Delete Komga Server") },
+            text = { Text("Are you sure you want to remove \"${target.name.ifBlank { target.session.baseUrl }}\"? You will need to re-enter credentials to connect again.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val id = target.id
+                        komgaProfileToDelete = null
+                        scope.launch {
+                            komgaSessionStore.deleteProfile(id)
+                            reloadProfiles()
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { komgaProfileToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Komga connect flyout (mpvRx-style bottom sheet)
+    KomgaConnectDialog(
+        isOpen = isKomgaConnectOpen,
+        isLoading = isKomgaConnecting,
+        errorMessage = komgaConnectError,
+        initialServer = komgaProfileToEdit,
+        onDismiss = {
+            if (!isKomgaConnecting) {
+                isKomgaConnectOpen = false
+                komgaProfileToEdit = null
+                komgaConnectError = null
+            }
+        },
+        onConnect = { serverUrl, serverName, authMode, username, password, apiKey ->
+            scope.launch {
+                isKomgaConnecting = true
+                komgaConnectError = null
+                try {
+                    val normalizedUrl = normalizeKomgaBaseUrl(serverUrl)
+                    if (normalizedUrl.isBlank()) throw IllegalArgumentException("Server URL is required")
+                    val resolvedPassword = if (authMode == KomgaAuthMode.CREDENTIALS && password.isBlank() && komgaProfileToEdit != null) {
+                        komgaProfileToEdit!!.session.password
+                    } else password
+                    if (authMode == KomgaAuthMode.CREDENTIALS && username.isBlank()) {
+                        throw IllegalArgumentException("Username is required")
+                    }
+                    if (authMode == KomgaAuthMode.CREDENTIALS && resolvedPassword.isBlank()) {
+                        throw IllegalArgumentException("Password is required")
+                    }
+                    if (authMode == KomgaAuthMode.API_KEY && apiKey.isBlank()) {
+                        throw IllegalArgumentException("API key is required")
+                    }
+                    val candidate = KomgaSession(
+                        baseUrl = normalizedUrl,
+                        username = username,
+                        password = if (authMode == KomgaAuthMode.CREDENTIALS) resolvedPassword else "",
+                        apiKey = if (authMode == KomgaAuthMode.API_KEY) apiKey else ""
+                    )
+                    // Probe credentials before saving (mirrors Kavita login validation).
+                    komgaSessionStore.useTransient(candidate)
+                    val probeClient = KomgaClient(context, komgaSessionStore)
+                    probeClient.probeCredentials()
+                    komgaSessionStore.saveProfile(
+                        komgaProfileToEdit?.id,
+                        candidate,
+                        rememberAuth = true,
+                        openByDefault = komgaProfiles.none { it.openByDefault }
+                    )
+                    reloadProfiles()
+                    // Activate Komga mode on first successful connect, like Kavita.
+                    localRepository.setActiveMode("komga")
+                    onActiveModeChanged("komga")
+                    isKomgaConnectOpen = false
+                    komgaProfileToEdit = null
+                } catch (t: retrofit2.HttpException) {
+                    val body = t.response()?.errorBody()?.string()?.takeIf { it.isNotBlank() }
+                    komgaConnectError = "Connection failed: HTTP ${t.code()}: ${body ?: t.message()}"
+                } catch (t: Throwable) {
+                    komgaConnectError = "Connection failed: ${t.message ?: t.toString()}"
+                } finally {
+                    isKomgaConnecting = false
+                }
+            }
+        }
+    )
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -173,69 +284,106 @@ fun SettingsSourcesScreen(
             )
 
             SettingsSectionCard {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val isOffline = activeMode != "kavita"
+                    val isOffline = activeMode != "kavita" && activeMode != "komga"
+                    val isKavita = activeMode == "kavita"
+                    val isKomga = activeMode == "komga"
 
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                localRepository.setActiveMode("offline")
-                                onActiveModeChanged("offline")
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = if (isOffline) {
-                            ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Local Storage", fontWeight = if (isOffline) FontWeight.Bold else FontWeight.Normal)
-                    }
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    localRepository.setActiveMode("offline")
+                                    onActiveModeChanged("offline")
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isOffline) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        ) {
+                            Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Local", fontWeight = if (isOffline) FontWeight.Bold else FontWeight.Normal)
+                        }
 
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                localRepository.setActiveMode("kavita")
-                                onActiveModeChanged("kavita")
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    localRepository.setActiveMode("kavita")
+                                    onActiveModeChanged("kavita")
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isKavita) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = if (!isOffline) {
-                            ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_kavita_logo),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = if (isKavita) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        } else {
-                            ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Kavita", fontWeight = if (isKavita) FontWeight.Bold else FontWeight.Normal)
                         }
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_kavita_logo),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = if (!isOffline) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Kavita Server", fontWeight = if (!isOffline) FontWeight.Bold else FontWeight.Normal)
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    localRepository.setActiveMode("komga")
+                                    onActiveModeChanged("komga")
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isKomga) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_komga_logo),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Komga", fontWeight = if (isKomga) FontWeight.Bold else FontWeight.Normal)
+                        }
                     }
                 }
             }
@@ -622,6 +770,221 @@ fun SettingsSourcesScreen(
                         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(if (kavitaProfiles.isEmpty()) "Connect Kavita Server" else "Add Another Server")
+                    }
+                }
+            }
+        }
+
+        // 4. Komga Remote Media Servers Section (mpvRx Media Server style)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "KOMGA SERVERS",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (komgaProfiles.isNotEmpty()) {
+                    Text(
+                        text = "${komgaProfiles.size} ${if (komgaProfiles.size == 1) "server" else "servers"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            SettingsSectionCard(contentPadding = PaddingValues(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    if (komgaProfiles.isEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_komga_logo),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "No Komga Server Connected",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Connect to your self-hosted Komga server to stream and sync comics & manga",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            komgaProfiles.forEach { profile ->
+                                val isCurrentlyActive = activeMode == "komga" && (activeKomgaProfile?.id == profile.id || (activeKomgaProfile == null && profile.openByDefault))
+
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (isCurrentlyActive) {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.65f)
+                                    },
+                                    border = if (isCurrentlyActive) {
+                                        androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                                    } else null,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(38.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(
+                                                        if (isCurrentlyActive) MaterialTheme.colorScheme.primary
+                                                        else MaterialTheme.colorScheme.surfaceVariant
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    painter = painterResource(R.drawable.ic_komga_logo),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    Text(
+                                                        text = profile.name.ifBlank { "Komga Server" },
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    if (isCurrentlyActive) {
+                                                        Surface(
+                                                            shape = CircleShape,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                                        ) {
+                                                            Text(
+                                                                text = "ACTIVE",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontWeight = FontWeight.ExtraBold,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Text(
+                                                    text = profile.session.baseUrl.ifBlank { "Configured" } +
+                                                        if (profile.session.username.isNotBlank()) " • ${profile.session.username}" else "",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+
+                                            FilledTonalIconButton(
+                                                onClick = {
+                                                    komgaProfileToEdit = profile
+                                                    komgaConnectError = null
+                                                    isKomgaConnectOpen = true
+                                                },
+                                                modifier = Modifier.size(32.dp),
+                                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                                )
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Edit,
+                                                    contentDescription = "Edit server",
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+
+                                            FilledTonalIconButton(
+                                                onClick = { komgaProfileToDelete = profile },
+                                                modifier = Modifier.size(32.dp),
+                                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                                                    contentColor = MaterialTheme.colorScheme.error
+                                                )
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.DeleteOutline,
+                                                    contentDescription = "Delete server",
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+
+                                        if (!isCurrentlyActive) {
+                                            FilledTonalButton(
+                                                onClick = {
+                                                    scope.launch {
+                                                        komgaSessionStore.selectProfile(profile.id)
+                                                        komgaSessionStore.setDefaultProfile(profile.id)
+                                                        localRepository.setActiveMode("komga")
+                                                        onActiveModeChanged("komga")
+                                                        reloadProfiles()
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("Set as Active Server")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            komgaProfileToEdit = null
+                            komgaConnectError = null
+                            isKomgaConnectOpen = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (komgaProfiles.isEmpty()) "Connect Komga Server" else "Add Another Server")
                     }
                 }
             }

@@ -46,8 +46,9 @@ import kotlinx.coroutines.launch
 import com.bunko.reader.CreateReadingListDto
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaApi
-import com.bunko.reader.KavitaClient
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.serverBackend
 import com.bunko.reader.ReadingListDto
 import com.bunko.reader.ui.DarkLoadingState
 import com.bunko.reader.ui.DarkMessageState
@@ -58,6 +59,7 @@ import com.bunko.reader.ui.theme.BunkoSurface
 @Composable
 internal fun ReadingListsScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onBack: () -> Unit,
     onOpenReadingList: (ReadingListDto) -> Unit,
     statusBarPadding: Boolean = true
@@ -69,8 +71,8 @@ internal fun ReadingListsScreen(
 
     LaunchedEffect(retryKey) {
         try {
-            val (loadedApi, _) = KavitaClient(ctx, sessionStore).buildApi()
-            api = loadedApi
+            val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+            api = backend.api
             apiError = null
         } catch (t: Throwable) {
             BunkoLog.w("Could not create API for Reading Lists.", t)

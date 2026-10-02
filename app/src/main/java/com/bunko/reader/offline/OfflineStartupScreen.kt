@@ -95,6 +95,9 @@ import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaClient
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaClient
+import com.bunko.reader.KomgaSession
+import com.bunko.reader.KomgaSessionStore
 import com.bunko.reader.download.OfflineIssueRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -109,10 +112,12 @@ private enum class StartupTarget {
 fun OfflineStartupScreen(
     localRepository: LocalBookRepository,
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     offlineRepository: OfflineIssueRepository,
     onOpenOfflineLibrary: () -> Unit,
     onOpenDownloaded: () -> Unit,
     onConnectKavita: suspend () -> Unit,
+    onConnectKomga: suspend () -> Unit,
     onOpenServerSettings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -124,6 +129,7 @@ fun OfflineStartupScreen(
     val activeMode by localRepository.activeModeFlow.collectAsState(initial = null)
 
     var savedSession by remember { mutableStateOf<KavitaSession?>(null) }
+    var savedKomgaSession by remember { mutableStateOf<KomgaSession?>(null) }
     var downloadedCount by remember { mutableStateOf(0) }
     var kavitaConnecting by remember { mutableStateOf(false) }
     var kavitaError by remember { mutableStateOf<String?>(null) }
@@ -135,6 +141,7 @@ fun OfflineStartupScreen(
                 scope.launch {
                     val session = sessionStore.load()
                     savedSession = session
+                    savedKomgaSession = komgaSessionStore.load()
                     if (session.baseUrl.isNotBlank()) {
                         runCatching {
                             downloadedCount = offlineRepository.observeDownloaded(session).first().size
@@ -152,6 +159,7 @@ fun OfflineStartupScreen(
     LaunchedEffect(Unit) {
         val session = sessionStore.load()
         savedSession = session
+        savedKomgaSession = komgaSessionStore.load()
         if (session.baseUrl.isNotBlank()) {
             runCatching {
                 downloadedCount = offlineRepository.observeDownloaded(session).first().size
@@ -160,15 +168,18 @@ fun OfflineStartupScreen(
     }
 
     val hasFolder = !folderInfo.first.isNullOrBlank()
-    val hasSavedServer = savedSession?.baseUrl?.isNotBlank() == true &&
+    val hasSavedKavitaServer = savedSession?.baseUrl?.isNotBlank() == true &&
         (savedSession?.jwt?.isNotBlank() == true || savedSession?.apiKey?.isNotBlank() == true)
+    val hasSavedKomgaServer = savedKomgaSession?.baseUrl?.isNotBlank() == true &&
+        (savedKomgaSession?.username?.isNotBlank() == true || savedKomgaSession?.apiKey?.isNotBlank() == true)
+    val hasSavedServer = hasSavedKavitaServer || hasSavedKomgaServer
     val canContinue = hasFolder || hasSavedServer
 
     var userSelectedTarget by remember { mutableStateOf<StartupTarget?>(null) }
     val effectiveTarget = userSelectedTarget ?: when {
         hasFolder && !hasSavedServer -> StartupTarget.Offline
         hasSavedServer && !hasFolder -> StartupTarget.Kavita
-        hasFolder && hasSavedServer -> if (activeMode == "kavita") StartupTarget.Kavita else StartupTarget.Offline
+        hasFolder && hasSavedServer -> if (activeMode == "offline") StartupTarget.Offline else StartupTarget.Kavita
         else -> StartupTarget.Offline
     }
 
@@ -231,6 +242,31 @@ fun OfflineStartupScreen(
             kavitaConnecting = false
         }
     }
+
+    suspend fun attemptKomgaConnect() {
+        kavitaConnecting = true
+        kavitaError = null
+        try {
+            val session = savedKomgaSession ?: komgaSessionStore.load()
+            if (session.baseUrl.isBlank() || (session.username.isBlank() && session.apiKey.isBlank())) {
+                onOpenServerSettings()
+                return
+            }
+            KomgaClient(context, komgaSessionStore).probeCredentials()
+            localRepository.setStartupCompleted(true)
+            localRepository.setActiveMode("komga")
+            onConnectKomga()
+        } catch (t: Throwable) {
+            kavitaError = t.message ?: "Connection failed"
+            BunkoLog.w("Komga server connection error", t)
+        } finally {
+            kavitaConnecting = false
+        }
+    }
+
+    // Which server family the continue action targets.
+    val useKomgaTarget = activeMode == "komga" || (!hasSavedKavitaServer && hasSavedKomgaServer)
+    val serverFamilyLabel = if (useKomgaTarget) "Komga" else "Kavita"
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -634,7 +670,7 @@ fun OfflineStartupScreen(
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Kavita Server",
+                                    text = "$serverFamilyLabel Server",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -685,8 +721,10 @@ fun OfflineStartupScreen(
                         }
 
                         if (hasSavedServer) {
-                            val host = runCatching { Uri.parse(savedSession?.baseUrl).host }.getOrNull()
-                                ?: savedSession?.baseUrl
+                            val displaySessionUrl = if (useKomgaTarget) savedKomgaSession?.baseUrl else savedSession?.baseUrl
+                            val displayUsername = if (useKomgaTarget) savedKomgaSession?.username else savedSession?.username
+                            val host = runCatching { Uri.parse(displaySessionUrl).host }.getOrNull()
+                                ?: displaySessionUrl
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -713,7 +751,7 @@ fun OfflineStartupScreen(
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    savedSession?.username?.takeIf { it.isNotBlank() }?.let { user ->
+                                    displayUsername?.takeIf { it.isNotBlank() }?.let { user ->
                                         Text(
                                             text = "($user)",
                                             style = MaterialTheme.typography.labelSmall,
@@ -724,7 +762,7 @@ fun OfflineStartupScreen(
                             }
                         } else {
                             Text(
-                                text = "Connect to your self-hosted Kavita instance to stream your library and sync progress across devices.",
+                                text = "Connect to your self-hosted $serverFamilyLabel instance to stream your library and sync progress across devices.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -773,7 +811,8 @@ fun OfflineStartupScreen(
                             if (!canContinue || kavitaConnecting) return@Button
                             scope.launch {
                                 if (effectiveTarget == StartupTarget.Kavita) {
-                                    attemptKavitaConnect()
+                                    if (useKomgaTarget) attemptKomgaConnect()
+                                    else attemptKavitaConnect()
                                 } else {
                                     localRepository.setStartupCompleted(true)
                                     localRepository.setActiveMode("offline")
@@ -801,7 +840,7 @@ fun OfflineStartupScreen(
                             )
                             Spacer(Modifier.width(10.dp))
                             Text(
-                                text = "Connecting to Kavita...",
+                                text = "Connecting to $serverFamilyLabel...",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -809,9 +848,9 @@ fun OfflineStartupScreen(
                             val label = when {
                                 !canContinue -> "Continue"
                                 hasFolder && hasSavedServer -> {
-                                    if (effectiveTarget == StartupTarget.Kavita) "Continue with Kavita" else "Continue with Offline Library"
+                                    if (effectiveTarget == StartupTarget.Kavita) "Continue with $serverFamilyLabel" else "Continue with Offline Library"
                                 }
-                                hasSavedServer -> "Continue with Kavita"
+                                hasSavedServer -> "Continue with $serverFamilyLabel"
                                 else -> "Continue with Offline Library"
                             }
                             Text(
@@ -830,7 +869,7 @@ fun OfflineStartupScreen(
 
                     if (!canContinue) {
                         Text(
-                            text = "Configure offline storage or connect a Kavita server to continue",
+                            text = "Configure offline storage or connect a media server to continue",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,

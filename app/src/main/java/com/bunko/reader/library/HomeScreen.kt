@@ -110,10 +110,13 @@ import kotlinx.serialization.json.jsonPrimitive
 import com.bunko.reader.ChapterDto
 import com.bunko.reader.GroupedSeriesDto
 import com.bunko.reader.KavitaApi
-import com.bunko.reader.KavitaClient
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaSession
+import com.bunko.reader.KomgaKavitaAdapter
+import com.bunko.reader.serverBackend
+import com.bunko.reader.series.KomgaLibraryBook
 import com.bunko.reader.LibraryDto
 import com.bunko.reader.SeriesFilterStatementDto
 import com.bunko.reader.SeriesFilterV2Dto
@@ -186,7 +189,8 @@ fun LibraryScreen(
     onSwitchToOffline: (() -> Unit)? = null,
     onToggleTheme: (() -> Unit)? = null,
     navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
-    initialDestination: HomeDestination? = null
+    initialDestination: HomeDestination? = null,
+    komgaSessionStore: com.bunko.reader.KomgaSessionStore
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -195,6 +199,12 @@ fun LibraryScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var isOffline by rememberSaveable(initialIsOffline) { mutableStateOf(initialIsOffline) }
+    // Source switches from the top-bar menu or Settings only write the mode flow;
+    // mirror it here so the Home reloads for Kavita<->Komga switches too.
+    val observedMode by localRepository.activeModeFlow.collectAsState(initial = null)
+    LaunchedEffect(observedMode) {
+        observedMode?.let { isOffline = it == "offline" }
+    }
     val offlineFolders by localRepository.foldersFlow.collectAsState(initial = emptyList())
     val folderInfo by localRepository.folderFlow.collectAsState(initial = Pair(null, null))
     val offlineBooks by localRepository.booksFlow.collectAsState(initial = emptyList())
@@ -247,7 +257,12 @@ fun LibraryScreen(
 
     var libs by remember { mutableStateOf<List<LibraryDto>>(emptyList()) }
     var librarySeriesCounts by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
+    var libraryBookCounts by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
     var onDeck by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
+    var komgaOnDeckBooks by remember { mutableStateOf<List<KomgaLibraryBook>>(emptyList()) }
+    var komgaLatestBooks by remember { mutableStateOf<List<KomgaLibraryBook>>(emptyList()) }
+    var komgaOnDeckTotal by remember { mutableStateOf(0L) }
+    var komgaLatestTotal by remember { mutableStateOf(0L) }
     var recentlyUpdated by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var newlyAdded by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var wantToRead by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
@@ -263,12 +278,15 @@ fun LibraryScreen(
     var refreshJob by remember { mutableStateOf<Job?>(null) }
     var serverName by remember { mutableStateOf("No server selected") }
     var session by remember { mutableStateOf(KavitaSession()) }
+    var komgaSession by remember { mutableStateOf(KomgaSession()) }
+    var useKomga by remember { mutableStateOf(false) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
     var isAdmin by remember { mutableStateOf(false) }
     var scanningLibraryIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
-    val downloadedFlow = remember(session.baseUrl, session.username, session.apiKey) {
-        offlineRepository.observeDownloaded(session)
+    val downloadedFlow = remember(session.baseUrl, session.username, session.apiKey, komgaSession.baseUrl, komgaSession.username, komgaSession.apiKey, useKomga) {
+        if (useKomga) offlineRepository.observeDownloaded(komgaSession)
+        else offlineRepository.observeDownloaded(session)
     }
     val downloaded by downloadedFlow.collectAsState(initial = emptyList())
 
@@ -277,7 +295,12 @@ fun LibraryScreen(
         if (clearFirst) {
             libs = emptyList()
             librarySeriesCounts = emptyMap()
+            libraryBookCounts = emptyMap()
             onDeck = emptyList()
+            komgaOnDeckBooks = emptyList()
+            komgaLatestBooks = emptyList()
+            komgaOnDeckTotal = 0L
+            komgaLatestTotal = 0L
             recentlyUpdated = emptyList()
             newlyAdded = emptyList()
             wantToRead = emptyList()
@@ -292,12 +315,19 @@ fun LibraryScreen(
         }
         error = null
         try {
-            serverName = sessionStore.activeProfile()?.name ?: "No server selected"
+            val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+            useKomga = backend.isKomga
+            serverName = backend.serverLabel
             session = sessionStore.load()
-            runCatchingCancellable { offlineRepository.ensureLocalCovers(session) }
-                .onFailure { BunkoLog.w("Could not ensure local covers on Home.", it) }
-            val client = KavitaClient(ctx, sessionStore)
-            val (loadedApi, _) = client.buildApi()
+            komgaSession = komgaSessionStore.load()
+            if (backend.isKomga) {
+                runCatchingCancellable { offlineRepository.ensureLocalCovers(komgaSession) }
+                    .onFailure { BunkoLog.w("Could not ensure local covers on Home.", it) }
+            } else {
+                runCatchingCancellable { offlineRepository.ensureLocalCovers(session) }
+                    .onFailure { BunkoLog.w("Could not ensure local covers on Home.", it) }
+            }
+            val loadedApi = backend.api
             api = loadedApi
             val loadedLibraries = loadedApi.userLibraries().sortedBy { it.id }
             libs = loadedLibraries
@@ -316,7 +346,62 @@ fun LibraryScreen(
                     .onSuccess { librarySeriesCounts = it }
                     .onFailure { BunkoLog.w("Could not load library series counts on Home.", it) }
             }
+            if (backend.isKomga && loadedApi is KomgaKavitaAdapter) {
+                // Komga libraries browse flat book lists: count books, not series.
+                launch {
+                    runCatchingCancellable {
+                        coroutineScope {
+                            loadedLibraries.map { library ->
+                                async {
+                                    val count = runCatching {
+                                        loadedApi.booksForLibrary(library.id)
+                                    }.getOrDefault(emptyList()).size
+                                    library.id to count
+                                }
+                            }.awaitAll().toMap()
+                        }
+                    }
+                        .onSuccess { libraryBookCounts = it }
+                        .onFailure { BunkoLog.w("Could not load library book counts on Home.", it) }
+                }
+            }
             onDeck = loadedApi.onDeck(pageSize = HomePreviewShelfPageSize)
+            if (backend.isKomga && loadedApi is KomgaKavitaAdapter) {
+                // Flat book shelves for Komga (no series groups on Home).
+                // Totals come from the server page metadata so badges match See-all.
+                launch {
+                    runCatchingCancellable {
+                        loadedApi.onDeckBooksPage(page = 0, size = 100)
+                    }
+                        .onSuccess { page ->
+                            komgaOnDeckBooks = page.content.map { book ->
+                                KomgaLibraryBook(
+                                    book = book,
+                                    chapter = loadedApi.bookToChapter(book),
+                                    route = loadedApi.routeForBook(book)
+                                )
+                            }
+                            komgaOnDeckTotal = page.totalElements
+                        }
+                        .onFailure { BunkoLog.w("Could not load Komga on-deck books on Home.", it) }
+                }
+                launch {
+                    runCatchingCancellable {
+                        loadedApi.latestBooksPage(page = 0, size = 100)
+                    }
+                        .onSuccess { page ->
+                            komgaLatestBooks = page.content.map { book ->
+                                KomgaLibraryBook(
+                                    book = book,
+                                    chapter = loadedApi.bookToChapter(book),
+                                    route = loadedApi.routeForBook(book)
+                                )
+                            }
+                            komgaLatestTotal = page.totalElements
+                        }
+                        .onFailure { BunkoLog.w("Could not load Komga latest books on Home.", it) }
+                }
+            }
             recentlyUpdated = loadedApi.recentlyUpdatedSeries(pageSize = HomePreviewShelfPageSize)
                 .map { it.toSeriesDto() }
                 .distinctBy { it.id }
@@ -344,7 +429,7 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(sessionRevision, isOffline) {
+    LaunchedEffect(sessionRevision, isOffline, observedMode) {
         if (!isOffline) {
             loadHome(clearFirst = true)
         }
@@ -480,6 +565,8 @@ fun LibraryScreen(
         HomeShell(
             libraries = libs,
             librarySeriesCounts = librarySeriesCounts,
+            libraryBookCounts = libraryBookCounts,
+            isKomgaBooksMode = useKomga,
             isAdmin = isAdmin,
             scanningLibraryIds = scanningLibraryIds,
             serverName = serverName,
@@ -489,7 +576,10 @@ fun LibraryScreen(
             error = error,
             session = session,
             sessionStore = sessionStore,
+            komgaSessionStore = komgaSessionStore,
             onDeck = onDeck,
+            komgaOnDeckBooks = komgaOnDeckBooks,
+            komgaLatestBooks = komgaLatestBooks,
             recentlyUpdated = recentlyUpdated,
             newlyAdded = newlyAdded,
             wantToRead = wantToRead,

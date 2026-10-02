@@ -75,6 +75,8 @@ import com.bunko.reader.offline.LocalFolder
 import com.bunko.reader.series.ChapterPickScreen
 import com.bunko.reader.series.SeriesLibrarySort
 import com.bunko.reader.KavitaServerProfile
+import com.bunko.reader.KomgaServerProfile
+import com.bunko.reader.KomgaSessionStore
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -98,6 +100,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
@@ -128,6 +131,7 @@ import com.bunko.reader.CollectionDto
 import com.bunko.reader.KavitaApi
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.series.KomgaLibraryBook
 import com.bunko.reader.LibraryDto
 import com.bunko.reader.SearchHistoryStore
 import com.bunko.reader.SeriesDto
@@ -160,6 +164,8 @@ enum class HomeDestination(
 internal fun HomeShell(
     libraries: List<LibraryDto>,
     librarySeriesCounts: Map<Int, Int>,
+    libraryBookCounts: Map<Int, Int> = emptyMap(),
+    isKomgaBooksMode: Boolean = false,
     isAdmin: Boolean,
     scanningLibraryIds: Set<Int>,
     serverName: String,
@@ -169,7 +175,10 @@ internal fun HomeShell(
     error: String?,
     session: KavitaSession,
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onDeck: List<SeriesDto>,
+    komgaOnDeckBooks: List<KomgaLibraryBook> = emptyList(),
+    komgaLatestBooks: List<KomgaLibraryBook> = emptyList(),
     recentlyUpdated: List<SeriesDto>,
     newlyAdded: List<SeriesDto>,
     wantToRead: List<SeriesDto>,
@@ -249,6 +258,8 @@ internal fun HomeShell(
     var isSortViewDialogOpen by rememberSaveable { mutableStateOf(false) }
     var kavitaProfiles by remember { mutableStateOf<List<KavitaServerProfile>>(emptyList()) }
     var activeKavitaProfile by remember { mutableStateOf<KavitaServerProfile?>(null) }
+    var komgaProfiles by remember { mutableStateOf<List<KomgaServerProfile>>(emptyList()) }
+    var activeKomgaProfile by remember { mutableStateOf<KomgaServerProfile?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(sessionStore) {
@@ -256,11 +267,21 @@ internal fun HomeShell(
         activeKavitaProfile = sessionStore.activeProfile()
     }
 
+    LaunchedEffect(komgaSessionStore) {
+        komgaProfiles = komgaSessionStore.profiles()
+        activeKomgaProfile = komgaSessionStore.activeProfile()
+    }
+
     var browseDrilldown by rememberSaveable { mutableStateOf<BrowseDrilldown?>(null) }
     var selectedLibrary by remember { mutableStateOf<LibraryDto?>(null) }
     var selectedShelf by remember { mutableStateOf<HomeShelfKind?>(null) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val localRepository = remember(ctx) { LocalBookRepository(ctx) }
+    // Active source drives the Komga/Kavita switcher state (synced with LibraryScreen).
+    val shellActiveMode by localRepository.activeModeFlow.collectAsState(
+        initial = if (isOffline) "offline" else "kavita"
+    )
+    val shellIsKomga = shellActiveMode == "komga"
     var selectedOfflineBook by remember { mutableStateOf<LocalBook?>(null) }
     var selectedKavitaSeries by remember { mutableStateOf<SeriesDto?>(null) }
 
@@ -439,6 +460,8 @@ internal fun HomeShell(
                 scrollToTopSignal = reselectionCount,
                 libraries = libraries,
                 librarySeriesCounts = librarySeriesCounts,
+                libraryBookCounts = libraryBookCounts,
+                isKomgaBooksMode = isKomgaBooksMode,
                 isAdmin = isAdmin,
                 scanningLibraryIds = scanningLibraryIds,
                 loading = loading,
@@ -447,7 +470,10 @@ internal fun HomeShell(
                 error = error,
                 session = session,
                 sessionStore = sessionStore,
+                komgaSessionStore = komgaSessionStore,
                 onDeck = onDeck,
+                komgaOnDeckBooks = komgaOnDeckBooks,
+                komgaLatestBooks = komgaLatestBooks,
                 recentlyUpdated = recentlyUpdated,
                 newlyAdded = newlyAdded,
                 wantToRead = wantToRead,
@@ -525,12 +551,28 @@ internal fun HomeShell(
                 onBack = topBarBackAction,
                 showModeSwitch = topBarBackAction == null && (destination == HomeDestination.Home || isOffline),
                 isOffline = isOffline,
-                activeServerName = if (isOffline) "Local" else (activeKavitaProfile?.name?.ifBlank { "Kavita" } ?: "Kavita"),
+                isKomga = shellIsKomga,
+                activeServerName = if (isOffline) {
+                    "Local"
+                } else if (shellIsKomga) {
+                    activeKomgaProfile?.name?.ifBlank { "Komga" } ?: "Komga"
+                } else {
+                    activeKavitaProfile?.name?.ifBlank { "Kavita" } ?: "Kavita"
+                },
                 kavitaProfiles = kavitaProfiles,
                 activeKavitaProfileId = activeKavitaProfile?.id,
+                komgaProfiles = komgaProfiles,
+                activeKomgaProfileId = activeKomgaProfile?.id,
                 onSelectModeAndProfile = { mode, profileId ->
                     coroutineScope.launch {
-                        if (mode == "kavita") {
+                        if (mode == "komga") {
+                            if (profileId != null) {
+                                komgaSessionStore.selectProfile(profileId)
+                                komgaSessionStore.setDefaultProfile(profileId)
+                            }
+                            // LibraryScreen syncs isOffline from the mode flow.
+                            localRepository.setActiveMode("komga")
+                        } else if (mode == "kavita") {
                             if (profileId != null) {
                                 sessionStore.selectProfile(profileId)
                                 sessionStore.setDefaultProfile(profileId)
@@ -547,6 +589,8 @@ internal fun HomeShell(
                         }
                         kavitaProfiles = sessionStore.profiles()
                         activeKavitaProfile = sessionStore.activeProfile()
+                        komgaProfiles = komgaSessionStore.profiles()
+                        activeKomgaProfile = komgaSessionStore.activeProfile()
                     }
                 },
                 onOpenSettings = onOpenSettings,
@@ -585,6 +629,7 @@ internal fun HomeShell(
                         offlineBooks = offlineBooks,
                         localRepository = localRepository,
                         sessionStore = sessionStore,
+                        komgaSessionStore = komgaSessionStore,
                         onOpenFilteredSeries = onOpenFilteredSeries,
                         onOpenSettings = onOpenSettings,
                         onPickIssue = onPickIssue,
@@ -615,6 +660,7 @@ internal fun HomeShell(
                     offlineBooks = offlineBooks,
                     localRepository = localRepository,
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     onOpenFilteredSeries = onOpenFilteredSeries,
                     onOpenSettings = onOpenSettings,
                     onPickIssue = onPickIssue,
@@ -644,6 +690,7 @@ internal fun HomeShell(
                     offlineBooks = offlineBooks,
                     localRepository = localRepository,
                     sessionStore = sessionStore,
+                    komgaSessionStore = komgaSessionStore,
                     onOpenFilteredSeries = onOpenFilteredSeries,
                     onOpenSettings = onOpenSettings,
                     onPickIssue = onPickIssue,
@@ -673,6 +720,7 @@ private fun DualPaneOrSingleContent(
     offlineBooks: List<LocalBook>,
     localRepository: LocalBookRepository,
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onOpenFilteredSeries: (SearchSeriesTarget, Int, String) -> Unit,
     onOpenSettings: () -> Unit,
     onPickIssue: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, incognito: Boolean) -> Unit,
@@ -721,6 +769,7 @@ private fun DualPaneOrSingleContent(
                 } else if (selectedKavitaSeries != null) {
                     ChapterPickScreen(
                         sessionStore = sessionStore,
+                        komgaSessionStore = komgaSessionStore,
                         libraryId = selectedKavitaSeries.libraryId ?: 0,
                         seriesId = selectedKavitaSeries.id,
                         seriesName = selectedKavitaSeries.name,
@@ -756,9 +805,12 @@ internal fun HomeTopBar(
     onBack: (() -> Unit)? = null,
     showModeSwitch: Boolean = onBack == null,
     isOffline: Boolean = false,
+    isKomga: Boolean = false,
     activeServerName: String = if (isOffline) "Local" else "Kavita",
     kavitaProfiles: List<KavitaServerProfile> = emptyList(),
     activeKavitaProfileId: String? = null,
+    komgaProfiles: List<KomgaServerProfile> = emptyList(),
+    activeKomgaProfileId: String? = null,
     onSelectModeAndProfile: ((String, String?) -> Unit)? = null,
     onOpenSettings: () -> Unit,
     onOpenManageServers: () -> Unit = onOpenSettings,
@@ -857,6 +909,12 @@ internal fun HomeTopBar(
                                         modifier = Modifier.size(24.dp),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
+                                } else if (isKomga) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_komga_logo),
+                                        contentDescription = "Active source: Komga",
+                                        modifier = Modifier.size(24.dp)
+                                    )
                                 } else {
                                     Icon(
                                         painter = painterResource(R.drawable.ic_kavita_logo),
@@ -908,7 +966,7 @@ internal fun HomeTopBar(
 
                             if (kavitaProfiles.isNotEmpty()) {
                                 kavitaProfiles.forEach { profile ->
-                                    val isSelected = !isOffline && (activeKavitaProfileId == profile.id || (activeKavitaProfileId == null && profile.openByDefault))
+                                    val isSelected = !isOffline && !isKomga && (activeKavitaProfileId == profile.id || (activeKavitaProfileId == null && profile.openByDefault))
                                     DropdownMenuItem(
                                         text = {
                                             Text(
@@ -942,17 +1000,17 @@ internal fun HomeTopBar(
                                 }
                             } else {
                                 DropdownMenuItem(
-                                    text = { Text("Kavita", color = MaterialTheme.colorScheme.onSurface, fontWeight = if (!isOffline) FontWeight.Bold else FontWeight.Normal) },
+                                    text = { Text("Kavita", color = MaterialTheme.colorScheme.onSurface, fontWeight = if (!isOffline && !isKomga) FontWeight.Bold else FontWeight.Normal) },
                                     leadingIcon = {
                                         Icon(
                                             painter = painterResource(R.drawable.ic_kavita_logo),
                                             contentDescription = null,
                                             modifier = Modifier.size(20.dp),
-                                            tint = if (!isOffline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            tint = if (!isOffline && !isKomga) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     },
                                     trailingIcon = {
-                                        if (!isOffline) {
+                                        if (!isOffline && !isKomga) {
                                             Icon(
                                                 imageVector = Icons.Filled.Check,
                                                 contentDescription = null,
@@ -965,6 +1023,65 @@ internal fun HomeTopBar(
                                         onSelectModeAndProfile?.invoke("kavita", null) ?: run {
                                             if (isOffline) onSwitchMode?.invoke()
                                         }
+                                    }
+                                )
+                            }
+
+                            if (komgaProfiles.isNotEmpty()) {
+                                komgaProfiles.forEach { profile ->
+                                    val isKomgaSelected = !isOffline && isKomga && (activeKomgaProfileId == profile.id || (activeKomgaProfileId == null && profile.openByDefault))
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = profile.name.ifBlank { "Komga Server" },
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = if (isKomgaSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_komga_logo),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (isKomgaSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Check,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            modeMenuExpanded = false
+                                            onSelectModeAndProfile?.invoke("komga", profile.id)
+                                        }
+                                    )
+                                }
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Komga", color = MaterialTheme.colorScheme.onSurface, fontWeight = if (isKomga) FontWeight.Bold else FontWeight.Normal) },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_komga_logo),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        if (isKomga) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        modeMenuExpanded = false
+                                        onSelectModeAndProfile?.invoke("komga", null)
                                     }
                                 )
                             }

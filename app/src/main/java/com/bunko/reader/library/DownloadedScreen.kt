@@ -60,9 +60,11 @@ import kotlinx.coroutines.launch
 import com.bunko.reader.ChapterDto
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaApi
-import com.bunko.reader.KavitaClient
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaSession
+import com.bunko.reader.KomgaSessionStore
+import com.bunko.reader.serverBackend
 import com.bunko.reader.MarkChapterReadDto
 import com.bunko.reader.MarkVolumesReadDto
 import com.bunko.reader.VolumeDto
@@ -346,6 +348,7 @@ private fun DownloadedIssueCard(
 @Composable
 internal fun DownloadedScreen(
     sessionStore: KavitaSessionStore,
+    komgaSessionStore: KomgaSessionStore,
     onBack: () -> Unit,
     statusBarPadding: Boolean = true,
     navigationBarPadding: Boolean = true,
@@ -362,6 +365,8 @@ internal fun DownloadedScreen(
     val offlineRepository = remember(ctx) { OfflineIssueRepository(ctx) }
 
     var session by remember { mutableStateOf(KavitaSession()) }
+    var komgaSession by remember { mutableStateOf(KomgaSession()) }
+    var useKomga by remember { mutableStateOf(false) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
     var pendingDeleteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -370,19 +375,28 @@ internal fun DownloadedScreen(
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
 
-    val downloadedFlow = remember(session.baseUrl, session.username, session.apiKey) {
-        offlineRepository.observeDownloaded(session)
+    val downloadedFlow = remember(session.baseUrl, session.username, session.apiKey, komgaSession.baseUrl, komgaSession.username, komgaSession.apiKey, useKomga) {
+        if (useKomga) offlineRepository.observeDownloaded(komgaSession)
+        else offlineRepository.observeDownloaded(session)
     }
     val downloaded by downloadedFlow.collectAsState(initial = emptyList())
     val visibleDownloads = downloaded.filterNot { it.chapterId in pendingDeleteIds }
 
     LaunchedEffect(Unit) {
+        val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+        useKomga = backend.isKomga
         val loadedSession = sessionStore.load()
         session = loadedSession
-        runCatching { offlineRepository.ensureLocalCovers(loadedSession) }
-            .onFailure { BunkoLog.w("Could not ensure local covers on Downloaded.", it) }
+        komgaSession = komgaSessionStore.load()
+        if (backend.isKomga) {
+            runCatching { offlineRepository.ensureLocalCovers(komgaSession) }
+                .onFailure { BunkoLog.w("Could not ensure local covers on Downloaded.", it) }
+        } else {
+            runCatching { offlineRepository.ensureLocalCovers(loadedSession) }
+                .onFailure { BunkoLog.w("Could not ensure local covers on Downloaded.", it) }
+        }
         api = runCatching {
-            KavitaClient(ctx, sessionStore).buildApi().first
+            backend.api
         }.onFailure {
             BunkoLog.w("Could not create API for Downloaded.", it)
         }.getOrNull()
@@ -394,6 +408,13 @@ internal fun DownloadedScreen(
                 val currentApi = api
                 if (currentApi != null) {
                     currentApi.markChapterRead(MarkChapterReadDto(record.seriesId, record.chapterId, false))
+                } else if (useKomga) {
+                    offlineRepository.saveLocalProgress(
+                        session = komgaSession,
+                        chapterId = record.chapterId,
+                        page = record.pageCount,
+                        markRead = true
+                    )
                 } else {
                     offlineRepository.saveLocalProgress(
                         session = session,
@@ -420,6 +441,8 @@ internal fun DownloadedScreen(
                     currentApi.markChaptersUnread(
                         MarkVolumesReadDto(record.seriesId, chapterIds = listOf(record.chapterId))
                     )
+                } else if (useKomga) {
+                    offlineRepository.markLocalUnread(komgaSession, record.chapterId)
                 } else {
                     offlineRepository.markLocalUnread(session, record.chapterId)
                 }
@@ -459,7 +482,8 @@ internal fun DownloadedScreen(
                 val failedIds = mutableSetOf<Int>()
                 deletingRecords.forEach { record ->
                     try {
-                        offlineRepository.remove(session, record.chapterId)
+                        if (useKomga) offlineRepository.remove(komgaSession, record.chapterId)
+                        else offlineRepository.remove(session, record.chapterId)
                     } catch (c: CancellationException) {
                         throw c
                     } catch (t: Throwable) {

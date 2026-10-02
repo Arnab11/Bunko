@@ -18,8 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.bunko.reader.ActiveServerRuntime
 import com.bunko.reader.KavitaSession
+import com.bunko.reader.KomgaIdMapper
 import com.bunko.reader.normalizeKavitaBaseUrl
+import com.bunko.reader.normalizeKomgaBaseUrl
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -58,7 +61,13 @@ internal fun DarkMessageState(
     }
 }
 
-internal fun seriesCoverUrl(session: KavitaSession, seriesId: Int): String {
+internal fun seriesCoverUrl(session: KavitaSession, seriesId: Int): String {    // Komga mode: the shared UI passes Int ids mapped from Komga string ids.
+    if (ActiveServerRuntime.mode == "komga" && ActiveServerRuntime.komgaBaseUrl.isNotBlank()) {
+        val komgaId = KomgaIdMapper.komgaSeriesId(seriesId)
+        if (komgaId != null) {
+            return "${normalizeKomgaBaseUrl(ActiveServerRuntime.komgaBaseUrl)}/api/v1/series/$komgaId/thumbnail"
+        }
+    }
     val root = normalizeKavitaBaseUrl(session.baseUrl)
     val apiKey = session.apiKey.takeIf { it.isNotBlank() }?.let { "&apiKey=${Uri.encode(it)}" }.orEmpty()
     return "$root/api/Image/series-cover?seriesId=$seriesId$apiKey"
@@ -66,4 +75,10 @@ internal fun seriesCoverUrl(session: KavitaSession, seriesId: Int): String {
 
 internal fun seriesInitial(name: String): String {
     return name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "S"
+}
+
+/** True when remote covers can load: Kavita session present, or Komga active. */
+internal fun hasRemoteCovers(session: KavitaSession): Boolean {
+    if (ActiveServerRuntime.mode == "komga" && ActiveServerRuntime.komgaBaseUrl.isNotBlank()) return true
+    return session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()
 }

@@ -84,6 +84,7 @@ import com.bunko.reader.KavitaSession
 import com.bunko.reader.SeriesDto
 import com.bunko.reader.ui.KavitaCoverAspectRatio
 import com.bunko.reader.ui.seriesCoverUrl
+import com.bunko.reader.ui.hasRemoteCovers
 import com.bunko.reader.ui.seriesInitial
 import com.bunko.reader.ui.theme.BunkoBackground
 import com.bunko.reader.ui.theme.themeToggleModifier
@@ -554,7 +555,7 @@ internal fun SeriesPosterCard(
                         .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+                    if (hasRemoteCovers(session)) {
                         SeriesCoverImage(
                             seriesName = series.name,
                             coverUrl = seriesCoverUrl(session, series.id)
@@ -628,7 +629,7 @@ internal fun SeriesListItem(
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
-                if (session.baseUrl.isNotBlank() && session.apiKey.isNotBlank()) {
+                if (hasRemoteCovers(session)) {
                     SeriesCoverImage(
                         seriesName = series.name,
                         coverUrl = seriesCoverUrl(session, series.id)
