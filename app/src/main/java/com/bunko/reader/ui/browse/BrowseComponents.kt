@@ -419,6 +419,7 @@ fun UnifiedListItem(
     item: UnifiedMediaItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    coverWidth: Dp = 80.dp,
     onLongClick: (() -> Unit)? = null,
     selectionMode: Boolean = false,
     selected: Boolean = false,
@@ -441,7 +442,7 @@ fun UnifiedListItem(
         ) {
             Box(
                 modifier = Modifier
-                    .width(80.dp)
+                    .width(coverWidth)
                     .aspectRatio(KavitaCoverAspectRatio)
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -601,6 +602,7 @@ internal fun SeriesListItem(
     session: KavitaSession,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    coverWidth: Dp = 80.dp,
     onLongClick: (() -> Unit)? = null,
     selectionMode: Boolean = false,
     selected: Boolean = false,
@@ -623,7 +625,7 @@ internal fun SeriesListItem(
         ) {
             Box(
                 modifier = Modifier
-                    .width(80.dp)
+                    .width(coverWidth)
                     .aspectRatio(KavitaCoverAspectRatio)
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),

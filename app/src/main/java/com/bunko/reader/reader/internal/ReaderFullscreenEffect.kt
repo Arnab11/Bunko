@@ -113,3 +113,43 @@ fun Activity.hasDisplayCutout(): Boolean {
 fun View.hasDisplayCutout(): Boolean {
     return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && rootWindowInsets?.displayCutout != null
 }
+
+/**
+ * Ensures dialog / bottom sheet windows (and host activity) maintain immersive mode
+ * with hidden navigation bars.
+ */
+@Composable
+internal fun ImmersiveDialogEffect() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        var parent = view.parent
+        while (parent != null) {
+            if (parent is androidx.compose.ui.window.DialogWindowProvider) {
+                val dialogWindow = parent.window
+                WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val lp = dialogWindow.attributes
+                    lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    dialogWindow.attributes = lp
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    dialogWindow.isNavigationBarContrastEnforced = false
+                }
+                WindowInsetsControllerCompat(dialogWindow, dialogWindow.decorView).apply {
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.navigationBars())
+                }
+                break
+            }
+            parent = parent.parent
+        }
+        val activity = view.context.findActivity()
+        if (activity != null) {
+            WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.navigationBars())
+            }
+        }
+        onDispose {}
+    }
+}

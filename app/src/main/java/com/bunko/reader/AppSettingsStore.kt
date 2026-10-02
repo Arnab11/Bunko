@@ -141,6 +141,9 @@ data class AppSettings(
     val isDarkMode: Boolean = true,
     val isAmoledMode: Boolean = false,
     val navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
+    val isGridView: Boolean = true,
+    val gridCoverSizeDp: Int = 130,
+    val listCoverSizeDp: Int = 80,
 )
 
 class AppSettingsStore(private val context: Context) {
@@ -148,6 +151,7 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_APP_THEME = stringPreferencesKey("app_theme")
     private val KEY_DARK_MODE = booleanPreferencesKey("dark_mode")
     private val KEY_AMOLED_MODE = booleanPreferencesKey("amoled_mode")
+    private val KEY_IS_GRID_VIEW = booleanPreferencesKey("is_grid_view")
     private val KEY_RTL = booleanPreferencesKey("reader_rtl")
     private val KEY_READING_DIRECTION = stringPreferencesKey("reader_reading_direction")
     private val KEY_PAGE_LAYOUT_MODE = stringPreferencesKey("reader_page_layout_mode")
@@ -181,6 +185,8 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_READER_DRAW_UNDER_CUTOUT = booleanPreferencesKey("reader_draw_under_cutout")
     private val KEY_READER_TTS_ENABLED = booleanPreferencesKey("reader_tts_enabled")
     private val KEY_TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
+    private val KEY_GRID_COVER_SIZE_DP = intPreferencesKey("grid_cover_size_dp")
+    private val KEY_LIST_COVER_SIZE_DP = intPreferencesKey("list_cover_size_dp")
 
     val flow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
@@ -191,6 +197,9 @@ class AppSettingsStore(private val context: Context) {
             navigationBarStyle = prefs[KEY_NAVIGATION_BAR_STYLE]?.let {
                 runCatching { NavigationBarStyle.valueOf(it) }.getOrNull()
             } ?: NavigationBarStyle.Standard,
+            isGridView = prefs[KEY_IS_GRID_VIEW] ?: true,
+            gridCoverSizeDp = (prefs[KEY_GRID_COVER_SIZE_DP] ?: 130).coerceIn(100, 260),
+            listCoverSizeDp = (prefs[KEY_LIST_COVER_SIZE_DP] ?: 80).coerceIn(56, 140),
             reader = ReaderSettings(
                 readingDirection = readerReadingDirection(
                     storedName = prefs[KEY_READING_DIRECTION],
@@ -387,6 +396,18 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setNavigationBarStyle(value: NavigationBarStyle) {
         context.settingsDataStore.edit { it[KEY_NAVIGATION_BAR_STYLE] = value.name }
+    }
+
+    suspend fun setIsGridView(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_IS_GRID_VIEW] = value }
+    }
+
+    suspend fun setGridCoverSizeDp(value: Int) {
+        context.settingsDataStore.edit { it[KEY_GRID_COVER_SIZE_DP] = value.coerceIn(100, 260) }
+    }
+
+    suspend fun setListCoverSizeDp(value: Int) {
+        context.settingsDataStore.edit { it[KEY_LIST_COVER_SIZE_DP] = value.coerceIn(56, 140) }
     }
 
     suspend fun toggleDarkMode() {

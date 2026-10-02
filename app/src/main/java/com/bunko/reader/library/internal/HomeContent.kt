@@ -407,6 +407,8 @@ internal fun HomeContent(
     kavitaSort: SeriesLibrarySort = SeriesLibrarySort.Title,
     isSortDescending: Boolean = false,
     isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onSelectDestination: (HomeDestination) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -444,6 +446,8 @@ internal fun HomeContent(
                             sort = selectedSort,
                             isSortDescending = isSortDescending,
                             isGridView = isGridView,
+                            gridCoverSize = gridCoverSize,
+                            listCoverSize = listCoverSize,
                             onOpenBook = onOpenOfflineBook,
                             onSeeAll = { onSelectDestination(HomeDestination.Browse) },
                             onOpenContinueReading = { onSelectDestination(HomeDestination.History) },
@@ -458,6 +462,8 @@ internal fun HomeContent(
                             sort = selectedSort,
                             isSortDescending = isSortDescending,
                             isGridView = isGridView,
+                            gridCoverSize = gridCoverSize,
+                            listCoverSize = listCoverSize,
                             onOpenBook = onOpenOfflineBook,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -471,6 +477,8 @@ internal fun HomeContent(
                             isSortDescending = isSortDescending,
                             isScanning = isOfflineScanning,
                             isGridView = isGridView,
+                            gridCoverSize = gridCoverSize,
+                            listCoverSize = listCoverSize,
                             onChangeFolder = onChangeOfflineFolder,
                             onAddFolder = onAddOfflineFolder,
                             onRescan = onRescanOffline,
@@ -484,6 +492,8 @@ internal fun HomeContent(
                             sort = selectedSort,
                             isSortDescending = isSortDescending,
                             isGridView = isGridView,
+                            gridCoverSize = gridCoverSize,
+                            listCoverSize = listCoverSize,
                             onOpenBook = onOpenOfflineBook,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -494,6 +504,8 @@ internal fun HomeContent(
                             sort = selectedSort,
                             isSortDescending = isSortDescending,
                             isGridView = isGridView,
+                            gridCoverSize = gridCoverSize,
+                            listCoverSize = listCoverSize,
                             onOpenBook = onOpenOfflineBook,
                             onChangeFolder = onChangeOfflineFolder,
                             onRescan = onRescanOffline,
@@ -506,6 +518,8 @@ internal fun HomeContent(
                             searchQuery = searchQuery,
                             onSearchQueryChange = onSearchQueryChange,
                             isGridView = isGridView,
+                            gridCoverSize = gridCoverSize,
+                            listCoverSize = listCoverSize,
                             onOpenBook = onOpenOfflineBook,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -545,6 +559,9 @@ internal fun HomeContent(
                             onBack = { onSelectShelfChange(null) },
                             statusBarPadding = false,
                             navigationBarPadding = false,
+                            isGridView = isGridView,
+                            gridCoverSize = gridCoverSize,
+                            listCoverSize = listCoverSize,
                             onSelectSeries = { s -> onSelectSeries(s, destination) },
                             onOpenBook = { libraryId, seriesId, volumeId, chapterId ->
                                 onPickIssue(libraryId, seriesId, volumeId, chapterId, false)
@@ -578,7 +595,9 @@ internal fun HomeContent(
                             )
                         },
                         onOpenShelf = onOpenShelf,
-                        isGridView = isGridView
+                        isGridView = isGridView,
+                        gridCoverSize = gridCoverSize,
+                        listCoverSize = listCoverSize
                     )
                     }
                 } else if (selectedShelf != null) {
@@ -589,6 +608,9 @@ internal fun HomeContent(
                         onBack = { onSelectShelfChange(null) },
                         statusBarPadding = false,
                         navigationBarPadding = false,
+                        isGridView = isGridView,
+                        gridCoverSize = gridCoverSize,
+                        listCoverSize = listCoverSize,
                         onSelectSeries = { s -> onSelectSeries(s, destination) }
                     )
                 } else {
@@ -613,10 +635,10 @@ internal fun HomeContent(
                                 verticalArrangement = Arrangement.spacedBy(22.dp)
                             ) {
                                 item {
-                                    HomeShelf(HomeShelfKind.OnDeck, displayOnDeck, session, isGridView, onOpenShelf, onSelectSeries = { s -> onSelectSeries(s, destination) })
+                                    HomeShelf(HomeShelfKind.OnDeck, displayOnDeck, session, isGridView, gridCoverSize, listCoverSize, onOpenShelf, onSelectSeries = { s -> onSelectSeries(s, destination) })
                                 }
                                 item {
-                                    HomeShelf(HomeShelfKind.NewlyAdded, displayNewlyAdded, session, isGridView, onOpenShelf, onSelectSeries = { s -> onSelectSeries(s, destination) })
+                                    HomeShelf(HomeShelfKind.NewlyAdded, displayNewlyAdded, session, isGridView, gridCoverSize, listCoverSize, onOpenShelf, onSelectSeries = { s -> onSelectSeries(s, destination) })
                                 }
                             }
                         }
@@ -631,6 +653,9 @@ internal fun HomeContent(
                     onBack = { onSelectDestination(HomeDestination.Home) },
                     statusBarPadding = false,
                     navigationBarPadding = false,
+                    isGridView = isGridView,
+                    gridCoverSize = gridCoverSize,
+                    listCoverSize = listCoverSize,
                     onSelectSeries = { s -> onSelectSeries(s, destination) },
                     onOpenBook = { libraryId, seriesId, volumeId, chapterId ->
                         onPickIssue(libraryId, seriesId, volumeId, chapterId, false)
@@ -687,6 +712,8 @@ internal fun HomeContent(
                                         externalSort = kavitaSort,
                                         externalSortDescending = isSortDescending,
                                         isGridView = isGridView,
+                                        gridCoverSize = gridCoverSize,
+                                        listCoverSize = listCoverSize,
                                         onSelect = { s ->
                                             val sWithLib = if (s.libraryId == null || s.libraryId == 0) s.copy(libraryId = activeLibrary.id) else s
                                             onSelectSeries(sWithLib, destination)
@@ -719,6 +746,8 @@ internal fun HomeContent(
                                 externalSort = kavitaSort,
                                 externalSortDescending = isSortDescending,
                                 isGridView = isGridView,
+                                gridCoverSize = gridCoverSize,
+                                listCoverSize = listCoverSize,
                                 onSelect = { s ->
                                     val sWithLib = if (s.libraryId == null || s.libraryId == 0) s.copy(libraryId = selectedLibrary.id) else s
                                     onSelectSeries(sWithLib, destination)
@@ -764,6 +793,8 @@ internal fun HomeContent(
                         series = displayWantToRead,
                         session = session,
                         isGridView = isGridView,
+                        gridCoverSize = gridCoverSize,
+                        listCoverSize = listCoverSize,
                         refreshing = refreshing,
                         onRefresh = onRefresh,
                         onSelectSeries = { s -> onSelectSeries(s, destination) },
@@ -992,6 +1023,8 @@ private fun WantToReadGrid(
     series: List<SeriesDto>,
     session: KavitaSession,
     isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onSelectSeries: (SeriesDto) -> Unit,
@@ -1117,6 +1150,7 @@ private fun WantToReadGrid(
             } else if (isGridView) {
                 PosterGrid(
                     items = series,
+                    minSize = gridCoverSize.dp,
                     key = { it.id },
                     state = gridState,
                     footer = if (loadingMore || loadMoreError != null) {
@@ -1154,6 +1188,7 @@ private fun WantToReadGrid(
                         SeriesListItem(
                             series = item,
                             session = session,
+                            coverWidth = listCoverSize.dp,
                             selectionMode = selectionMode,
                             selected = item.id in selectedIdSet,
                             onClick = {
@@ -1232,6 +1267,8 @@ private fun HomeShelf(
     series: List<SeriesDto>,
     session: KavitaSession,
     isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onOpenShelf: (HomeShelfKind) -> Unit,
     onSelectSeries: (SeriesDto) -> Unit
 ) {
@@ -1285,7 +1322,7 @@ private fun HomeShelf(
             )
         } else if (isGridView) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val minCardWidth = 130.dp
+                val minCardWidth = gridCoverSize.dp
                 val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
                 val maxItems = columns * 2
                 val previewItems = series.take(maxItems)
@@ -1322,6 +1359,7 @@ private fun HomeShelf(
                 series.take(5).forEach { item ->
                     UnifiedListItem(
                         item = item.toUnifiedMediaItem(session),
+                        coverWidth = listCoverSize.dp,
                         onClick = { onSelectSeries(item) }
                     )
                 }
@@ -1343,7 +1381,9 @@ private fun KomgaBooksHome(
     onOpenBook: (KomgaLibraryBook) -> Unit,
     onViewSeries: (KomgaLibraryBook) -> Unit,
     onOpenShelf: (HomeShelfKind) -> Unit,
-    isGridView: Boolean = true
+    isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80
 ) {
     val scope = rememberCoroutineScope()
     val pullState = rememberPullToRefreshState()
@@ -1401,6 +1441,8 @@ private fun KomgaBooksHome(
                         books = onDeckBooks,
                         session = session,
                         isGridView = isGridView,
+                        gridCoverSize = gridCoverSize,
+                        listCoverSize = listCoverSize,
                         onOpenBook = onOpenBook,
                         onToggleRead = ::toggleRead,
                         onViewSeries = onViewSeries,
@@ -1413,6 +1455,8 @@ private fun KomgaBooksHome(
                         books = latestBooks,
                         session = session,
                         isGridView = isGridView,
+                        gridCoverSize = gridCoverSize,
+                        listCoverSize = listCoverSize,
                         onOpenBook = onOpenBook,
                         onToggleRead = ::toggleRead,
                         onViewSeries = onViewSeries,
@@ -1430,6 +1474,8 @@ private fun KomgaBookShelf(
     books: List<KomgaLibraryBook>,
     session: KavitaSession,
     isGridView: Boolean,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onOpenBook: (KomgaLibraryBook) -> Unit,
     onToggleRead: (KomgaLibraryBook) -> Unit,
     onViewSeries: (KomgaLibraryBook) -> Unit,
@@ -1493,6 +1539,7 @@ private fun KomgaBookShelf(
                     KomgaBookListRow(
                         entry = entry,
                         session = session,
+                        coverWidth = listCoverSize.dp,
                         onRead = { onOpenBook(entry) },
                         onToggleRead = { onToggleRead(entry) },
                         onViewSeries = { onViewSeries(entry) }
@@ -1502,7 +1549,7 @@ private fun KomgaBookShelf(
         } else {
             // Same 2-row grid as the Kavita home shelves (no horizontal scroll).
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val minCardWidth = 130.dp
+                val minCardWidth = gridCoverSize.dp
                 val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
                 val maxItems = columns * 2
                 val previewItems = books.take(maxItems)

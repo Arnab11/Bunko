@@ -155,6 +155,8 @@ internal fun SeriesScreen(
     externalSort: SeriesLibrarySort? = null,
     externalSortDescending: Boolean = false,
     isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onSelect: (SeriesDto) -> Unit,
     onOpenBook: ((libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int) -> Unit)? = null
 ) {
@@ -579,6 +581,7 @@ internal fun SeriesScreen(
                                 KomgaBookGrid(
                                     books = visibleBooks,
                                     session = session,
+                                    gridCoverSize = gridCoverSize,
                                     gridState = gridState,
                                     onRead = ::openKomgaBook,
                                     onToggleRead = ::toggleKomgaBookRead,
@@ -598,6 +601,7 @@ internal fun SeriesScreen(
                                 KomgaBookList(
                                     books = visibleBooks,
                                     session = session,
+                                    listCoverSize = listCoverSize,
                                     listState = listState,
                                     onRead = ::openKomgaBook,
                                     onToggleRead = ::toggleKomgaBookRead,
@@ -623,6 +627,7 @@ internal fun SeriesScreen(
                             series = visibleSeries,
                             session = session,
                             query = normalizedQuery,
+                            gridCoverSize = gridCoverSize,
                             gridState = gridState,
                             onSelect = onSelect,
                             onSearchHome = onSearchHome
@@ -631,6 +636,7 @@ internal fun SeriesScreen(
                             series = visibleSeries,
                             session = session,
                             query = normalizedQuery,
+                            listCoverSize = listCoverSize,
                             listState = listState,
                             onSelect = onSelect,
                             onSearchHome = onSearchHome
@@ -699,12 +705,13 @@ private fun SeriesLibraryGrid(
     series: List<SeriesDto>,
     session: KavitaSession,
     query: String,
+    gridCoverSize: Int = 130,
     gridState: LazyGridState,
     onSelect: (SeriesDto) -> Unit,
     onSearchHome: (String) -> Unit
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 130.dp),
+        columns = GridCells.Adaptive(minSize = gridCoverSize.dp),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -773,6 +780,7 @@ private fun SeriesLibraryList(
     series: List<SeriesDto>,
     session: KavitaSession,
     query: String,
+    listCoverSize: Int = 80,
     listState: LazyListState,
     onSelect: (SeriesDto) -> Unit,
     onSearchHome: (String) -> Unit
@@ -795,6 +803,7 @@ private fun SeriesLibraryList(
             SeriesListItem(
                 series = item,
                 session = session,
+                coverWidth = listCoverSize.dp,
                 onClick = { onSelect(item) }
             )
         }
@@ -834,6 +843,7 @@ internal fun KomgaBookGrid(
     books: List<KomgaLibraryBook>,
     session: KavitaSession,
     gridState: LazyGridState,
+    gridCoverSize: Int = 130,
     onRead: (KomgaLibraryBook) -> Unit,
     onToggleRead: (KomgaLibraryBook) -> Unit,
     onViewSeries: (KomgaLibraryBook) -> Unit,
@@ -841,7 +851,7 @@ internal fun KomgaBookGrid(
     query: String
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 130.dp),
+        columns = GridCells.Adaptive(minSize = gridCoverSize.dp),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -870,6 +880,7 @@ internal fun KomgaBookList(
     books: List<KomgaLibraryBook>,
     session: KavitaSession,
     listState: LazyListState,
+    listCoverSize: Int = 80,
     onRead: (KomgaLibraryBook) -> Unit,
     onToggleRead: (KomgaLibraryBook) -> Unit,
     onViewSeries: (KomgaLibraryBook) -> Unit,
@@ -886,6 +897,7 @@ internal fun KomgaBookList(
             KomgaBookListRow(
                 entry = item,
                 session = session,
+                coverWidth = listCoverSize.dp,
                 onRead = { onRead(item) },
                 onToggleRead = { onToggleRead(item) },
                 onViewSeries = { onViewSeries(item) }
@@ -1000,6 +1012,7 @@ internal fun KomgaBookGridCard(
 internal fun KomgaBookListRow(
     entry: KomgaLibraryBook,
     session: KavitaSession,
+    coverWidth: androidx.compose.ui.unit.Dp = 80.dp,
     onRead: () -> Unit,
     onToggleRead: () -> Unit,
     onViewSeries: () -> Unit,
@@ -1020,7 +1033,7 @@ internal fun KomgaBookListRow(
         ) {
             Box(
                 modifier = Modifier
-                    .width(80.dp)
+                    .width(coverWidth)
                     .aspectRatio(KavitaCoverAspectRatio)
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),

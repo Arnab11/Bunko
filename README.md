@@ -3,7 +3,7 @@
 </p>
 
 # Bunko
-> A lightweight, modern Android reader for [Kavita](https://www.kavitareader.com/) and local storage,
+> A lightweight, modern Android reader for [Kavita](https://www.kavitareader.com/), [Komga](https://komga.org/), and local storage,
 > designed for self-scanned manga, comics, light novels, and e-books with tablet-first ergonomics.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
@@ -18,14 +18,14 @@
 
 **Bunko** (文庫, *paperback library*) is a fast, native Android reader built with Jetpack Compose and Material 3 Expressive design.
 
-It offers a unified reading experience across **remote Kavita server streams**, **downloaded offline chapters**, and **local device storage** with full support for every major comic, manga, e-book, and fixed-layout format.
+It offers a unified reading experience across **remote Kavita and Komga server streams**, **downloaded offline chapters**, and **local device storage** with full support for every major comic, manga, e-book, and fixed-layout format.
 
 ---
 
 ## ✨ Features & Highlights
 
 ### 🚀 Universal Multi-Format Engine
-A single, shared, non-redundant reader engine powering both local files and remote Kavita streams:
+A single, shared, non-redundant reader engine powering local files, remote Kavita streams, and Komga libraries:
 
 | Category | Formats Supported | Engine Capabilities |
 | :--- | :--- | :--- |
@@ -36,8 +36,10 @@ A single, shared, non-redundant reader engine powering both local files and remo
 ---
 
 ### 🎨 Reading Ergonomics & UI
+- **Modern Flyout Menu & Sheets**: mpvRx-style flyout bottom sheets with smooth gesture dismissals, adaptive height bounds, and persistent immersive mode (gesture navigation bar stays tucked away).
+- **Comprehensive Reader Options**: Grouped tabs for **Layout** (Reading Direction, Turn Animation, Crop Borders, Auto Webtoon Mode, Overview Mode, Cutout Mode, Webtoon Side Padding, Spread Shift, Scale Type, Tap Zones, Invert Tap Zone) and **Lighting** (Color Themes, Brightness slider with Auto/Custom toggle, Night Light warmth control, Smart Invert Mode, and E-Paper B&W/Color Modes).
 - **Bookmark System**: One-tap quick bookmarking with auto-captured text excerpts, timestamps, and an interactive modal bottom sheet to view, jump to, and delete saved bookmarks.
-- **Offline Chapter Navigation & TOC**: Seamless table of contents tree and offline chapter switching for both local files (EPUB, MOBI, FB2) and downloaded Kavita series.
+- **Offline Chapter Navigation & TOC**: Seamless table of contents tree and offline chapter switching for both local files (EPUB, MOBI, FB2) and downloaded series.
 - **Re-Read Support**: Instant restart from the very beginning (first chapter, page 0) when revisiting completed series and books.
 - **PlayCurl 3D OpenGL Page Turn**: Pure Kotlin Jetpack Compose 3D curl physics with Bezier shadows and instant zero-delay consecutive turns.
 - **Continuous Webtoon Scroll**: Seamless vertical scrolling with tap-to-scroll viewport jumping (75%) and adjustable side margins.
@@ -52,11 +54,12 @@ A single, shared, non-redundant reader engine powering both local files and remo
 ---
 
 ### 📚 Library Management & Connectivity
-- **Multi-Server Kavita Profiles**: Fast switching between servers with secure token authentication.
+- **Multi-Server Kavita & Komga Profiles**: Fast switching between Kavita and Komga servers with secure credential and API key storage.
+- **Live Cover Resizing & View Modes**: Dedicated sort & view flyout sheet with live dotted sliders for grid and list cover sizes across Home shelves, library categories, and series screens.
 - **Reading Progress Sync**: Bi-directional progress synchronization and auto mark-as-read on completion.
 - **Offline Library Folders**: Storage Access Framework (SAF) folder picker with multi-folder indexing and format categorization (eBooks, MOBI, Comics, PDF).
 - **Global & Local Search**: Instant search across Series, Persons, Genres, Tags, Collections, Reading Lists, and Chapters.
-- **Tablet & Foldable Optimization**: Adaptive Navigation Rail, dual-pane library layout, and automatic spread/single-page layout transitions.
+- **Tablet & Foldable Optimization**: Adaptive Navigation Rail (compact 72dp), dual-pane library layout, and automatic spread/single-page layout transitions.
 
 ---
 

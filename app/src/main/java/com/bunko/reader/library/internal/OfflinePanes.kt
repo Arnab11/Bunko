@@ -151,6 +151,8 @@ internal fun OfflineHomePane(
     sort: LocalBookSort = LocalBookSort.Modified,
     isSortDescending: Boolean = false,
     isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onOpenBook: (LocalBook) -> Unit,
     onSeeAll: () -> Unit,
     onOpenContinueReading: () -> Unit = onSeeAll,
@@ -231,7 +233,7 @@ internal fun OfflineHomePane(
                     Spacer(Modifier.height(12.dp))
                     if (isGridView) {
                         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            val minCardWidth = 130.dp
+                            val minCardWidth = gridCoverSize.dp
                             val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
                             val maxItems = columns * 2
                             val previewItems = continueReading.take(maxItems)
@@ -268,6 +270,7 @@ internal fun OfflineHomePane(
                             continueReading.take(5).forEach { book ->
                                 UnifiedListItem(
                                     item = book.toUnifiedMediaItem(),
+                                    coverWidth = listCoverSize.dp,
                                     onClick = { onOpenBook(book) }
                                 )
                             }
@@ -321,7 +324,7 @@ internal fun OfflineHomePane(
                 Spacer(Modifier.height(12.dp))
                 if (isGridView) {
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                        val minCardWidth = 130.dp
+                        val minCardWidth = gridCoverSize.dp
                         val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
                         val maxItems = columns * 2
                         val previewItems = recentlyAdded.take(maxItems)
@@ -358,6 +361,7 @@ internal fun OfflineHomePane(
                         recentlyAdded.take(5).forEach { book ->
                             UnifiedListItem(
                                 item = book.toUnifiedMediaItem(),
+                                coverWidth = listCoverSize.dp,
                                 onClick = { onOpenBook(book) }
                             )
                         }
@@ -374,6 +378,8 @@ internal fun OfflineHistoryPane(
     sort: LocalBookSort = LocalBookSort.Recent,
     isSortDescending: Boolean = false,
     isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -449,7 +455,7 @@ internal fun OfflineHistoryPane(
                         Spacer(Modifier.height(12.dp))
                         if (isGridView) {
                             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                                val minCardWidth = 130.dp
+                                val minCardWidth = gridCoverSize.dp
                                 val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
                                 val chunked = openedFiles.chunked(columns)
                                 Column(
@@ -484,6 +490,7 @@ internal fun OfflineHistoryPane(
                                 openedFiles.forEach { book ->
                                     UnifiedListItem(
                                         item = book.toUnifiedMediaItem(),
+                                        coverWidth = listCoverSize.dp,
                                         onClick = { onOpenBook(book) }
                                     )
                                 }
@@ -525,7 +532,7 @@ internal fun OfflineHistoryPane(
                         Spacer(Modifier.height(12.dp))
                         if (isGridView) {
                             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                                val minCardWidth = 130.dp
+                                val minCardWidth = gridCoverSize.dp
                                 val columns = maxOf(2, (maxWidth / minCardWidth).toInt())
                                 val chunked = libraryHistory.chunked(columns)
                                 Column(
@@ -560,6 +567,7 @@ internal fun OfflineHistoryPane(
                                 libraryHistory.forEach { book ->
                                     UnifiedListItem(
                                         item = book.toUnifiedMediaItem(),
+                                        coverWidth = listCoverSize.dp,
                                         onClick = { onOpenBook(book) }
                                     )
                                 }
@@ -578,6 +586,8 @@ internal fun OfflineBrowsePane(
     sort: LocalBookSort,
     isSortDescending: Boolean = false,
     isGridView: Boolean,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onOpenBook: (LocalBook) -> Unit,
     onChangeFolder: () -> Unit,
     onRescan: () -> Unit,
@@ -603,6 +613,7 @@ internal fun OfflineBrowsePane(
         } else if (isGridView) {
             PosterGrid(
                 items = sortedBooks,
+                minSize = gridCoverSize.dp,
                 key = { it.id }
             ) { book ->
                 UnifiedPosterCard(
@@ -619,6 +630,7 @@ internal fun OfflineBrowsePane(
                 items(sortedBooks, key = { it.id }) { book ->
                     UnifiedListItem(
                         item = book.toUnifiedMediaItem(),
+                        coverWidth = listCoverSize.dp,
                         onClick = { onOpenBook(book) }
                     )
                 }
@@ -633,6 +645,8 @@ internal fun OfflineSearchPane(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     isGridView: Boolean,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier,
     // Inline mode: the query field lives in the top bar.
@@ -701,6 +715,7 @@ internal fun OfflineSearchPane(
             if (isGridView) {
                 PosterGrid(
                     items = searchResults,
+                    minSize = gridCoverSize.dp,
                     key = { it.id }
                 ) { book ->
                     UnifiedPosterCard(
@@ -717,6 +732,7 @@ internal fun OfflineSearchPane(
                     items(searchResults, key = { it.id }) { book ->
                         UnifiedListItem(
                             item = book.toUnifiedMediaItem(),
+                            coverWidth = listCoverSize.dp,
                             onClick = { onOpenBook(book) }
                         )
                     }
@@ -773,6 +789,8 @@ internal fun OfflineLibrariesPane(
     isSortDescending: Boolean = false,
     isScanning: Boolean,
     isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onChangeFolder: () -> Unit,
     onAddFolder: () -> Unit = onChangeFolder,
     onRescan: () -> Unit,
@@ -797,6 +815,7 @@ internal fun OfflineLibrariesPane(
         } else if (isGridView) {
             PosterGrid(
                 items = sortedBookStacks,
+                minSize = gridCoverSize.dp,
                 key = { it.key }
             ) { stack ->
                 val primaryBook = stack.primaryBook
@@ -831,6 +850,7 @@ internal fun OfflineLibrariesPane(
                     )
                     UnifiedListItem(
                         item = mediaItem,
+                        coverWidth = listCoverSize.dp,
                         onClick = {
                             if (stack.isStack) {
                                 selectedStackForSheet = stack
@@ -895,6 +915,8 @@ internal fun OfflineWantToReadPane(
     sort: LocalBookSort = LocalBookSort.Title,
     isSortDescending: Boolean = false,
     isGridView: Boolean,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onOpenBook: (LocalBook) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -917,6 +939,7 @@ internal fun OfflineWantToReadPane(
         } else if (isGridView) {
             PosterGrid(
                 items = unreadBooks,
+                minSize = gridCoverSize.dp,
                 key = { it.id }
             ) { book ->
                 UnifiedPosterCard(
@@ -933,6 +956,7 @@ internal fun OfflineWantToReadPane(
                 items(unreadBooks, key = { it.id }) { book ->
                     UnifiedListItem(
                         item = book.toUnifiedMediaItem(),
+                        coverWidth = listCoverSize.dp,
                         onClick = { onOpenBook(book) }
                     )
                 }

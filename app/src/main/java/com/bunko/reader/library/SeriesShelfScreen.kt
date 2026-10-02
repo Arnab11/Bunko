@@ -133,6 +133,10 @@ import com.bunko.reader.ui.browse.PagingFooter
 import com.bunko.reader.ui.browse.PosterGrid
 import com.bunko.reader.ui.browse.SeriesPosterCard
 import com.bunko.reader.ui.theme.BunkoBackground
+import com.bunko.reader.series.KomgaBookList
+import com.bunko.reader.ui.browse.SeriesListItem
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 
 @Composable
 internal fun SeriesShelfScreen(
@@ -142,12 +146,16 @@ internal fun SeriesShelfScreen(
     onBack: () -> Unit,
     statusBarPadding: Boolean = true,
     navigationBarPadding: Boolean = true,
+    isGridView: Boolean = true,
+    gridCoverSize: Int = 130,
+    listCoverSize: Int = 80,
     onSelectSeries: (SeriesDto) -> Unit,
     onOpenBook: ((libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int) -> Unit)? = null
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var komgaBooks by remember { mutableStateOf<List<KomgaLibraryBook>?>(null) }
     var komgaAdapter by remember { mutableStateOf<KomgaKavitaAdapter?>(null) }
@@ -318,11 +326,32 @@ internal fun SeriesShelfScreen(
                 booksSnapshot != null -> {
                     if (booksSnapshot.isEmpty()) {
                         DarkMessageState(shelfKind.title, shelfKind.emptyMessage)
-                    } else {
+                    } else if (isGridView) {
                         KomgaBookGrid(
                             books = booksSnapshot,
                             session = session,
                             gridState = gridState,
+                            gridCoverSize = gridCoverSize,
+                            onRead = ::openKomgaBook,
+                            onToggleRead = ::toggleKomgaBookRead,
+                            onViewSeries = { entry ->
+                                onSelectSeries(
+                                    SeriesDto(
+                                        id = entry.route.seriesId,
+                                        name = entry.book.seriesTitle,
+                                        libraryId = entry.route.libraryId
+                                    )
+                                )
+                            },
+                            onSearchHome = {},
+                            query = ""
+                        )
+                    } else {
+                        KomgaBookList(
+                            books = booksSnapshot,
+                            session = session,
+                            listState = listState,
+                            listCoverSize = listCoverSize,
                             onRead = ::openKomgaBook,
                             onToggleRead = ::toggleKomgaBookRead,
                             onViewSeries = { entry ->
@@ -340,8 +369,9 @@ internal fun SeriesShelfScreen(
                     }
                 }
                 series.isEmpty() -> DarkMessageState(shelfKind.title, shelfKind.emptyMessage)
-                else -> PosterGrid(
+                isGridView -> PosterGrid(
                     items = series,
+                    minSize = gridCoverSize.dp,
                     key = { it.id },
                     state = gridState,
                     footer = if (loadingMore || loadMoreError != null) {
@@ -354,13 +384,37 @@ internal fun SeriesShelfScreen(
                         }
                     } else null
                 ) { item ->
-                    SeriesPosterCard(
+                    com.bunko.reader.ui.browse.SeriesPosterCard(
                         series = item,
                         session = session,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelectSeries(item) }
                     )
+                }
+                else -> androidx.compose.foundation.lazy.LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(items = series, key = { it.id }) { item ->
+                        SeriesListItem(
+                            series = item,
+                            session = session,
+                            coverWidth = listCoverSize.dp,
+                            onClick = { onSelectSeries(item) }
+                        )
+                    }
+                    if (loadingMore || loadMoreError != null) {
+                        item {
+                            PagingFooter(
+                                loading = loadingMore,
+                                error = loadMoreError,
+                                onRetry = { scope.launch { loadNextPage() } }
+                            )
+                        }
+                    }
                 }
             }
         }

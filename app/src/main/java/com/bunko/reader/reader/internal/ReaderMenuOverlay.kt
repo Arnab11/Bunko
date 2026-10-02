@@ -1,5 +1,6 @@
 package com.bunko.reader.reader.internal
 
+import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -70,6 +71,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -86,12 +89,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import com.bunko.reader.ui.BunkoSheetDragHandle
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
@@ -289,16 +295,8 @@ internal fun ReaderMenuOverlay(
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Scrim to dismiss options when open
-        if (showDisplayOptions && visible) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectTapGestures(onTap = { showDisplayOptions = false })
-                    }
-            )
-        } else if (dismissOnBackgroundTap && visible) {
+        // Scrim to dismiss menu on background tap
+        if (dismissOnBackgroundTap && visible && !showDisplayOptions && !showChapterList) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -393,23 +391,16 @@ internal fun ReaderMenuOverlay(
                 }
             }
 
-            // Google Books "Aa" Options Button
-            Surface(
-                onClick = { showDisplayOptions = !showDisplayOptions },
-                shape = RoundedCornerShape(12.dp),
-                color = if (showDisplayOptions) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                contentColor = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar,
+            // Chapters / Table of Contents Button
+            IconButton(
+                onClick = { showChapterList = true },
                 modifier = Modifier.size(40.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Aa",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Serif,
-                        color = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar
-                    )
-                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.List,
+                    contentDescription = "Chapters",
+                    tint = onBar
+                )
             }
 
             // Close Menu Button
@@ -423,43 +414,53 @@ internal fun ReaderMenuOverlay(
         }
         }
 
-        // GOOGLE PLAY BOOKS STYLE DISPLAY OPTIONS POPUP
-        AnimatedVisibility(
-            visible = visible && showDisplayOptions,
-            enter = fadeIn(animationSpec = tween(180)),
-            exit = fadeOut(animationSpec = tween(120)),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .graphicsLayer {
-                    alpha = menuFraction.value
-                }
-        ) {
-            Surface(
-                modifier = Modifier
-                    .padding(
-                        top = statusBarTopPadding + 64.dp,
-                        bottom = dialogBottomPadding,
-                        end = (endCutoutPadding + 12.dp).coerceAtLeast(12.dp),
-                        start = (startCutoutPadding + 12.dp).coerceAtLeast(12.dp)
-                    )
-                    .widthIn(max = 350.dp)
-                    .heightIn(max = maxDialogHeight)
-                    .clip(RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, dialogBorder), RoundedCornerShape(20.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { /* consume taps inside */ },
-                shape = RoundedCornerShape(20.dp),
-                color = dialogSurfaceBg,
-                tonalElevation = 8.dp,
-                shadowElevation = 16.dp
+        // DISPLAY / READER SETTINGS FLYOUT BOTTOM SHEET (mpvRx-style)
+        if (showDisplayOptions) {
+            val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val bodyMaxHeight =
+                (configuration.screenHeightDp.dp - if (isLandscape) 132.dp else 180.dp)
+                    .coerceAtLeast(200.dp)
+                    .coerceAtMost(if (isLandscape) 460.dp else 600.dp)
+
+            val displayOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ModalBottomSheet(
+                onDismissRequest = { showDisplayOptions = false },
+                sheetState = displayOptionsSheetState,
+                containerColor = dialogSurfaceBg,
+                contentColor = onBar,
+                scrimColor = BottomSheetDefaults.ScrimColor,
+                sheetMaxWidth = 640.dp,
+                dragHandle = { BunkoSheetDragHandle() },
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             ) {
+                ImmersiveDialogEffect()
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = maxDialogHeight)
+                        .navigationBarsPadding()
+                        .imePadding()
+                        .padding(bottom = 16.dp)
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Reader options",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = onBar
+                        )
+                        TextButton(onClick = { showDisplayOptions = false }) {
+                            Text("Done")
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
                     // Selected states mirror Reader Settings: M3 ToggleButtons keep
                     // their defaults, custom highlights use the same selected pair.
                     val accent = MaterialTheme.colorScheme.onSecondaryContainer
@@ -471,6 +472,7 @@ internal fun ReaderMenuOverlay(
                     // TABS (Text & Lighting)
                     TabRow(
                         selectedTabIndex = selectedTab.ordinal,
+                        modifier = Modifier.padding(horizontal = 20.dp),
                         containerColor = Color.Transparent,
                         contentColor = onSurface,
                         indicator = { tabPositions ->
@@ -518,11 +520,11 @@ internal fun ReaderMenuOverlay(
                     val scrollbarThumbColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                     val scrollbarTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
 
-                    // TAB CONTENT (Scrollable on phones with bounded height)
+                    // TAB CONTENT (Scrollable bounded height)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f, fill = false)
+                            .heightIn(max = bodyMaxHeight)
                     ) {
                         when (selectedTab) {
                             MenuOptionTab.Text -> {
@@ -532,10 +534,11 @@ internal fun ReaderMenuOverlay(
                                         .dialogVerticalScrollbar(
                                             scrollState = layoutScrollState,
                                             thumbColor = scrollbarThumbColor,
-                                            trackColor = scrollbarTrackColor
+                                            trackColor = scrollbarTrackColor,
+                                            paddingEnd = 4.dp
                                         )
                                         .verticalScroll(layoutScrollState)
-                                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                                        .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
                                 // Font Selection (if EPUB)
@@ -792,6 +795,83 @@ internal fun ReaderMenuOverlay(
                                     }
                                 }
 
+                                // Turn Animation (Off, Slide, 3D)
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Turn animation",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = unselectedText
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                                    ) {
+                                        val animOptions = listOf("Off", "Slide", "Book", "Curl")
+                                        animOptions.forEachIndexed { index, option ->
+                                            val isSelected = when (option) {
+                                                "Off" -> !pageTransitionAnimation
+                                                "Slide" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Slide
+                                                "Book" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.PlayCurl
+                                                "Curl" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Curl
+                                                else -> false
+                                            }
+                                            ToggleButton(
+                                                checked = isSelected,
+                                                onCheckedChange = {
+                                                    when (option) {
+                                                        "Off" -> onSetPageTransitionAnimation(false)
+                                                        "Slide" -> {
+                                                            onSetPageTransitionAnimation(true)
+                                                            onSetPageTurnMode(PageTurnMode.Slide)
+                                                        }
+                                                        "Book" -> {
+                                                            onSetPageTransitionAnimation(true)
+                                                            onSetPageTurnMode(PageTurnMode.PlayCurl)
+                                                        }
+                                                        "Curl" -> {
+                                                            onSetPageTransitionAnimation(true)
+                                                            onSetPageTurnMode(PageTurnMode.Curl)
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .semantics { role = Role.RadioButton },
+                                                shapes = when (index) {
+                                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                    animOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = option,
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (!isEpub) {
+                                    // Crop Borders
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Crop borders",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = unselectedText
+                                        )
+                                        DialogToggleButton(
+                                            checked = cropBorders,
+                                            onCheckedChange = { onSetCropBorders(it) },
+                                            text = if (cropBorders) "On" else "Off"
+                                        )
+                                    }
+                                }
+
                                 // Auto Webtoon Mode
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -892,63 +972,6 @@ internal fun ReaderMenuOverlay(
                                     }
                                 }
 
-                                // Turn Animation (Off, Slide, 3D)
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(
-                                        text = "Turn animation",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = unselectedText
-                                    )
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
-                                    ) {
-                                        val animOptions = listOf("Off", "Slide", "Book", "Curl")
-                                        animOptions.forEachIndexed { index, option ->
-                                            val isSelected = when (option) {
-                                                "Off" -> !pageTransitionAnimation
-                                                "Slide" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Slide
-                                                "Book" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.PlayCurl
-                                                "Curl" -> pageTransitionAnimation && pageTurnMode == PageTurnMode.Curl
-                                                else -> false
-                                            }
-                                            ToggleButton(
-                                                checked = isSelected,
-                                                onCheckedChange = {
-                                                    when (option) {
-                                                        "Off" -> onSetPageTransitionAnimation(false)
-                                                        "Slide" -> {
-                                                            onSetPageTransitionAnimation(true)
-                                                            onSetPageTurnMode(PageTurnMode.Slide)
-                                                        }
-                                                        "Book" -> {
-                                                            onSetPageTransitionAnimation(true)
-                                                            onSetPageTurnMode(PageTurnMode.PlayCurl)
-                                                        }
-                                                        "Curl" -> {
-                                                            onSetPageTransitionAnimation(true)
-                                                            onSetPageTurnMode(PageTurnMode.Curl)
-                                                        }
-                                                    }
-                                                },
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .semantics { role = Role.RadioButton },
-                                                shapes = when (index) {
-                                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                                                    animOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                                }
-                                            ) {
-                                                Text(
-                                                    text = option,
-                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
                                 // Spread Shift (when in landscape mode)
                                 if (showSpreadShift) {
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1039,24 +1062,6 @@ internal fun ReaderMenuOverlay(
                                                 }
                                             }
                                         }
-                                    }
-
-                                    // Crop Borders
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Crop borders",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = unselectedText
-                                        )
-                                        DialogToggleButton(
-                                            checked = cropBorders,
-                                            onCheckedChange = { onSetCropBorders(it) },
-                                            text = if (cropBorders) "On" else "Off"
-                                        )
                                     }
                                 }
 
@@ -1171,10 +1176,11 @@ internal fun ReaderMenuOverlay(
                                     .dialogVerticalScrollbar(
                                         scrollState = lightingScrollState,
                                         thumbColor = scrollbarThumbColor,
-                                        trackColor = scrollbarTrackColor
+                                        trackColor = scrollbarTrackColor,
+                                        paddingEnd = 4.dp
                                     )
                                     .verticalScroll(lightingScrollState)
-                                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                                    .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(18.dp)
                             ) {
                                 // Background Color Theme Swatches
@@ -1275,6 +1281,146 @@ internal fun ReaderMenuOverlay(
                                     }
                                 }
 
+                                // Brightness Control Section
+                                val isAuto = readerBrightness < 0f
+                                val currentSystemBrightness = remember(isAuto) {
+                                    systemBrightnessToSlider(getSystemBrightness(context))
+                                }
+                                val currentBrightnessValue = if (isAuto) currentSystemBrightness else readerBrightness
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Brightness",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = unselectedText
+                                    )
+                                    DialogToggleButton(
+                                        checked = isAuto,
+                                        onCheckedChange = { auto ->
+                                            onSetReaderBrightness(if (auto) -1f else currentSystemBrightness)
+                                        },
+                                        text = if (isAuto) "Auto" else "Custom"
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.BrightnessLow,
+                                        contentDescription = "Low Brightness",
+                                        tint = unselectedText,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Slider(
+                                        value = currentBrightnessValue.coerceIn(0f, 1f),
+                                        onValueChange = { onSetReaderBrightness(it.coerceIn(0f, 1f)) },
+                                        valueRange = 0f..1f,
+                                        modifier = Modifier.weight(1f),
+                                        colors = SliderDefaults.colors(
+                                            thumbColor = accent,
+                                            activeTrackColor = accent,
+                                            inactiveTrackColor = dialogBorder
+                                        )
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.BrightnessHigh,
+                                        contentDescription = "High Brightness",
+                                        tint = unselectedText,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = "${(currentBrightnessValue * 100).roundToInt()}%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = unselectedText,
+                                        modifier = Modifier.widthIn(min = 36.dp),
+                                        textAlign = TextAlign.End
+                                    )
+                                }
+
+                                // Night Mode / Night Light Section
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.NightlightRound,
+                                            contentDescription = "Night Light",
+                                            tint = unselectedText,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = "Night Light",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = if (nightModeEnabled) onSurface else unselectedText
+                                        )
+                                    }
+                                    DialogToggleButton(
+                                        checked = nightModeEnabled,
+                                        onCheckedChange = onSetNightModeEnabled,
+                                        text = if (nightModeEnabled) "On" else "Off"
+                                    )
+                                }
+                                AnimatedVisibility(visible = nightModeEnabled) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Warmth",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = unselectedText
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.WbSunny,
+                                                contentDescription = "Mild Warmth",
+                                                tint = unselectedText,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Slider(
+                                                value = nightLightIntensity,
+                                                onValueChange = onSetNightLightIntensity,
+                                                valueRange = 0f..1f,
+                                                modifier = Modifier.weight(1f),
+                                                colors = SliderDefaults.colors(
+                                                    thumbColor = accent,
+                                                    activeTrackColor = accent,
+                                                    inactiveTrackColor = dialogBorder
+                                                )
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.NightlightRound,
+                                                contentDescription = "Deep Warmth",
+                                                tint = unselectedText,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Text(
+                                                text = "${(nightLightIntensity * 100).roundToInt()}%",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = unselectedText,
+                                                modifier = Modifier.widthIn(min = 36.dp),
+                                                textAlign = TextAlign.End
+                                            )
+                                        }
+                                    }
+                                }
+
                                 // Invert Mode Options
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
@@ -1310,7 +1456,10 @@ internal fun ReaderMenuOverlay(
                                             }
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(14.dp))
+                                }
+
+                                // E-Paper Mode Options
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
                                         text = "E-Paper Mode",
                                         style = MaterialTheme.typography.labelMedium,
@@ -1344,156 +1493,14 @@ internal fun ReaderMenuOverlay(
                                             }
                                         }
                                     }
-
-                                    // Brightness Control Section
-                                    Spacer(modifier = Modifier.height(14.dp))
-                                    val isAuto = readerBrightness < 0f
-                                    val currentSystemBrightness = remember(isAuto) {
-                                        systemBrightnessToSlider(getSystemBrightness(context))
-                                    }
-                                    val currentBrightnessValue = if (isAuto) currentSystemBrightness else readerBrightness
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Brightness",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = unselectedText
-                                        )
-                                        DialogToggleButton(
-                                            checked = isAuto,
-                                            onCheckedChange = { auto ->
-                                                onSetReaderBrightness(if (auto) -1f else currentSystemBrightness)
-                                            },
-                                            text = if (isAuto) "Auto" else "Custom"
-                                        )
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.BrightnessLow,
-                                            contentDescription = "Low Brightness",
-                                            tint = unselectedText,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Slider(
-                                            value = currentBrightnessValue.coerceIn(0f, 1f),
-                                            onValueChange = { onSetReaderBrightness(it.coerceIn(0f, 1f)) },
-                                            valueRange = 0f..1f,
-                                            modifier = Modifier.weight(1f),
-                                            colors = SliderDefaults.colors(
-                                                thumbColor = accent,
-                                                activeTrackColor = accent,
-                                                inactiveTrackColor = dialogBorder
-                                            )
-                                        )
-                                        Icon(
-                                            imageVector = Icons.Default.BrightnessHigh,
-                                            contentDescription = "High Brightness",
-                                            tint = unselectedText,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Text(
-                                            text = "${(currentBrightnessValue * 100).roundToInt()}%",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = unselectedText,
-                                            modifier = Modifier.widthIn(min = 36.dp),
-                                            textAlign = TextAlign.End
-                                        )
-                                    }
-
-                                    // Night Mode / Night Light Section
-                                    Spacer(modifier = Modifier.height(14.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.NightlightRound,
-                                                contentDescription = "Night Light",
-                                                tint = unselectedText,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Text(
-                                                text = "Night Light",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = if (nightModeEnabled) onSurface else unselectedText
-                                            )
-                                        }
-                                        DialogToggleButton(
-                                            checked = nightModeEnabled,
-                                            onCheckedChange = onSetNightModeEnabled,
-                                            text = if (nightModeEnabled) "On" else "Off"
-                                        )
-                                    }
-                                    AnimatedVisibility(visible = nightModeEnabled) {
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = "Warmth",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = unselectedText
-                                            )
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.WbSunny,
-                                                    contentDescription = "Mild Warmth",
-                                                    tint = unselectedText,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Slider(
-                                                    value = nightLightIntensity,
-                                                    onValueChange = onSetNightLightIntensity,
-                                                    valueRange = 0f..1f,
-                                                    modifier = Modifier.weight(1f),
-                                                    colors = SliderDefaults.colors(
-                                                        thumbColor = accent,
-                                                        activeTrackColor = accent,
-                                                        inactiveTrackColor = dialogBorder
-                                                    )
-                                                )
-                                                Icon(
-                                                    imageVector = Icons.Default.NightlightRound,
-                                                    contentDescription = "Deep Warmth",
-                                                    tint = unselectedText,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Text(
-                                                    text = "${(nightLightIntensity * 100).roundToInt()}%",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = unselectedText,
-                                                    modifier = Modifier.widthIn(min = 36.dp),
-                                                    textAlign = TextAlign.End
-                                                )
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
                     }
-                    }
                 }
             }
         }
+    }
 
         // BOTTOM BAR (CHAPTERS BUTTON + PAGE SLIDER + PAGE COUNT)
         AnimatedVisibility(
@@ -1540,18 +1547,15 @@ internal fun ReaderMenuOverlay(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Chapters / Table of Contents Button (Left of Slider)
-                    IconButton(
-                        onClick = { showChapterList = true },
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.List,
-                            contentDescription = "Chapters",
-                            tint = onBar
-                        )
-                    }
+                    // Page indicator: "1/26"
+                    Text(
+                        text = "${jumpPage + 1}/$safePageCount",
+                        color = onBarVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
 
+                    // Page slider
                     ValueBubbleSlider(
                         value = sliderValue,
                         onValueChange = { value ->
@@ -1571,12 +1575,24 @@ internal fun ReaderMenuOverlay(
                         modifier = Modifier.weight(1f)
                     )
 
-                    Text(
-                        text = "${jumpPage + 1} / $safePageCount",
-                        color = onBarVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
+                    // Reader Options ("Aa") Button
+                    Surface(
+                        onClick = { showDisplayOptions = !showDisplayOptions },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (showDisplayOptions) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                        contentColor = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "Aa",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Serif,
+                                color = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar
+                            )
+                        }
+                    }
                 }
 
                 val menuProgressPercent = if (safePageCount > 0) {
@@ -1622,12 +1638,18 @@ internal fun ReaderMenuOverlay(
         // CHAPTERS & BOOKMARKS MODAL BOTTOM SHEET
         if (showChapterList) {
             var chapterSheetTab by remember { mutableIntStateOf(0) }
+            val chapterSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
                 onDismissRequest = { showChapterList = false },
+                sheetState = chapterSheetState,
                 containerColor = dialogSurfaceBg,
                 contentColor = onBar,
+                scrimColor = BottomSheetDefaults.ScrimColor,
+                sheetMaxWidth = 640.dp,
+                dragHandle = { BunkoSheetDragHandle() },
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             ) {
+                ImmersiveDialogEffect()
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

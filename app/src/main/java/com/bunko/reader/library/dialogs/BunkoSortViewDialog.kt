@@ -32,7 +32,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Update
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -57,9 +57,22 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
+import kotlin.math.roundToInt
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.material3.Slider
 import com.bunko.reader.library.internal.LocalBookSort
 import com.bunko.reader.series.SeriesLibrarySort
+import com.bunko.reader.ui.BunkoPickerSheet
+
+internal data class GridColumnSelector(
+    val label: String,
+    val currentValue: Int,
+    val onValueChange: (Int) -> Unit,
+    val valueRange: ClosedFloatingPointRange<Float> = 100f..260f,
+    val steps: Int = 31,
+    val unitSuffix: String = "dp"
+)
 
 private data class SortTypeOption<T>(
     val value: T,
@@ -67,6 +80,7 @@ private data class SortTypeOption<T>(
     val icon: ImageVector
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BunkoSortViewDialog(
     isOffline: Boolean,
@@ -78,113 +92,158 @@ internal fun BunkoSortViewDialog(
     onSortDescendingChange: (Boolean) -> Unit,
     isGridView: Boolean,
     onGridViewChange: (Boolean) -> Unit,
+    gridCoverSize: Int = 130,
+    onGridCoverSizeChange: (Int) -> Unit = {},
+    listCoverSize: Int = 80,
+    onListCoverSizeChange: (Int) -> Unit = {},
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    AlertDialog(
+    BunkoPickerSheet(
         onDismissRequest = onDismissRequest,
-        title = {
-            Text(
-                text = "Sort and view options",
-                style = MaterialTheme.typography.titleLarge
-            )
-        },
-        text = {
-            Column {
-                HorizontalDivider()
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    DialogSectionTitle(text = "Sort by")
-
-                    if (isOffline) {
-                        val localOptions = listOf(
-                            SortTypeOption(LocalBookSort.Title, "Title", Icons.Filled.SortByAlpha),
-                            SortTypeOption(LocalBookSort.Recent, "Recent", Icons.Filled.History),
-                            SortTypeOption(LocalBookSort.Modified, "Date", Icons.Filled.Update),
-                            SortTypeOption(LocalBookSort.Unread, "Unread", Icons.Filled.BookmarkBorder)
-                        )
-                        CombinedSortRow(
-                            options = localOptions,
-                            selected = selectedLocalSort,
-                            onSelect = onLocalSortChange,
-                            isSortDescending = isSortDescending,
-                            onSortDescendingChange = onSortDescendingChange
-                        )
-                    } else {
-                        val kavitaOptions = listOf(
-                            SortTypeOption(SeriesLibrarySort.Title, "Title", Icons.Filled.SortByAlpha),
-                            SortTypeOption(SeriesLibrarySort.InProgressFirst, "Recent", Icons.Filled.History),
-                            SortTypeOption(SeriesLibrarySort.ReadFirst, "Date", Icons.Filled.Update),
-                            SortTypeOption(SeriesLibrarySort.UnreadFirst, "Unread", Icons.Filled.BookmarkBorder)
-                        )
-                        CombinedSortRow(
-                            options = kavitaOptions,
-                            selected = selectedKavitaSort,
-                            onSelect = onKavitaSortChange,
-                            isSortDescending = isSortDescending,
-                            onSortDescendingChange = onSortDescendingChange
-                        )
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(top = 14.dp))
-
-                    DialogSectionTitle(text = "View mode")
-
-                    SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        SegmentedButton(
-                            selected = isGridView,
-                            onClick = { onGridViewChange(true) },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                            colors = themedSegmentedButtonColors(),
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Filled.GridView,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            },
-                            label = { Text("Grid") }
-                        )
-
-                        SegmentedButton(
-                            selected = !isGridView,
-                            onClick = { onGridViewChange(false) },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                            colors = themedSegmentedButtonColors(),
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ViewList,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            },
-                            label = { Text("List") }
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
+        title = "Sort and view options",
+        actions = {
             TextButton(onClick = onDismissRequest) {
                 Text(text = "Done")
             }
         },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 6.dp,
-        shape = MaterialTheme.shapes.extraLarge,
         modifier = modifier
-            .widthIn(max = 500.dp)
-            .fillMaxWidth(0.92f),
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            HorizontalDivider()
+            DialogSectionTitle(text = "Sort by")
+
+            if (isOffline) {
+                val localOptions = listOf(
+                    SortTypeOption(LocalBookSort.Title, "Title", Icons.Filled.SortByAlpha),
+                    SortTypeOption(LocalBookSort.Recent, "Recent", Icons.Filled.History),
+                    SortTypeOption(LocalBookSort.Modified, "Date", Icons.Filled.Update),
+                    SortTypeOption(LocalBookSort.Unread, "Unread", Icons.Filled.BookmarkBorder)
+                )
+                CombinedSortRow(
+                    options = localOptions,
+                    selected = selectedLocalSort,
+                    onSelect = onLocalSortChange,
+                    isSortDescending = isSortDescending,
+                    onSortDescendingChange = onSortDescendingChange
+                )
+            } else {
+                val kavitaOptions = listOf(
+                    SortTypeOption(SeriesLibrarySort.Title, "Title", Icons.Filled.SortByAlpha),
+                    SortTypeOption(SeriesLibrarySort.InProgressFirst, "Recent", Icons.Filled.History),
+                    SortTypeOption(SeriesLibrarySort.ReadFirst, "Date", Icons.Filled.Update),
+                    SortTypeOption(SeriesLibrarySort.UnreadFirst, "Unread", Icons.Filled.BookmarkBorder)
+                )
+                CombinedSortRow(
+                    options = kavitaOptions,
+                    selected = selectedKavitaSort,
+                    onSelect = onKavitaSortChange,
+                    isSortDescending = isSortDescending,
+                    onSortDescendingChange = onSortDescendingChange
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(top = 14.dp))
+
+            DialogSectionTitle(text = "View mode")
+
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                SegmentedButton(
+                    selected = isGridView,
+                    onClick = { onGridViewChange(true) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    colors = themedSegmentedButtonColors(),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.GridView,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    label = { Text("Grid") }
+                )
+
+                SegmentedButton(
+                    selected = !isGridView,
+                    onClick = { onGridViewChange(false) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    colors = themedSegmentedButtonColors(),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ViewList,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    label = { Text("List") }
+                )
+            }
+
+            val columnSelector = if (isGridView) {
+                GridColumnSelector(
+                    label = "Cover Art Size",
+                    currentValue = gridCoverSize,
+                    onValueChange = onGridCoverSizeChange,
+                    valueRange = 100f..260f,
+                    steps = 31,
+                    unitSuffix = "dp"
+                )
+            } else {
+                GridColumnSelector(
+                    label = "Cover Art Size",
+                    currentValue = listCoverSize,
+                    onValueChange = onListCoverSizeChange,
+                    valueRange = 56f..140f,
+                    steps = 20,
+                    unitSuffix = "dp"
+                )
+            }
+
+            GridColumnsNextSection(columnSelector = columnSelector)
+        }
+    }
+}
+
+@Composable
+private fun GridColumnsNextSection(
+    columnSelector: GridColumnSelector?
+) {
+    if (columnSelector == null) return
+
+    val haptic = LocalHapticFeedback.current
+
+    HorizontalDivider(modifier = Modifier.padding(top = 14.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        DialogSectionTitle(text = columnSelector.label)
+        Text(
+            text = if (columnSelector.unitSuffix.isEmpty()) "${columnSelector.currentValue}" else "${columnSelector.currentValue} ${columnSelector.unitSuffix}",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
         )
+    }
+    Slider(
+        value = columnSelector.currentValue.toFloat(),
+        onValueChange = {
+            val newValue = it.roundToInt()
+            if (newValue != columnSelector.currentValue) {
+                columnSelector.onValueChange(newValue)
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        },
+        valueRange = columnSelector.valueRange,
+        steps = columnSelector.steps,
+        modifier = Modifier.fillMaxWidth()
     )
 }
 

@@ -4,12 +4,15 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -26,6 +29,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -74,6 +78,8 @@ import com.bunko.reader.offline.LocalBookRepository
 import com.bunko.reader.offline.LocalFolder
 import com.bunko.reader.series.ChapterPickScreen
 import com.bunko.reader.series.SeriesLibrarySort
+import com.bunko.reader.AppSettings
+import com.bunko.reader.AppSettingsStore
 import com.bunko.reader.KavitaServerProfile
 import com.bunko.reader.KomgaServerProfile
 import com.bunko.reader.KomgaSessionStore
@@ -83,6 +89,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.ModalWideNavigationRail
 import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Surface
@@ -251,7 +259,6 @@ internal fun HomeShell(
     }
 
     var reselectionCount by remember { mutableIntStateOf(0) }
-    var isGridView by rememberSaveable { mutableStateOf(true) }
     var isSortDescending by rememberSaveable { mutableStateOf(false) }
     var selectedSort by rememberSaveable { mutableStateOf(LocalBookSort.Modified) }
     var kavitaSort by rememberSaveable { mutableStateOf(SeriesLibrarySort.Title) }
@@ -277,6 +284,8 @@ internal fun HomeShell(
     var selectedShelf by remember { mutableStateOf<HomeShelfKind?>(null) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val localRepository = remember(ctx) { LocalBookRepository(ctx) }
+    val appSettingsStore = remember(ctx) { AppSettingsStore(ctx) }
+    val appSettings by appSettingsStore.flow.collectAsState(initial = AppSettings())
     // Active source drives the Komga/Kavita switcher state (synced with LibraryScreen).
     val shellActiveMode by localRepository.activeModeFlow.collectAsState(
         initial = if (isOffline) "offline" else "kavita"
@@ -360,6 +369,37 @@ internal fun HomeShell(
         searchQuery = ""
     }
 
+    var liveGridCoverSize by rememberSaveable { mutableIntStateOf(appSettings.gridCoverSizeDp) }
+    var liveListCoverSize by rememberSaveable { mutableIntStateOf(appSettings.listCoverSizeDp) }
+
+    LaunchedEffect(appSettings.gridCoverSizeDp) {
+        liveGridCoverSize = appSettings.gridCoverSizeDp
+    }
+    LaunchedEffect(appSettings.listCoverSizeDp) {
+        liveListCoverSize = appSettings.listCoverSizeDp
+    }
+
+    var saveGridJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var saveListJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    val onGridCoverSizeChange: (Int) -> Unit = { size ->
+        liveGridCoverSize = size
+        saveGridJob?.cancel()
+        saveGridJob = coroutineScope.launch {
+            delay(300)
+            appSettingsStore.setGridCoverSizeDp(size)
+        }
+    }
+
+    val onListCoverSizeChange: (Int) -> Unit = { size ->
+        liveListCoverSize = size
+        saveListJob?.cancel()
+        saveListJob = coroutineScope.launch {
+            delay(300)
+            appSettingsStore.setListCoverSizeDp(size)
+        }
+    }
+
     if (isSortViewDialogOpen) {
         BunkoSortViewDialog(
             isOffline = isOffline,
@@ -369,9 +409,25 @@ internal fun HomeShell(
             onKavitaSortChange = { kavitaSort = it },
             isSortDescending = isSortDescending,
             onSortDescendingChange = { isSortDescending = it },
-            isGridView = isGridView,
-            onGridViewChange = { isGridView = it },
-            onDismissRequest = { isSortViewDialogOpen = false }
+            isGridView = appSettings.isGridView,
+            onGridViewChange = { isGrid ->
+                coroutineScope.launch {
+                    appSettingsStore.setIsGridView(isGrid)
+                }
+            },
+            gridCoverSize = liveGridCoverSize,
+            onGridCoverSizeChange = onGridCoverSizeChange,
+            listCoverSize = liveListCoverSize,
+            onListCoverSizeChange = onListCoverSizeChange,
+            onDismissRequest = {
+                saveGridJob?.cancel()
+                saveListJob?.cancel()
+                coroutineScope.launch {
+                    appSettingsStore.setGridCoverSizeDp(liveGridCoverSize)
+                    appSettingsStore.setListCoverSizeDp(liveListCoverSize)
+                }
+                isSortViewDialogOpen = false
+            }
         )
     }
 
@@ -539,7 +595,9 @@ internal fun HomeShell(
                 selectedSort = selectedSort,
                 kavitaSort = kavitaSort,
                 isSortDescending = isSortDescending,
-                isGridView = isGridView,
+                isGridView = appSettings.isGridView,
+                gridCoverSize = liveGridCoverSize,
+                listCoverSize = liveListCoverSize,
                 onSelectDestination = ::selectDestination,
                 modifier = Modifier.fillMaxSize()
             )
@@ -838,14 +896,14 @@ internal fun HomeTopBar(
                 onClose = onCloseSearch
             )
         } else {
-        val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
                 .padding(
                     start = if (onBack != null) 4.dp else 16.dp,
                     end = 4.dp,
-                    top = statusInsets.calculateTopPadding() + 8.dp,
+                    top = 8.dp,
                     bottom = 8.dp
                 ),
             verticalAlignment = Alignment.CenterVertically
@@ -1150,11 +1208,11 @@ internal fun HomeSearchTopBar(
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-    val statusInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout).asPaddingValues()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 4.dp, end = 4.dp, top = statusInsets.calculateTopPadding() + 8.dp, bottom = 8.dp),
+            .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top))
+            .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(
@@ -1231,45 +1289,38 @@ private val MainNavDestinations = listOf(
     HomeDestination.Browse
 )
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 /** Internal to library, not for external use. */
 @Composable
 internal fun HomeNavigationRail(
     selected: HomeDestination,
     onSelect: (HomeDestination) -> Unit
 ) {
-    val railState = rememberWideNavigationRailState()
-    val scope = rememberCoroutineScope()
-    val expanded = railState.targetValue == WideNavigationRailValue.Expanded
-
-    MaterialTheme(motionScheme = MotionScheme.expressive()) {
-        ModalWideNavigationRail(
-            modifier = Modifier
-                .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surfaceContainer),
-            state = railState,
-            arrangement = Arrangement.Center,
-            hideOnCollapse = false,
-            colors = WideNavigationRailDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                modalContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                modalContentColor = MaterialTheme.colorScheme.onSurface
-            ),
-            header = null
+    NavigationRail(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(72.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        header = null
+    ) {
+        Column(
+            modifier = Modifier.fillMaxHeight(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             MainNavDestinations.forEach { destination ->
-                WideNavigationRailItem(
+                NavigationRailItem(
                     selected = selected == destination,
-                    onClick = {
-                        onSelect(destination)
-                        if (expanded) scope.launch { railState.collapse() }
-                    },
+                    onClick = { onSelect(destination) },
                     icon = { NavDestinationIcon(destination, selected == destination) },
                     label = {
-                        Text(if (expanded) destination.expandedLabel else destination.label)
-                    },
-                    railExpanded = expanded
+                        Text(
+                            text = destination.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 )
             }
         }
