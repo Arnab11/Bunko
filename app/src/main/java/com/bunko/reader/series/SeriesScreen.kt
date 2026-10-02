@@ -914,7 +914,7 @@ internal fun KomgaBookGridCard(
         shape = RectangleShape,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
-        Column(Modifier.clickable(onClick = onRead)) {
+        Column(Modifier.clickable(onClick = onViewSeries)) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1011,7 +1011,7 @@ internal fun KomgaBookListRow(
         shape = RoundedCornerShape(12.dp),
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onRead)
+            .combinedClickable(onClick = onViewSeries)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -1151,7 +1151,7 @@ internal fun KomgaBookMenu(
             onClick = onToggleRead
         )
         DropdownMenuItem(
-            text = { Text("View series") },
+            text = { Text("Book details") },
             onClick = onViewSeries
         )
     }

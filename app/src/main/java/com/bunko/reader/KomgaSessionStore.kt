@@ -94,6 +94,7 @@ class KomgaSessionStore(private val context: Context) {
     suspend fun saveProfile(
         profileId: String?,
         session: KomgaSession,
+        name: String? = null,
         rememberAuth: Boolean = true,
         openByDefault: Boolean? = null
     ): KomgaServerProfile {
@@ -108,7 +109,7 @@ class KomgaSessionStore(private val context: Context) {
         }
         val savedProfile = KomgaServerProfile(
             id = existing?.id ?: UUID.randomUUID().toString(),
-            name = profileName(normalized.baseUrl, normalized.username),
+            name = name?.takeIf { it.isNotBlank() } ?: existing?.name?.takeIf { it.isNotBlank() } ?: profileName(normalized.baseUrl, normalized.username),
             session = savedSession,
             openByDefault = openByDefault ?: existing?.openByDefault ?: existingProfiles.none { it.openByDefault }
         )

@@ -913,7 +913,8 @@ internal fun HomeTopBar(
                                     Icon(
                                         painter = painterResource(R.drawable.ic_komga_logo),
                                         contentDescription = "Active source: Komga",
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(24.dp),
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
                                 } else {
                                     Icon(
@@ -1042,7 +1043,8 @@ internal fun HomeTopBar(
                                             Icon(
                                                 painter = painterResource(R.drawable.ic_komga_logo),
                                                 contentDescription = null,
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(20.dp),
+                                                tint = if (isKomgaSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         },
                                         trailingIcon = {
@@ -1067,7 +1069,8 @@ internal fun HomeTopBar(
                                         Icon(
                                             painter = painterResource(R.drawable.ic_komga_logo),
                                             contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(20.dp),
+                                            tint = if (isKomga) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     },
                                     trailingIcon = {

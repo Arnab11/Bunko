@@ -118,12 +118,13 @@ class KavitaSessionStore(private val context: Context) {
     }
 
     suspend fun save(session: KavitaSession, rememberAuth: Boolean = true) {
-        saveProfile(activeProfileId, session, rememberAuth)
+        saveProfile(activeProfileId, session, rememberAuth = rememberAuth)
     }
 
     suspend fun saveProfile(
         profileId: String?,
         session: KavitaSession,
+        name: String? = null,
         rememberAuth: Boolean = true,
         openByDefault: Boolean? = null
     ): KavitaServerProfile {
@@ -138,7 +139,7 @@ class KavitaSessionStore(private val context: Context) {
         }
         val savedProfile = KavitaServerProfile(
             id = existing?.id ?: UUID.randomUUID().toString(),
-            name = profileName(normalized.baseUrl, normalized.username),
+            name = name?.takeIf { it.isNotBlank() } ?: existing?.name?.takeIf { it.isNotBlank() } ?: profileName(normalized.baseUrl, normalized.username),
             session = savedSession,
             openByDefault = openByDefault ?: existing?.openByDefault ?: existingProfiles.none { it.openByDefault }
         )
