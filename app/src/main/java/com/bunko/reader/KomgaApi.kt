@@ -170,13 +170,17 @@ interface KomgaApi {
         @Path("bookId") bookId: String
     ): List<KomgaBookPageDto>
 
-    // EPUB text flow (mirrors Komga's own reader + Komelia): the base WebPub
+    // EPUB text flow (mirrors Komga's own reader + Komelia): the WebPub
     // manifest for spine order + TOC, resources for spine HTML and images.
-    // (The per-format /manifest/epub variant is newer; the base endpoint works
-    // across server versions.)
+    @Headers("Accept: */*")
+    @GET("api/v1/books/{bookId}/manifest/epub")
+    suspend fun bookManifestEpub(
+        @Path("bookId") bookId: String
+    ): KomgaEpubManifestDto
+
     @Headers("Accept: */*")
     @GET("api/v1/books/{bookId}/manifest")
-    suspend fun bookManifestEpub(
+    suspend fun bookManifestFallback(
         @Path("bookId") bookId: String
     ): KomgaEpubManifestDto
 

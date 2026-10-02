@@ -169,6 +169,25 @@ class KomgaClient(
         return "$root/api/v1/books/$bookId/pages/$pageNumber"
     }
 
+    fun bookResourceUrl(baseUrl: String, apiKey: String, chapterId: Int, resourcePath: String): String {
+        val root = normalizeBaseUrl(baseUrl)
+        val clean = resourcePath.substringBefore("#").trim()
+        if (clean.startsWith("http://", ignoreCase = true) || clean.startsWith("https://", ignoreCase = true)) {
+            return clean
+        }
+        val path = clean.removePrefix("./").removePrefix("/")
+        if (path.startsWith("api/")) {
+            return "$root/$path"
+        }
+        val id = KomgaIdMapper.komgaBookId(chapterId) ?: return ""
+        if (path.startsWith("resource/")) {
+            return "$root/api/v1/books/$id/$path"
+        }
+        val decoded = Uri.decode(path)
+        val encoded = decoded.split("/").joinToString("/") { Uri.encode(it) }
+        return "$root/api/v1/books/$id/resource/$encoded"
+    }
+
     fun authenticatedImageUrl(url: String, session: KomgaSession): String {
         // When using an API key, Coil cannot inject headers for every redirect, so
         // prefer the query form Komga also accepts? Komga only accepts the header,

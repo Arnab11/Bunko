@@ -98,6 +98,7 @@ import com.bunko.reader.KavitaClient
 import com.bunko.reader.BunkoLog
 import com.bunko.reader.KavitaSession
 import com.bunko.reader.KavitaSessionStore
+import com.bunko.reader.KomgaClient
 import com.bunko.reader.KomgaSession
 import com.bunko.reader.KomgaSessionStore
 import com.bunko.reader.ServerBackend
@@ -488,24 +489,32 @@ fun ReaderScreen(
         chapterId: Int,
         spineCount: Int,
         loadedApi: KavitaApi,
-        loadedSession: KavitaSession,
-        client: KavitaClient
+        baseUrl: String,
+        apiKey: String,
+        resourceBuilder: (String, String, Int, String) -> String
     ): List<List<EpubBlock>> {
         val count = spineCount.coerceAtLeast(1)
-        return (0 until count).map { spineIndex ->
+        BunkoLog.i("ReaderScreen: loadEpubSpines start for chapterId=$chapterId, spineCount=$spineCount, baseUrl=$baseUrl")
+        val res = (0 until count).map { spineIndex ->
             scope.async(Dispatchers.IO) {
                 val html = runCatching {
                     loadedApi.bookPage(chapterId, spineIndex).string()
+                }.onFailure {
+                    BunkoLog.e("ReaderScreen: bookPage failed for spine $spineIndex", it)
                 }.getOrDefault("")
-                ReaderEpubPaginator.parseHtmlToBlocks(
+                val blocks = ReaderEpubPaginator.parseHtmlToBlocks(
                     html = html,
                     chapterId = chapterId,
-                    baseUrl = loadedSession.baseUrl,
-                    apiKey = loadedSession.apiKey,
-                    bookResourceUrlBuilder = client::bookResourceUrl
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    bookResourceUrlBuilder = resourceBuilder
                 )
+                BunkoLog.i("ReaderScreen: spine $spineIndex parsed ${blocks.size} blocks (html length=${html.length})")
+                blocks
             }
         }.awaitAll()
+        BunkoLog.i("ReaderScreen: loadEpubSpines done, total spines loaded=${res.size}, non-empty spines=${res.count { it.isNotEmpty() }}")
+        return res
     }
 
     DisposableEffect(readerImageLoader, localBookId) {
@@ -1003,13 +1012,27 @@ fun ReaderScreen(
                         }
                     } else if (loadedApi != null) {
                         val spineCount = loadedPageCount.coerceAtLeast(1)
-                        val clientHelper = KavitaClient(ctx, sessionStore)
+                        val isKomga = backend?.isKomga == true
+                        val (epubBaseUrl, epubApiKey, epubResourceBuilder) = if (isKomga) {
+                            Triple(
+                                komgaSession.baseUrl,
+                                komgaSession.apiKey,
+                                KomgaClient(ctx, komgaSessionStore)::bookResourceUrl
+                            )
+                        } else {
+                            Triple(
+                                loadedSession.baseUrl,
+                                loadedSession.apiKey,
+                                KavitaClient(ctx, sessionStore)::bookResourceUrl
+                            )
+                        }
                         epubSpineBlocks = loadEpubSpines(
                             chapterId = target.chapterId,
                             spineCount = spineCount,
                             loadedApi = loadedApi,
-                            loadedSession = loadedSession,
-                            client = clientHelper
+                            baseUrl = epubBaseUrl,
+                            apiKey = epubApiKey,
+                            resourceBuilder = epubResourceBuilder
                         )
                     }
                 } else {
@@ -1524,6 +1547,7 @@ fun ReaderScreen(
             }
             isEpub = isEpubChapter
             isPdf = isPdfChapter
+            BunkoLog.i("ReaderScreen: currentChapterId=$currentChapterId, chDto.format=${chDto?.format}, isEpub=$isEpub, isPdf=$isPdf")
 
             if (local == null) {
                 val info = loadedApi.chapterInfo(currentChapterId, includeDimensions = true, extractPdf = isPdfChapter)
@@ -1558,12 +1582,27 @@ fun ReaderScreen(
 
                 if (isEpubChapter) {
                     val spineCount = pageCount.coerceAtLeast(1)
+                    val isKomga = resolvedBackend.isKomga
+                    val (epubBaseUrl, epubApiKey, epubResourceBuilder) = if (isKomga) {
+                        Triple(
+                            komgaSession.baseUrl,
+                            komgaSession.apiKey,
+                            KomgaClient(ctx, komgaSessionStore)::bookResourceUrl
+                        )
+                    } else {
+                        Triple(
+                            loadedSession.baseUrl,
+                            loadedSession.apiKey,
+                            KavitaClient(ctx, sessionStore)::bookResourceUrl
+                        )
+                    }
                     epubSpineBlocks = loadEpubSpines(
                         chapterId = currentChapterId,
                         spineCount = spineCount,
                         loadedApi = loadedApi,
-                        loadedSession = loadedSession,
-                        client = KavitaClient(ctx, sessionStore)
+                        baseUrl = epubBaseUrl,
+                        apiKey = epubApiKey,
+                        resourceBuilder = epubResourceBuilder
                     )
                 }
             } else if (!local.record.progressPending) {
@@ -2007,6 +2046,7 @@ fun ReaderScreen(
             landscapeOuterMargin,
             settings.reader.epubFontFamily
         ) {
+            BunkoLog.i("ReaderScreen: pagination check: isEpub=$isEpub, epubSpineBlocks=${epubSpineBlocks.size}, viewport=${viewportWidthPx}x${viewportHeightPx}")
             if (isEpub && epubSpineBlocks.isNotEmpty() && viewportWidthPx > 0f && viewportHeightPx > 0f) {
                 val horizontalPaddingPx = with(density) { (safeStartPadding + safeEndPadding).roundToPx() }
                 val landscapeHorizontalPaddingPx = with(density) { (landscapeOuterMargin + landscapeInnerMargin).roundToPx() }
@@ -2047,6 +2087,7 @@ fun ReaderScreen(
                     }.awaitAll().flatten()
                 }
                 val total = allSubpages.size.coerceAtLeast(1)
+                BunkoLog.i("ReaderScreen: paginated ${epubSpineBlocks.size} spines into $total subpages")
                 epubSubpages = allSubpages
                 pages = total
 

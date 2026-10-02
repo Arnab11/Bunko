@@ -172,15 +172,25 @@ internal fun komgaImageUrls(baseUrl: String): ServerImageUrls {
             if (id != null) "$root/api/v1/books/$id/pages/${page + 1}" else ""
         },
         bookResourceUrl = { chapterId, resourcePath ->
-            if (resourcePath.startsWith("http://", ignoreCase = true) ||
-                resourcePath.startsWith("https://", ignoreCase = true)
-            ) {
-                resourcePath
+            val clean = resourcePath.substringBefore("#").trim()
+            if (clean.startsWith("http://", ignoreCase = true) || clean.startsWith("https://", ignoreCase = true)) {
+                clean
             } else {
-                val id = bookKomgaId(chapterId)
-                if (id != null && resourcePath.isNotBlank()) {
-                    "$root/api/v1/books/$id/resource/${resourcePath.removePrefix("/")}"
-                } else ""
+                val path = clean.removePrefix("./").removePrefix("/")
+                if (path.startsWith("api/")) {
+                    "$root/$path"
+                } else {
+                    val id = bookKomgaId(chapterId)
+                    if (id != null && path.isNotBlank()) {
+                        if (path.startsWith("resource/")) {
+                            "$root/api/v1/books/$id/$path"
+                        } else {
+                            val decoded = android.net.Uri.decode(path)
+                            val encoded = decoded.split("/").joinToString("/") { android.net.Uri.encode(it) }
+                            "$root/api/v1/books/$id/resource/$encoded"
+                        }
+                    } else ""
+                }
             }
         }
     )

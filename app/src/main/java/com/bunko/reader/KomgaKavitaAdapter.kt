@@ -48,33 +48,75 @@ class KomgaKavitaAdapter(
     private val mapper = KomgaIdMapper
     private var librariesCache: List<KomgaLibraryDto>? = null
     private val booksCache = ConcurrentHashMap<String, List<KomgaBookDto>>()
+    private val booksByIdCache = ConcurrentHashMap<String, KomgaBookDto>()
     private val manifestCache = ConcurrentHashMap<String, KomgaEpubManifestDto>()
     private val metadataParallelism = Semaphore(8)
 
     private fun KomgaBookDto.isEpub(): Boolean {
-        // Mirrors Komelia routing: DIVINA/PDF (and Divina-compatible EPUBs) read
-        // as page images; only true EPUBs use the text flow. DIVINA must never
-        // enter the text flow (it covers all comic archives).
-        if (media?.epubDivinaCompatible == true) return false
         val profile = media?.mediaProfile.orEmpty()
         val type = media?.mediaType.orEmpty()
-        return profile.equals("EPUB", ignoreCase = true) ||
+        val isEpubBook = profile.equals("EPUB", ignoreCase = true) ||
             type.contains("epub", ignoreCase = true) ||
             url.endsWith(".epub", ignoreCase = true) ||
             name.endsWith(".epub", ignoreCase = true)
+        BunkoLog.i("KomgaBookDto.isEpub for '$name': isEpubBook=$isEpubBook, profile=$profile, type=$type, divina=${media?.epubDivinaCompatible}, url=$url")
+        return isEpubBook
+    }
+
+    private suspend fun komgaBook(bookKomgaId: String): KomgaBookDto {
+        booksByIdCache[bookKomgaId]?.let { return it }
+        for (books in booksCache.values) {
+            val found = books.firstOrNull { it.id == bookKomgaId }
+            if (found != null) {
+                booksByIdCache[bookKomgaId] = found
+                return found
+            }
+        }
+        val fetched = komga.book(bookKomgaId)
+        booksByIdCache[bookKomgaId] = fetched
+        return fetched
     }
 
     private suspend fun epubManifest(bookKomgaId: String): KomgaEpubManifestDto {
-        manifestCache[bookKomgaId]?.let { return it }
-        val manifest = komga.bookManifestEpub(bookKomgaId)
+        manifestCache[bookKomgaId]?.let {
+            BunkoLog.i("KomgaKavitaAdapter: epubManifest cached for $bookKomgaId, readingOrder size=${it.readingOrder.size}")
+            return it
+        }
+        val manifest = try {
+            val res = komga.bookManifestEpub(bookKomgaId)
+            BunkoLog.i("KomgaKavitaAdapter: fetched bookManifestEpub for $bookKomgaId: readingOrder size=${res.readingOrder.size}, toc size=${res.toc.size}")
+            res
+        } catch (e: Throwable) {
+            BunkoLog.w("KomgaKavitaAdapter: bookManifestEpub failed for $bookKomgaId, trying fallback", e)
+            try {
+                val res = komga.bookManifestFallback(bookKomgaId)
+                BunkoLog.i("KomgaKavitaAdapter: fetched bookManifestFallback for $bookKomgaId: readingOrder size=${res.readingOrder.size}")
+                res
+            } catch (e2: Throwable) {
+                BunkoLog.e("KomgaKavitaAdapter: bookManifestFallback failed for $bookKomgaId", e2)
+                throw e2
+            }
+        }
         manifestCache[bookKomgaId] = manifest
         return manifest
     }
 
-    private fun encodeResourceHref(href: String): String {
-        return href.substringBefore("#").split("/").joinToString("/") {
-            android.net.Uri.encode(it)
+    private fun resolveResourceUrl(bookKomgaId: String, href: String): String {
+        val cleanHref = href.substringBefore("#").trim()
+        if (cleanHref.startsWith("http://", ignoreCase = true) || cleanHref.startsWith("https://", ignoreCase = true)) {
+            return cleanHref
         }
+        val root = baseUrl.trimEnd('/')
+        val path = cleanHref.removePrefix("./").removePrefix("/")
+        if (path.startsWith("api/")) {
+            return "$root/$path"
+        }
+        if (path.startsWith("resource/")) {
+            return "$root/api/v1/books/$bookKomgaId/$path"
+        }
+        val decoded = android.net.Uri.decode(path)
+        val encoded = decoded.split("/").joinToString("/") { android.net.Uri.encode(it) }
+        return "$root/api/v1/books/$bookKomgaId/resource/$encoded"
     }
 
     // --- helpers ---
@@ -599,7 +641,7 @@ class KomgaKavitaAdapter(
         extractPdf: Boolean
     ): ChapterInfoDto {
         val bookKomgaId = komgaBookIdOrThrow(chapterId)
-        val book = komga.book(bookKomgaId)
+        val book = komgaBook(bookKomgaId)
         if (book.isEpub()) {
             // EPUB flow paginates manifest spines (mirrors Kavita spine counts).
             val spines = runCatching { epubManifest(bookKomgaId).readingOrder.size }.getOrDefault(0)
@@ -637,19 +679,25 @@ class KomgaKavitaAdapter(
 
     override suspend fun bookPage(chapterId: Int, page: Int): ResponseBody {
         val bookKomgaId = komgaBookIdOrThrow(chapterId)
-        val book = runCatching { komga.book(bookKomgaId) }.getOrNull()
+        val book = runCatching { komgaBook(bookKomgaId) }.getOrNull()
+        BunkoLog.i("KomgaKavitaAdapter: bookPage called for chapterId=$chapterId, page=$page, book=$bookKomgaId, isEpub=${book?.isEpub()}")
         if (book != null && book.isEpub()) {
             val manifest = epubManifest(bookKomgaId)
             val spine = manifest.readingOrder.getOrNull(page)
                 ?: throw IOException("Komga EPUB has no spine $page")
-            val href = encodeResourceHref(spine.href)
+            val resourceUrl = resolveResourceUrl(bookKomgaId, spine.href)
+            BunkoLog.i("KomgaKavitaAdapter: fetching EPUB resource url: $resourceUrl (spine.href=${spine.href})")
             val request = Request.Builder()
-                .url("$baseUrl/api/v1/books/$bookKomgaId/resource/$href")
+                .url(resourceUrl)
                 .get()
                 .build()
             okHttp.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) throw IOException("Komga EPUB resource failed: HTTP ${resp.code}")
+                if (!resp.isSuccessful) {
+                    BunkoLog.e("KomgaKavitaAdapter: Komga EPUB resource failed: HTTP ${resp.code} for $resourceUrl")
+                    throw IOException("Komga EPUB resource failed: HTTP ${resp.code}")
+                }
                 val bytes = resp.body?.bytes() ?: throw IOException("Empty Komga EPUB resource")
+                BunkoLog.i("KomgaKavitaAdapter: received EPUB spine $page size=${bytes.size} bytes for $bookKomgaId")
                 return bytes.toResponseBody("text/html".toMediaTypeOrNull())
             }
         }
@@ -687,13 +735,14 @@ class KomgaKavitaAdapter(
 
     private fun spineIndexFor(href: String?, spines: List<String>): Int {
         if (href.isNullOrBlank()) return 0
-        val clean = href.substringBefore("#").trim()
+        val clean = href.substringBefore("#").trim().removePrefix("./").removePrefix("/")
         if (clean.isBlank()) return 0
         val match = spines.indexOfFirst { spine ->
-            spine == clean ||
-                spine.endsWith("/$clean") ||
-                clean.endsWith("/$spine") ||
-                spine.substringAfterLast("/") == clean.substringAfterLast("/")
+            val cleanSpine = spine.substringBefore("#").trim().removePrefix("./").removePrefix("/")
+            cleanSpine == clean ||
+                cleanSpine.endsWith("/$clean") ||
+                clean.endsWith("/$cleanSpine") ||
+                cleanSpine.substringAfterLast("/") == clean.substringAfterLast("/")
         }
         return match.coerceAtLeast(0)
     }
@@ -755,13 +804,21 @@ class KomgaKavitaAdapter(
 
     override suspend fun saveProgress(dto: ProgressDto) {
         val bookKomgaId = mapper.komgaBookId(dto.chapterId) ?: return
-        // Komelia parity: send only the 1-based page; the server derives
-        // completion itself. (For EPUB spines the stored spine round-trips.)
-        val komgaPage = (dto.pageNum + 1).coerceAtLeast(1)
-        komga.updateReadProgress(
-            bookKomgaId,
-            KomgaReadProgressUpdateDto(page = komgaPage)
-        )
+        val book = runCatching { komgaBook(bookKomgaId) }.getOrNull()
+        val totalPages = if (book?.isEpub() == true) {
+            runCatching { epubManifest(bookKomgaId).readingOrder.size }.getOrDefault(book.media?.pagesCount ?: 1)
+        } else {
+            book?.media?.pagesCount ?: 1
+        }
+        val komgaPage = (dto.pageNum + 1).coerceIn(1, totalPages.coerceAtLeast(1))
+        runCatching {
+            komga.updateReadProgress(
+                bookKomgaId,
+                KomgaReadProgressUpdateDto(page = komgaPage)
+            )
+        }.onFailure {
+            BunkoLog.w("KomgaKavitaAdapter: updateReadProgress failed for $bookKomgaId page=$komgaPage / total=$totalPages", it)
+        }
         invalidateBooksForBook(bookKomgaId)
     }
 
