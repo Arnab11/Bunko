@@ -1,6 +1,7 @@
 package com.bunko.reader.library
 
 import android.net.Uri
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -196,6 +197,21 @@ internal fun SeriesShelfScreen(
         }
     }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var isFirstResume = true
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (!isFirstResume) {
+                    retryKey++
+                }
+                isFirstResume = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(shelfKind, retryKey) {
         pagingRevision++
         loading = true
@@ -212,7 +228,11 @@ internal fun SeriesShelfScreen(
                 // Komga shelves list individual books (History = on-deck books).
                 komgaAdapter = loadedApi
                 val rawBooks = when (shelfKind) {
-                    HomeShelfKind.OnDeck -> loadedApi.onDeckBooks(page = 0, size = 200)
+                    HomeShelfKind.OnDeck -> {
+                        val historyPage = loadedApi.readHistoryBooksPage(page = 0, size = 200)
+                        if (historyPage.content.isNotEmpty()) historyPage.content
+                        else loadedApi.onDeckBooks(page = 0, size = 200)
+                    }
                     else -> loadedApi.latestBooks(page = 0, size = 200)
                 }
                 komgaBooks = rawBooks.map { book ->
@@ -334,15 +354,7 @@ internal fun SeriesShelfScreen(
                             gridCoverSize = gridCoverSize,
                             onRead = ::openKomgaBook,
                             onToggleRead = ::toggleKomgaBookRead,
-                            onViewSeries = { entry ->
-                                onSelectSeries(
-                                    SeriesDto(
-                                        id = entry.route.seriesId,
-                                        name = entry.book.seriesTitle,
-                                        libraryId = entry.route.libraryId
-                                    )
-                                )
-                            },
+                            onViewSeries = ::openKomgaBook,
                             onSearchHome = {},
                             query = ""
                         )
@@ -354,15 +366,7 @@ internal fun SeriesShelfScreen(
                             listCoverSize = listCoverSize,
                             onRead = ::openKomgaBook,
                             onToggleRead = ::toggleKomgaBookRead,
-                            onViewSeries = { entry ->
-                                onSelectSeries(
-                                    SeriesDto(
-                                        id = entry.route.seriesId,
-                                        name = entry.book.seriesTitle,
-                                        libraryId = entry.route.libraryId
-                                    )
-                                )
-                            },
+                            onViewSeries = ::openKomgaBook,
                             onSearchHome = {},
                             query = ""
                         )

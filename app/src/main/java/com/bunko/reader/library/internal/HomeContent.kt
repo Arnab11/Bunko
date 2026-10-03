@@ -585,13 +585,12 @@ internal fun HomeContent(
                             )
                         },
                         onViewSeries = { entry ->
-                            onSelectSeries(
-                                SeriesDto(
-                                    id = entry.route.seriesId,
-                                    name = entry.book.seriesTitle,
-                                    libraryId = entry.route.libraryId
-                                ),
-                                destination
+                            onPickIssue(
+                                entry.route.libraryId,
+                                entry.route.seriesId,
+                                entry.route.volumeId,
+                                entry.route.chapterId,
+                                false
                             )
                         },
                         onOpenShelf = onOpenShelf,
@@ -611,7 +610,10 @@ internal fun HomeContent(
                         isGridView = isGridView,
                         gridCoverSize = gridCoverSize,
                         listCoverSize = listCoverSize,
-                        onSelectSeries = { s -> onSelectSeries(s, destination) }
+                        onSelectSeries = { s -> onSelectSeries(s, destination) },
+                        onOpenBook = { libraryId, seriesId, volumeId, chapterId ->
+                            onPickIssue(libraryId, seriesId, volumeId, chapterId, false)
+                        }
                     )
                 } else {
                     val pullState = rememberPullToRefreshState()

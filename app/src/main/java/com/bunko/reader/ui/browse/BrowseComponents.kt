@@ -427,7 +427,7 @@ fun UnifiedListItem(
 ) {
     Surface(
         color = Color.Transparent,
-        shape = RoundedCornerShape(12.dp),
+        shape = RectangleShape,
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(
@@ -444,7 +444,7 @@ fun UnifiedListItem(
                 modifier = Modifier
                     .width(coverWidth)
                     .aspectRatio(KavitaCoverAspectRatio)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RectangleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
@@ -610,7 +610,7 @@ internal fun SeriesListItem(
 ) {
     Surface(
         color = Color.Transparent,
-        shape = RoundedCornerShape(12.dp),
+        shape = RectangleShape,
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(
@@ -627,7 +627,7 @@ internal fun SeriesListItem(
                 modifier = Modifier
                     .width(coverWidth)
                     .aspectRatio(KavitaCoverAspectRatio)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RectangleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
@@ -837,7 +837,7 @@ fun CoverProgressBadge(
     Surface(
         color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
-        shape = CircleShape,
+        shape = RectangleShape,
         modifier = modifier
     ) {
         Text(
@@ -845,7 +845,7 @@ fun CoverProgressBadge(
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
 }

@@ -141,7 +141,8 @@ class KomgaKavitaAdapter(
     }
 
     private fun invalidateBooks(komgaSeriesId: String) {
-        booksCache.remove(komgaSeriesId)
+        val cached = booksCache.remove(komgaSeriesId)
+        cached?.forEach { booksByIdCache.remove(it.id) }
     }
 
     private suspend fun allKomgaSeries(): List<KomgaSeriesDto> {
@@ -163,8 +164,34 @@ class KomgaKavitaAdapter(
     }
 
     private fun KomgaBookDto.displayName(): String {
-        return metadata?.title?.takeIf { it.isNotBlank() }
-            ?: name.substringAfterLast('/').substringAfterLast('\\').ifBlank { name }
+        val rawTitle = metadata?.title?.trim()?.takeIf { it.isNotBlank() }
+            ?: name.substringAfterLast('/').substringAfterLast('\\').substringBeforeLast('.').trim().ifBlank { name }
+        val series = seriesTitle.trim()
+        val num = metadata?.number?.trim()?.takeIf { it.isNotBlank() }
+            ?: metadata?.numberSort?.let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }
+            ?: if (number > 0) number.toString() else null
+
+        if (series.isNotBlank() && rawTitle.equals(series, ignoreCase = true)) {
+            val fileCleanName = name.substringAfterLast('/').substringAfterLast('\\').substringBeforeLast('.').trim()
+            if (fileCleanName.isNotBlank() && !fileCleanName.equals(series, ignoreCase = true)) {
+                if (fileCleanName.startsWith(series, ignoreCase = true) && fileCleanName.length > series.length) {
+                    val stripped = fileCleanName.substring(series.length).trimStart(' ', '-', ':', '#', '_', '/').trim()
+                    if (stripped.isNotBlank()) return stripped
+                } else {
+                    return fileCleanName
+                }
+            }
+            if (num != null) {
+                return "Chapter $num"
+            }
+        }
+        if (series.isNotBlank() && rawTitle.startsWith(series, ignoreCase = true) && rawTitle.length > series.length) {
+            val stripped = rawTitle.substring(series.length).trimStart(' ', '-', ':', '#', '_', '/').trim()
+            if (stripped.isNotBlank()) {
+                return stripped
+            }
+        }
+        return rawTitle
     }
 
     private suspend fun toSeriesDto(s: KomgaSeriesDto): SeriesDto {
@@ -200,7 +227,7 @@ class KomgaKavitaAdapter(
         val pagesRead = when {
             progress == null -> 0
             progress.completed -> pages
-            progress.page > 0 -> (progress.page - 1).coerceIn(0, pages)
+            progress.page > 0 -> progress.page.coerceIn(0, pages)
             else -> 0
         }
         val authorsByRole = b.metadata?.authors.orEmpty().groupBy { it.role.lowercase() }
@@ -211,11 +238,15 @@ class KomgaKavitaAdapter(
                 }
             }.distinctBy { it.id }
         }
+        val chapterNumStr = b.metadata?.number?.trim()?.takeIf { it.isNotBlank() }
+            ?: b.metadata?.numberSort?.let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }
+            ?: if (b.number > 0) b.number.toString() else null
         return ChapterDto(
             id = mapper.bookId(b.id),
             title = b.displayName(),
-            number = runCatching { Json.parseToJsonElement(b.number.toString()) }.getOrNull(),
-            sortOrder = b.number.toFloat(),
+            number = chapterNumStr?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() }
+                ?: runCatching { Json.parseToJsonElement(b.number.toString()) }.getOrNull(),
+            sortOrder = b.metadata?.numberSort ?: b.number.toFloat(),
             pages = pages,
             pagesRead = pagesRead,
             volumeId = mapper.volumeIdForSeries(b.seriesId),
@@ -303,9 +334,13 @@ class KomgaKavitaAdapter(
     }
 
     override suspend fun currentUser(): UserDto {
+        val key = "komga:$baseUrl"
+        ActiveUserCache.getUser(key)?.let { return it }
         val me = komga.currentUser()
         val roles = me.roles.map { it.removePrefix("ROLE_") }
-        return UserDto(username = me.email, roles = roles, token = null)
+        val dto = UserDto(username = me.email, roles = roles, token = null)
+        ActiveUserCache.setUser(key, dto)
+        return dto
     }
 
     override suspend fun userLibraries(): List<LibraryDto> {
@@ -482,11 +517,23 @@ class KomgaKavitaAdapter(
         if (libraryId != null && libKomgaId == null) return emptyList()
         val size = (pageSize ?: 12).coerceAtLeast(1)
         val page = (pageNumber ?: 0).coerceAtLeast(0)
-        val books = komga.onDeck(
-            libraryIds = libKomgaId?.let { listOf(it) },
-            page = page,
-            size = size
-        ).content
+        val inProgressBooks = runCatching {
+            komga.books(
+                libraryIds = libKomgaId?.let { listOf(it) },
+                readStatus = listOf("IN_PROGRESS"),
+                sort = "readProgress.readDate,desc",
+                page = page,
+                size = size
+            ).content
+        }.getOrDefault(emptyList())
+        val onDeckBooks = runCatching {
+            komga.onDeck(
+                libraryIds = libKomgaId?.let { listOf(it) },
+                page = page,
+                size = size
+            ).content
+        }.getOrDefault(emptyList())
+        val books = (inProgressBooks + onDeckBooks).distinctBy { it.id }
         val seriesIds = books.map { it.seriesId }.distinct()
         return coroutineScope {
             seriesIds.map { sid ->
@@ -786,8 +833,10 @@ class KomgaKavitaAdapter(
         val komgaId = komgaSeriesIdOrThrow(seriesId)
         val books = seriesBooks(komgaId).sortedBy { it.number }
         if (books.isEmpty()) throw IOException("Komga series has no books")
-        val next = books.firstOrNull { (it.readProgress == null || !it.readProgress.completed) }
-            ?: books.first()
+        val inProgress = books.filter { it.readProgress != null && !it.readProgress.completed && it.readProgress.page > 0 }
+            .maxByOrNull { it.readProgress?.readDate.orEmpty() }
+        val nextUnread = books.firstOrNull { it.readProgress == null || (!it.readProgress.completed && it.readProgress.page <= 0) }
+        val next = inProgress ?: nextUnread ?: books.first()
         return toChapterDto(next)
     }
 
@@ -806,16 +855,26 @@ class KomgaKavitaAdapter(
         val bookKomgaId = mapper.komgaBookId(dto.chapterId) ?: return
         val book = runCatching { komgaBook(bookKomgaId) }.getOrNull()
         val totalPages = if (book?.isEpub() == true) {
-            runCatching { epubManifest(bookKomgaId).readingOrder.size }.getOrDefault(book.media?.pagesCount ?: 1)
+            runCatching { epubManifest(bookKomgaId).readingOrder.size }.getOrDefault(book.media?.pagesCount ?: 0)
         } else {
-            book?.media?.pagesCount ?: 1
+            book?.media?.pagesCount ?: 0
         }
-        val komgaPage = (dto.pageNum + 1).coerceIn(1, totalPages.coerceAtLeast(1))
+        val komgaPage = if (totalPages > 0) {
+            (dto.pageNum + 1).coerceIn(1, totalPages)
+        } else {
+            (dto.pageNum + 1).coerceAtLeast(1)
+        }
+        val isCompleted = totalPages > 1 && komgaPage >= totalPages
         runCatching {
             komga.updateReadProgress(
                 bookKomgaId,
-                KomgaReadProgressUpdateDto(page = komgaPage)
+                KomgaReadProgressUpdateDto(
+                    page = komgaPage,
+                    completed = if (isCompleted) true else null
+                )
             )
+        }.onSuccess {
+            BunkoLog.i("KomgaKavitaAdapter: updated read progress for $bookKomgaId to page=$komgaPage / $totalPages (completed=$isCompleted)")
         }.onFailure {
             BunkoLog.w("KomgaKavitaAdapter: updateReadProgress failed for $bookKomgaId page=$komgaPage / total=$totalPages", it)
         }
@@ -824,23 +883,37 @@ class KomgaKavitaAdapter(
 
     override suspend fun markChapterRead(dto: MarkChapterReadDto) {
         val bookKomgaId = mapper.komgaBookId(dto.chapterId) ?: return
-        komga.updateReadProgress(
-            bookKomgaId,
-            KomgaReadProgressUpdateDto(completed = true)
-        )
+        val book = runCatching { komgaBook(bookKomgaId) }.getOrNull()
+        val totalPages = book?.media?.pagesCount ?: 1
+        runCatching {
+            komga.updateReadProgress(
+                bookKomgaId,
+                KomgaReadProgressUpdateDto(
+                    page = totalPages,
+                    completed = true
+                )
+            )
+        }.onFailure {
+            BunkoLog.w("KomgaKavitaAdapter: markChapterRead failed for $bookKomgaId", it)
+        }
         invalidateBooksForBook(bookKomgaId)
     }
 
     override suspend fun markChaptersUnread(dto: MarkVolumesReadDto) {
         dto.chapterIds.forEach { id ->
             val bookKomgaId = mapper.komgaBookId(id) ?: return@forEach
-            runCatching { komga.deleteReadProgress(bookKomgaId) }
+            runCatching {
+                komga.deleteReadProgress(bookKomgaId)
+            }.onFailure {
+                BunkoLog.w("KomgaKavitaAdapter: deleteReadProgress failed for $bookKomgaId", it)
+            }
             invalidateBooksForBook(bookKomgaId)
         }
     }
 
     private suspend fun invalidateBooksForBook(bookKomgaId: String) {
-        val seriesId = runCatching { komga.book(bookKomgaId).seriesId }.getOrNull()
+        val cached = booksByIdCache.remove(bookKomgaId)
+        val seriesId = cached?.seriesId ?: runCatching { komga.book(bookKomgaId).seriesId }.getOrNull()
         if (seriesId != null) invalidateBooks(seriesId)
     }
 
@@ -892,9 +965,31 @@ class KomgaKavitaAdapter(
 
     /** Paged on-deck books with server totals. */
     suspend fun onDeckBooksPage(page: Int = 0, size: Int = 100): KomgaPageDto<KomgaBookDto> {
-        return runCatching {
+        val inProgress = runCatching {
+            komga.books(
+                readStatus = listOf("IN_PROGRESS"),
+                sort = "readProgress.readDate,desc",
+                page = page,
+                size = size
+            )
+        }.getOrDefault(KomgaPageDto())
+
+        val onDeck = runCatching {
             komga.onDeck(page = page, size = size)
         }.getOrDefault(KomgaPageDto())
+
+        val combined = (inProgress.content + onDeck.content).distinctBy { it.id }
+        val total = (inProgress.totalElements + onDeck.totalElements).coerceAtLeast(combined.size.toLong())
+        return KomgaPageDto(
+            content = combined,
+            empty = combined.isEmpty(),
+            first = page == 0,
+            last = combined.size < size,
+            number = page,
+            size = size,
+            totalElements = total,
+            totalPages = if (size > 0) ((total + size - 1) / size).toInt() else 1
+        )
     }
 
     /** Paged latest books with server totals. */
@@ -902,6 +997,27 @@ class KomgaKavitaAdapter(
         return runCatching {
             komga.latestBooks(page = page, size = size)
         }.getOrDefault(KomgaPageDto())
+    }
+
+    /** Reading history books (in-progress and completed books sorted by readDate desc). */
+    suspend fun readHistoryBooks(page: Int = 0, size: Int = 24): List<KomgaBookDto> {
+        return readHistoryBooksPage(page, size).content
+    }
+
+    /** Paged reading history books with fallback to on-deck books. */
+    suspend fun readHistoryBooksPage(page: Int = 0, size: Int = 100): KomgaPageDto<KomgaBookDto> {
+        return runCatching {
+            komga.books(
+                readStatus = listOf("IN_PROGRESS", "READ"),
+                sort = "readProgress.readDate,desc",
+                page = page,
+                size = size
+            )
+        }.getOrElse {
+            runCatching {
+                komga.onDeck(page = page, size = size)
+            }.getOrDefault(KomgaPageDto())
+        }
     }
 
     override suspend fun addSeriesToWantToRead(dto: UpdateWantToReadDto) {

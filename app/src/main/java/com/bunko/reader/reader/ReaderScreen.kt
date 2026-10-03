@@ -309,7 +309,7 @@ private data class PendingReaderRemoteProgress(
     val sinceMillis: Long
 )
 
-private const val ReaderProgressSyncDelayMillis = 3_000L
+private const val ReaderProgressSyncDelayMillis = 1_000L
 internal const val ReaderPortraitBackPageContentAlpha = 0.05f
 private const val ReaderSpreadCurlVisualPageCount = 3
 private const val ReaderSpreadCurlVisualCurrent = 1
@@ -370,10 +370,10 @@ fun ReaderScreen(
     var komgaSession by remember { mutableStateOf(KomgaSession()) }
     var backend by remember { mutableStateOf<ServerBackend?>(null) }
     var api by remember { mutableStateOf<KavitaApi?>(null) }
-    var currentChapterId by rememberSaveable { mutableIntStateOf(chapterId) }
-    var currentVolumeId by rememberSaveable { mutableIntStateOf(volumeId) }
-    var chapterSequence by remember { mutableStateOf<List<ReaderChapterEntry>>(emptyList()) }
-    var currentChapter by remember {
+    var currentChapterId by rememberSaveable(chapterId, localBookId) { mutableIntStateOf(chapterId) }
+    var currentVolumeId by rememberSaveable(volumeId, localBookId) { mutableIntStateOf(volumeId) }
+    var chapterSequence by remember(chapterId, localBookId) { mutableStateOf<List<ReaderChapterEntry>>(emptyList()) }
+    var currentChapter by remember(chapterId, localBookId) {
         mutableStateOf(
             ReaderChapterEntry(
                 chapterId = chapterId,
@@ -383,17 +383,17 @@ fun ReaderScreen(
             )
         )
     }
-    var seriesName by remember { mutableStateOf("") }
-    var chapterSwitching by remember { mutableStateOf(false) }
-    var chapterBoundary by remember { mutableStateOf<ReaderChapterBoundary?>(null) }
-    var boundaryDragDirection by remember { mutableStateOf<ReaderTurnDirection?>(null) }
-    var boundaryDragProgress by remember { mutableFloatStateOf(0f) }
-    var pages by remember { mutableIntStateOf(0) }
-    var pageDimensions by remember { mutableStateOf<Map<Int, FileDimensionDto>>(emptyMap()) }
-    var page by rememberSaveable { mutableIntStateOf(initialPage ?: 0) }
-    var hasAppliedInitialPage by rememberSaveable { mutableStateOf(false) }
-    var readerReady by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var seriesName by remember(chapterId, localBookId) { mutableStateOf("") }
+    var chapterSwitching by remember(chapterId, localBookId) { mutableStateOf(false) }
+    var chapterBoundary by remember(chapterId, localBookId) { mutableStateOf<ReaderChapterBoundary?>(null) }
+    var boundaryDragDirection by remember(chapterId, localBookId) { mutableStateOf<ReaderTurnDirection?>(null) }
+    var boundaryDragProgress by remember(chapterId, localBookId) { mutableFloatStateOf(0f) }
+    var pages by remember(chapterId, localBookId) { mutableIntStateOf(0) }
+    var pageDimensions by remember(chapterId, localBookId) { mutableStateOf<Map<Int, FileDimensionDto>>(emptyMap()) }
+    var page by rememberSaveable(chapterId, localBookId) { mutableIntStateOf(initialPage ?: 0) }
+    var hasAppliedInitialPage by rememberSaveable(chapterId, localBookId) { mutableStateOf(initialPage != null) }
+    var readerReady by remember(chapterId, localBookId) { mutableStateOf(false) }
+    var error by remember(chapterId, localBookId) { mutableStateOf<String?>(null) }
     var showReaderMenu by remember { mutableStateOf(false) }
     // Mihon-style tap-zone preview, shown when the zones change in the dialog.
     var tapZoneOverlayVisible by remember { mutableStateOf(false) }
@@ -645,10 +645,23 @@ fun ReaderScreen(
         }
     }
     suspend fun flushPendingRemoteProgressNow() {
-        val pending = pendingRemoteProgress ?: return
-        // Flush immediately on exit/back/stop — don't require the 3s debounce age.
-        // Otherwise leaving the reader quickly silently drops progress.
-        saveRemoteProgress(pending.target)
+        if (incognito) return
+        val target = pendingRemoteProgress?.target ?: run {
+            if (pages <= 0 || page !in 0 until pages) return
+            val savePage = if (isEpub && epubSubpages.isNotEmpty()) epubSpineForSubpage(page) else page
+            val saveCount = if (isEpub && epubSpineBlocks.isNotEmpty()) epubSpineBlocks.size else pages
+            val saveScroll = if (isEpub && epubSubpages.isNotEmpty()) epubScrollForSubpage(page) else null
+            if (saveCount <= 0 || savePage !in 0 until saveCount) return
+            newRemoteProgressTarget(
+                targetChapterId = currentChapterId,
+                targetVolumeId = currentVolumeId,
+                targetPage = savePage,
+                targetPageCount = saveCount,
+                offline = offlineChapter != null,
+                scrollId = saveScroll
+            )
+        }
+        saveRemoteProgress(target, clearPending = true)
     }
 
     val handleBack = {
@@ -674,21 +687,9 @@ fun ReaderScreen(
                     localRepository.saveProgress(localBookId, page, pages, isCompleted = page >= pages - 1)
                 }
             }
-        } else if (localBookId == null && pendingRemoteProgress != null && !incognito) {
-            val pending = pendingRemoteProgress
-            val loadedApi = api
-            val loadedSession = session
-            if (pending != null && loadedApi != null) {
-                ReaderExitWriteScope.launch {
-                    saveRemoteProgress(
-                        target = pending.target,
-                        targetApi = loadedApi,
-                        targetSession = loadedSession
-                    )
-                }
-            } else if (pending != null && offlineChapter != null) {
-                // Offline-only: local progress was already saved synchronously on
-                // every page turn; syncPending on next launch will push it.
+        } else if (localBookId == null && !incognito) {
+            ReaderExitWriteScope.launch {
+                flushPendingRemoteProgressNow()
             }
         }
         onBack()
@@ -1088,7 +1089,7 @@ fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(chapterId, localBookId) {
         // Seed the session invert override from the persisted global value. `.first()` on the
         // store flow yields the real DataStore value (not the collectAsState default), so this
         // is correct even before `settings` has emitted.
@@ -1792,13 +1793,13 @@ fun ReaderScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                lifecycleOwner.lifecycleScope.launch { latestFlushProgress() }
+                ReaderExitWriteScope.launch { latestFlushProgress() }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            lifecycleOwner.lifecycleScope.launch { latestFlushProgress() }
+            ReaderExitWriteScope.launch { latestFlushProgress() }
         }
     }
 

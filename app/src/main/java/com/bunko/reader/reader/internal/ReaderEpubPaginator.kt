@@ -585,13 +585,15 @@ object ReaderEpubPaginator {
         if (paint != null) {
             val result = runCatching {
                 val sl = buildStaticLayout(text, paint, width, lineSpacingMultiplier)
-                object : TextLayoutResult {
-                    override val lineCount: Int get() = sl.lineCount
-                    override val height: Int get() = sl.height
-                    override fun getLineBottom(line: Int): Int = sl.getLineBottom(line)
-                    override fun getLineEnd(line: Int): Int = sl.getLineEnd(line)
-                    override fun getLineStart(line: Int): Int = sl.getLineStart(line)
-                }
+                if (sl.lineCount > 0 && sl.height > 0) {
+                    object : TextLayoutResult {
+                        override val lineCount: Int get() = sl.lineCount
+                        override val height: Int get() = sl.height
+                        override fun getLineBottom(line: Int): Int = sl.getLineBottom(line)
+                        override fun getLineEnd(line: Int): Int = sl.getLineEnd(line)
+                        override fun getLineStart(line: Int): Int = sl.getLineStart(line)
+                    }
+                } else null
             }.getOrNull()
             if (result != null) return result
         }

@@ -1105,7 +1105,7 @@ fun LocalBookListItem(
             Box(
                 modifier = Modifier
                     .size(width = 80.dp, height = 114.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RectangleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {

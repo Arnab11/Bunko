@@ -69,6 +69,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -118,6 +119,7 @@ import com.bunko.reader.SeriesDto
 import com.bunko.reader.ui.DarkLoadingState
 import com.bunko.reader.ui.DarkMessageState
 import com.bunko.reader.ui.BunkoPullToRefreshIndicator
+import com.bunko.reader.ui.browse.CoverProgressBadge
 import com.bunko.reader.ui.browse.SeriesListItem
 import com.bunko.reader.ui.browse.SeriesPosterCard
 import com.bunko.reader.ui.theme.BunkoBackground
@@ -249,6 +251,21 @@ internal fun SeriesScreen(
                 refreshing = false
             }
         }
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var isFirstResume = true
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (!isFirstResume) {
+                    scope.launch { loadLibrarySeries(initialLoad = false) }
+                }
+                isFirstResume = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(libraryId) {
@@ -585,15 +602,7 @@ internal fun SeriesScreen(
                                     gridState = gridState,
                                     onRead = ::openKomgaBook,
                                     onToggleRead = ::toggleKomgaBookRead,
-                                    onViewSeries = { entry ->
-                                        onSelect(
-                                            SeriesDto(
-                                                id = entry.route.seriesId,
-                                                name = entry.book.seriesTitle,
-                                                libraryId = entry.route.libraryId
-                                            )
-                                        )
-                                    },
+                                    onViewSeries = ::openKomgaBook,
                                     onSearchHome = onSearchHome,
                                     query = normalizedQuery
                                 )
@@ -605,15 +614,7 @@ internal fun SeriesScreen(
                                     listState = listState,
                                     onRead = ::openKomgaBook,
                                     onToggleRead = ::toggleKomgaBookRead,
-                                    onViewSeries = { entry ->
-                                        onSelect(
-                                            SeriesDto(
-                                                id = entry.route.seriesId,
-                                                name = entry.book.seriesTitle,
-                                                libraryId = entry.route.libraryId
-                                            )
-                                        )
-                                    },
+                                    onViewSeries = ::openKomgaBook,
                                     onSearchHome = onSearchHome,
                                     query = normalizedQuery
                                 )
@@ -838,6 +839,14 @@ internal fun KomgaLibraryBook.isRead(): Boolean {
     return total > 0 && (chapter.pagesRead ?: 0) >= total
 }
 
+internal fun KomgaLibraryBook.readingProgress(): Float? {
+    val total = chapter.pages ?: return null
+    if (total <= 0) return null
+    val read = (chapter.pagesRead ?: 0).coerceIn(0, total)
+    if (read <= 0) return null
+    return read.toFloat() / total.toFloat()
+}
+
 @Composable
 internal fun KomgaBookGrid(
     books: List<KomgaLibraryBook>,
@@ -957,8 +966,13 @@ internal fun KomgaBookGridCard(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+                CoverProgressBadge(
+                    progress = entry.readingProgress(),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                )
             }
-            KomgaBookProgressBar(entry = entry)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -979,7 +993,8 @@ internal fun KomgaBookGridCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable(onClick = onViewSeries)
                     )
                 }
                 Box {
@@ -1021,7 +1036,7 @@ internal fun KomgaBookListRow(
     var menuExpanded by remember { mutableStateOf(false) }
     Surface(
         color = Color.Transparent,
-        shape = RoundedCornerShape(12.dp),
+        shape = RectangleShape,
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onViewSeries)
@@ -1035,7 +1050,7 @@ internal fun KomgaBookListRow(
                 modifier = Modifier
                     .width(coverWidth)
                     .aspectRatio(KavitaCoverAspectRatio)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RectangleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                 contentAlignment = Alignment.Center
             ) {
@@ -1076,7 +1091,8 @@ internal fun KomgaBookListRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(onClick = onViewSeries)
                 )
                 // Same status line as the Kavita list view.
                 val total = entry.chapter.pages ?: 0

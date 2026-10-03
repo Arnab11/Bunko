@@ -79,7 +79,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -259,7 +261,24 @@ internal fun SeriesDetailSummary(
         val title = tag.title?.trim().orEmpty()
         if (title.isBlank()) null else id to title
     }
-    val continueButtonText = series.primaryReadActionText()
+    val isSeriesFinished = chapterCards.isNotEmpty() && chapterCards.all { 
+        val p = it.chapter.pages ?: 0
+        val pr = it.chapter.pagesRead ?: 0
+        p > 0 && pr >= p
+    }
+    val continueButtonText = when {
+        isSeriesFinished -> "Re-Read"
+        continueChapter != null -> {
+            val title = continueChapter.cleanChapterDisplayTitle(series.name).trim()
+            val wasRead = (continueChapter.pagesRead ?: 0) > 0
+            if (wasRead) {
+                if (title.isNotBlank()) "Continue $title" else "Continue Reading"
+            } else {
+                if (title.isNotBlank()) "Start $title" else "Start Reading"
+            }
+        }
+        else -> series.primaryReadActionText()
+    }
     val isReread = continueButtonText == "Re-Read"
     val continueItem = if (isReread) {
         chapterCards.firstOrNull()
@@ -269,7 +288,6 @@ internal fun SeriesDetailSummary(
         } ?: chapterCards.firstOrNull()
     }
     val coverUrl = seriesCoverUrl(session, series.id)
-    val isSeriesFinished = ((series.readingProgress() ?: 0f) >= 0.999f)
 
     if (showCoverPreview) {
         val previewUrl = if (coverUpdateKey > 0L) "$coverUrl&t=$coverUpdateKey" else coverUrl
@@ -315,39 +333,44 @@ internal fun SeriesDetailSummary(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.Top
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .width(130.dp)
+                    .aspectRatio(KavitaCoverAspectRatio)
+            ) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     shadowElevation = 8.dp,
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     modifier = Modifier
-                        .width(130.dp)
-                        .aspectRatio(KavitaCoverAspectRatio)
+                        .fillMaxSize()
                         .clip(RoundedCornerShape(16.dp))
                         .clickable { showCoverPreview = true }
                 ) {
                     SeriesCover(series, session, Modifier.fillMaxSize(), coverKey = coverUpdateKey)
                 }
 
-                AssistChip(
-                    onClick = { showEditCoverDialog = true },
-                    label = { Text("Edit Cover", style = MaterialTheme.typography.labelSmall) },
-                    leadingIcon = {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
+                    shadowElevation = 4.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp)
+                        .size(32.dp)
+                ) {
+                    IconButton(
+                        onClick = { showEditCoverDialog = true },
+                        modifier = Modifier.fillMaxSize()
+                    ) {
                         Icon(
                             imageVector = Icons.Outlined.Edit,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
+                            contentDescription = "Edit Cover",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(16.dp)
                         )
-                    },
-                    modifier = Modifier.padding(top = 8.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    ),
-                    border = null,
-                )
+                    }
+                }
             }
 
             Column(
@@ -376,10 +399,18 @@ internal fun SeriesDetailSummary(
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }
-                val progressPct = ((series.readingProgress() ?: 0f) * 100).roundToInt()
+                val sumPages = chapterCards.sumOf { it.chapter.pages ?: 0 }
+                val sumPagesRead = chapterCards.sumOf { (it.chapter.pagesRead ?: 0).coerceIn(0, it.chapter.pages ?: 0) }
+                val totalPages = if (sumPages > 0) sumPages else (series.pages ?: 0)
+                val totalPagesRead = if (sumPages > 0) sumPagesRead else (series.pagesRead ?: 0)
+                val progressPct = if (totalPages > 0) {
+                    ((totalPagesRead.toFloat() / totalPages.toFloat()) * 100f).roundToInt().coerceIn(0, 100)
+                } else {
+                    ((series.readingProgress() ?: 0f) * 100).roundToInt()
+                }
                 val statusText = if (progressPct >= 100) "Completed" else if (progressPct > 0) "$progressPct% read" else "Not Started"
                 Text(
-                    text = "${series.pagesRead ?: 0} / ${series.pages ?: 0} pages · $statusText",
+                    text = "$totalPagesRead / $totalPages pages · $statusText",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     modifier = Modifier.padding(top = 2.dp)
@@ -482,6 +513,7 @@ internal fun SeriesDetailSummary(
         if (chapterCards.isNotEmpty()) {
             KavitaIssuesSection(
                 chapterCards = chapterCards,
+                continueChapterId = continueItem?.chapter?.id,
                 session = session,
                 downloadedChapterIds = downloadedChapterIds,
                 downloadingChapterIds = downloadingChapterIds,
@@ -528,12 +560,16 @@ internal fun SeriesDetailSummary(
         val totalChapters = chapterCards.size
         val readChapters = chapterCards.count { (it.chapter.pagesRead ?: 0) >= (it.chapter.pages ?: 1) && (it.chapter.pages ?: 0) > 0 }
         val unreadChapters = (totalChapters - readChapters).coerceAtLeast(0)
+        val statsSumPages = chapterCards.sumOf { it.chapter.pages ?: 0 }
+        val statsSumPagesRead = chapterCards.sumOf { (it.chapter.pagesRead ?: 0).coerceIn(0, it.chapter.pages ?: 0) }
+        val statsTotalPages = if (statsSumPages > 0) statsSumPages else series.pages
+        val statsReadPages = if (statsSumPages > 0) statsSumPagesRead else series.pagesRead
         KavitaReadingStatsCard(
             totalChapters = totalChapters,
             readChapters = readChapters,
             unreadChapters = unreadChapters,
-            totalPages = series.pages,
-            readPages = series.pagesRead,
+            totalPages = statsTotalPages,
+            readPages = statsReadPages,
             avgHoursToRead = series.avgHoursToRead
         )
 
@@ -1324,6 +1360,7 @@ private fun SeriesDetailHeroInfo(
 @Composable
 internal fun KavitaIssuesSection(
     chapterCards: List<ChapterCardItem>,
+    continueChapterId: Int? = null,
     session: KavitaSession,
     downloadedChapterIds: Set<Int>,
     downloadingChapterIds: Set<Int>,
@@ -1349,6 +1386,26 @@ internal fun KavitaIssuesSection(
         selectedTab == 1 && specialCards.isNotEmpty() -> specialCards
         issueCards.isNotEmpty() -> issueCards
         else -> specialCards
+    }
+
+    val rowState = rememberLazyListState()
+    LaunchedEffect(continueChapterId, issueCards, specialCards) {
+        if (continueChapterId != null) {
+            val isSpecial = specialCards.any { it.chapter.id == continueChapterId }
+            if (isSpecial && selectedTab != 1) {
+                selectedTab = 1
+            } else if (!isSpecial && selectedTab != 0 && issueCards.isNotEmpty()) {
+                selectedTab = 0
+            }
+        }
+    }
+    LaunchedEffect(continueChapterId, activeList) {
+        if (continueChapterId != null) {
+            val targetIndex = activeList.indexOfFirst { it.chapter.id == continueChapterId }
+            if (targetIndex >= 0) {
+                rowState.animateScrollToItem(targetIndex)
+            }
+        }
     }
 
     Column(
@@ -1401,6 +1458,7 @@ internal fun KavitaIssuesSection(
         }
 
         LazyRow(
+            state = rowState,
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
@@ -1412,6 +1470,7 @@ internal fun KavitaIssuesSection(
                         session = session,
                         isDownloaded = item.chapter.id in downloadedChapterIds,
                         isDownloading = item.chapter.id in downloadingChapterIds,
+                        isCurrentContinue = (item.chapter.id == continueChapterId),
                         onClick = { onPick(item.chapter.id, item.volume.id, null) },
                         onReadIncognito = onReadIncognito?.let { { it(item) } },
                         onMarkRead = onMarkRead?.let { { it(item) } },

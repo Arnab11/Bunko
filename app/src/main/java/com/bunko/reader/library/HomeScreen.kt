@@ -341,11 +341,6 @@ fun LibraryScreen(
                     BunkoLog.w("Could not load current user roles on Home.", it)
                 }.getOrDefault(false)
             }
-            launch {
-                runCatchingCancellable { loadLibrarySeriesCounts(loadedApi, loadedLibraries) }
-                    .onSuccess { librarySeriesCounts = it }
-                    .onFailure { BunkoLog.w("Could not load library series counts on Home.", it) }
-            }
             if (backend.isKomga && loadedApi is KomgaKavitaAdapter) {
                 // Komga libraries browse flat book lists: count books, not series.
                 launch {
@@ -364,9 +359,6 @@ fun LibraryScreen(
                         .onSuccess { libraryBookCounts = it }
                         .onFailure { BunkoLog.w("Could not load library book counts on Home.", it) }
                 }
-            }
-            onDeck = loadedApi.onDeck(pageSize = HomePreviewShelfPageSize)
-            if (backend.isKomga && loadedApi is KomgaKavitaAdapter) {
                 // Flat book shelves for Komga (no series groups on Home).
                 // Totals come from the server page metadata so badges match See-all.
                 launch {
@@ -401,22 +393,29 @@ fun LibraryScreen(
                         }
                         .onFailure { BunkoLog.w("Could not load Komga latest books on Home.", it) }
                 }
-            }
-            recentlyUpdated = loadedApi.recentlyUpdatedSeries(pageSize = HomePreviewShelfPageSize)
-                .map { it.toSeriesDto() }
-                .distinctBy { it.id }
-            newlyAdded = loadedApi.recentlyAdded(pageSize = HomePreviewShelfPageSize)
-            runCatchingCancellable {
-                loadedApi.wantToRead(pageNumber = 0, pageSize = WantToReadPageSize)
-            }.onSuccess {
-                wantToRead = it
-                wantToReadNextPage = 1
-                wantToReadHasMore = it.size == WantToReadPageSize
-            }
-                .onFailure {
-                    BunkoLog.w("Could not load Want to Read list.", it)
-                    wantToReadError = it.message ?: it.toString()
+            } else {
+                launch {
+                    runCatchingCancellable { loadLibrarySeriesCounts(loadedApi, loadedLibraries) }
+                        .onSuccess { librarySeriesCounts = it }
+                        .onFailure { BunkoLog.w("Could not load library series counts on Home.", it) }
                 }
+                onDeck = loadedApi.onDeck(pageSize = HomePreviewShelfPageSize)
+                recentlyUpdated = loadedApi.recentlyUpdatedSeries(pageSize = HomePreviewShelfPageSize)
+                    .map { it.toSeriesDto() }
+                    .distinctBy { it.id }
+                newlyAdded = loadedApi.recentlyAdded(pageSize = HomePreviewShelfPageSize)
+                runCatchingCancellable {
+                    loadedApi.wantToRead(pageNumber = 0, pageSize = WantToReadPageSize)
+                }.onSuccess {
+                    wantToRead = it
+                    wantToReadNextPage = 1
+                    wantToReadHasMore = it.size == WantToReadPageSize
+                }
+                    .onFailure {
+                        BunkoLog.w("Could not load Want to Read list.", it)
+                        wantToReadError = it.message ?: it.toString()
+                    }
+            }
         } catch (c: CancellationException) {
             throw c
         } catch (t: Throwable) {
@@ -435,13 +434,6 @@ fun LibraryScreen(
         }
     }
 
-    // A refresh runs on the composition scope, so cancel any in-flight one when the active
-    // server changes; otherwise a late refresh from the previous server could overwrite the
-    // new server's Home state.
-    DisposableEffect(sessionRevision) {
-        onDispose { refreshJob?.cancel() }
-    }
-
     fun refreshHome() {
         if (isOffline) {
             rescanOffline()
@@ -457,6 +449,28 @@ fun LibraryScreen(
                 refreshing = false
             }
         }
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, isOffline) {
+        var isFirstResume = true
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (!isFirstResume && !isOffline) {
+                    refreshHome()
+                }
+                isFirstResume = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // A refresh runs on the composition scope, so cancel any in-flight one when the active
+    // server changes; otherwise a late refresh from the previous server could overwrite the
+    // new server's Home state.
+    DisposableEffect(sessionRevision) {
+        onDispose { refreshJob?.cancel() }
     }
 
     suspend fun loadNextWantToReadPage(): Result<List<SeriesDto>> = wantToReadPagingMutex.withLock {

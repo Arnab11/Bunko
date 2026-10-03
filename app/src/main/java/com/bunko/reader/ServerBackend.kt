@@ -50,6 +50,32 @@ class ServerBackend(
  * unconfigured backend) and publishes it to [ActiveServerRuntime] so the
  * shared cover helpers stay correct.
  */
+object ActiveUserCache {
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, UserDto>()
+
+    fun getUser(key: String): UserDto? = cache[key]
+
+    fun setUser(key: String, user: UserDto) {
+        cache[key] = user
+    }
+
+    fun clear() {
+        cache.clear()
+    }
+}
+
+class CachedKavitaApi(
+    private val delegate: KavitaApi,
+    private val cacheKey: String
+) : KavitaApi by delegate {
+    override suspend fun currentUser(): UserDto {
+        ActiveUserCache.getUser(cacheKey)?.let { return it }
+        val user = delegate.currentUser()
+        ActiveUserCache.setUser(cacheKey, user)
+        return user
+    }
+}
+
 suspend fun Context.serverBackend(
     kavitaStore: KavitaSessionStore,
     komgaStore: KomgaSessionStore,
@@ -111,9 +137,10 @@ suspend fun Context.serverBackend(
     }
     val client = KavitaClient(appContext, kavitaStore)
     val (api, okHttp) = client.buildApi()
+    val cachedApi = CachedKavitaApi(api, "kavita:${session.baseUrl}:${session.username}")
     return ServerBackend(
         mode = "kavita",
-        api = api,
+        api = cachedApi,
         okHttp = okHttp,
         imageUrls = kavitaImageUrls(session),
         isConfigured = true,

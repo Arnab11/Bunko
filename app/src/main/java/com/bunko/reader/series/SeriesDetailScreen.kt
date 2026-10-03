@@ -70,6 +70,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -174,6 +175,7 @@ fun ChapterPickScreen(
     navigationBarStyle: NavigationBarStyle = NavigationBarStyle.Standard,
     onBack: () -> Unit = {},
     isDualPane: Boolean = false,
+    selectedChapterId: Int? = null,
     onPick: (chapterId: Int, volumeId: Int, incognito: Boolean, initialPage: Int?) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -237,6 +239,12 @@ fun ChapterPickScreen(
                 .onFailure { BunkoLog.w("Could not load continue point for series $seriesId.", it) }
                 .getOrNull()
             volumes = loadedApi.volumes(seriesId)
+            if (selectedChapterId != null && selectedChapterId > 0) {
+                val matched = volumes.flatMap { it.chapters }.firstOrNull { it.id == selectedChapterId }
+                if (matched != null) {
+                    continueChapter = matched
+                }
+            }
             error = null
         } catch (c: CancellationException) {
             throw c
@@ -257,8 +265,32 @@ fun ChapterPickScreen(
         }
     }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var isFirstResume = true
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (!isFirstResume) {
+                    scope.launch { loadSeriesDetails(initialLoad = false) }
+                }
+                isFirstResume = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(seriesId) {
         loadSeriesDetails(initialLoad = true)
+    }
+
+    LaunchedEffect(selectedChapterId, volumes) {
+        if (selectedChapterId != null && selectedChapterId > 0 && volumes.isNotEmpty()) {
+            val matched = volumes.flatMap { it.chapters }.firstOrNull { it.id == selectedChapterId }
+            if (matched != null) {
+                continueChapter = matched
+            }
+        }
     }
 
     val chapterCards = volumes.flatMap { volume ->

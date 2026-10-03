@@ -108,6 +108,10 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     // Per-ABI version codes (mpvRx-style): keeps every split output on a
     // distinct, ordered code within its channel band.
     androidComponents {

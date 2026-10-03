@@ -1,6 +1,7 @@
 package com.bunko.reader.series.internal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -178,6 +179,7 @@ internal fun ChapterGridCard(
     session: KavitaSession,
     isDownloaded: Boolean = false,
     isDownloading: Boolean = false,
+    isCurrentContinue: Boolean = false,
     onClick: () -> Unit,
     onReadIncognito: (() -> Unit)? = null,
     onMarkRead: (() -> Unit)? = null,
@@ -195,6 +197,10 @@ internal fun ChapterGridCard(
     var menuExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    val coverBorderModifier = if (isCurrentContinue) {
+        Modifier.border(2.5.dp, MaterialTheme.colorScheme.primary, RectangleShape)
+    } else Modifier
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -208,7 +214,8 @@ internal fun ChapterGridCard(
                     .fillMaxWidth()
                     .aspectRatio(KavitaCoverAspectRatio)
                     .clip(RectangleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                    .then(coverBorderModifier),
                 contentAlignment = Alignment.Center
             ) {
                 if (hasRemoteCovers(session)) {
@@ -244,7 +251,7 @@ internal fun ChapterGridCard(
                     if (isDownloading) {
                         Surface(
                             color = Color.Black.copy(alpha = 0.7f),
-                            shape = CircleShape
+                            shape = RectangleShape
                         ) {
                             CircularProgressIndicator(
                                 modifier = Modifier
@@ -257,7 +264,7 @@ internal fun ChapterGridCard(
                     } else if (isDownloaded) {
                         Surface(
                             color = Color(0xFF2E7D32).copy(alpha = 0.9f),
-                            shape = CircleShape
+                            shape = RectangleShape
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.FileDownloadDone,
@@ -266,6 +273,20 @@ internal fun ChapterGridCard(
                                 modifier = Modifier
                                     .padding(4.dp)
                                     .size(14.dp)
+                            )
+                        }
+                    }
+                    if (isCurrentContinue) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RectangleShape
+                        ) {
+                            Text(
+                                text = if ((chapter.pagesRead ?: 0) > 0) "CONTINUE" else "NEXT",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
                     }
@@ -373,7 +394,7 @@ internal fun ChapterGridCard(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Start,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth()
                 )

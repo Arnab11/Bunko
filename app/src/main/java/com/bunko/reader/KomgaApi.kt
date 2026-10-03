@@ -107,6 +107,16 @@ interface KomgaApi {
         @Query("unpaged") unpaged: Boolean? = null
     ): KomgaPageDto<KomgaBookDto>
 
+    @GET("api/v1/books")
+    suspend fun books(
+        @Query("library_id") libraryIds: List<String>? = null,
+        @Query("read_status") readStatus: List<String>? = null,
+        @Query("page") page: Int? = 0,
+        @Query("size") size: Int? = 200,
+        @Query("sort") sort: String? = null,
+        @Query("unpaged") unpaged: Boolean? = null
+    ): KomgaPageDto<KomgaBookDto>
+
     @GET("api/v1/books/{bookId}")
     suspend fun book(@Path("bookId") bookId: String): KomgaBookDto
 

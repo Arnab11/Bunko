@@ -324,14 +324,17 @@ fun LocalBookDetailContent(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .width(128.dp)
+                                .aspectRatio(KavitaCoverAspectRatio)
+                        ) {
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 shadowElevation = 8.dp,
                                 color = MaterialTheme.colorScheme.surfaceContainer,
                                 modifier = Modifier
-                                    .width(128.dp)
-                                    .aspectRatio(KavitaCoverAspectRatio)
+                                    .fillMaxSize()
                                     .clip(RoundedCornerShape(16.dp))
                                     .clickable { showCoverPreview = true }
                             ) {
@@ -358,25 +361,28 @@ fun LocalBookDetailContent(
                                     }
                                 }
                             }
-                            AssistChip(
-                                onClick = { showEditCoverDialog = true },
-                                label = { Text("Edit Cover", style = MaterialTheme.typography.labelSmall) },
-                                leadingIcon = {
+
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
+                                shadowElevation = 4.dp,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(6.dp)
+                                    .size(32.dp)
+                            ) {
+                                IconButton(
+                                    onClick = { showEditCoverDialog = true },
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Edit,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
+                                        contentDescription = "Edit Cover",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                },
-                                modifier = Modifier.padding(top = 8.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    ),
-                                border = null,
-                            )
+                                }
+                            }
                         }
 
                         Column(modifier = Modifier.weight(1f)) {

@@ -293,6 +293,7 @@ internal fun HomeShell(
     val shellIsKomga = shellActiveMode == "komga"
     var selectedOfflineBook by remember { mutableStateOf<LocalBook?>(null) }
     var selectedKavitaSeries by remember { mutableStateOf<SeriesDto?>(null) }
+    var selectedChapterId by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(offlineBooks, selectedOfflineBook?.id) {
         val currentId = selectedOfflineBook?.id ?: return@LaunchedEffect
@@ -313,6 +314,7 @@ internal fun HomeShell(
             selectedShelf = null
             selectedOfflineBook = null
             selectedKavitaSeries = null
+            selectedChapterId = null
             if (initialDestination != HomeDestination.Libraries) {
                 selectedLibrary = null
             }
@@ -322,6 +324,7 @@ internal fun HomeShell(
     fun selectDestination(next: HomeDestination) {
         selectedOfflineBook = null
         selectedKavitaSeries = null
+        selectedChapterId = null
         if (next == destination) {
             reselectionCount++
             // Reset drilldowns on re-clicking the same tab
@@ -341,6 +344,7 @@ internal fun HomeShell(
     BackHandler(enabled = selectedOfflineBook != null || selectedKavitaSeries != null) {
         selectedOfflineBook = null
         selectedKavitaSeries = null
+        selectedChapterId = null
     }
     BackHandler(enabled = (selectedOfflineBook == null && selectedKavitaSeries == null) && browseDrilldown != null) {
         browseDrilldown = null
@@ -496,6 +500,7 @@ internal fun HomeShell(
             if (isWide) {
                 selectedOfflineBook = book
                 selectedKavitaSeries = null
+                selectedChapterId = null
             } else {
                 onOpenOfflineBook(book)
             }
@@ -504,9 +509,30 @@ internal fun HomeShell(
         val handleSelectSeries: (SeriesDto, HomeDestination) -> Unit = { series, tab ->
             if (isWide) {
                 selectedKavitaSeries = series
+                selectedChapterId = null
                 selectedOfflineBook = null
             } else {
                 onSelectSeries(series, tab)
+            }
+        }
+
+        val handlePickIssue: (libraryId: Int, seriesId: Int, volumeId: Int, chapterId: Int, incognito: Boolean) -> Unit = { libId, sId, volId, chId, incog ->
+            if (isWide) {
+                val currentSeries = selectedKavitaSeries
+                val nextSeries = if (currentSeries?.id == sId) {
+                    currentSeries
+                } else {
+                    SeriesDto(
+                        id = sId,
+                        name = currentSeries?.name.orEmpty(),
+                        libraryId = libId
+                    )
+                }
+                selectedKavitaSeries = nextSeries
+                selectedChapterId = chId
+                selectedOfflineBook = null
+            } else {
+                onPickIssue(libId, sId, volId, chId, incog)
             }
         }
 
@@ -581,7 +607,7 @@ internal fun HomeShell(
                 },
                 onOpenBookmark = onOpenBookmark,
                 onOpenCollection = onOpenCollection,
-                onPickIssue = onPickIssue,
+                onPickIssue = handlePickIssue,
                 onOpenFilteredSeries = onOpenFilteredSeries,
                 isOffline = isOffline,
                 offlineBooks = offlineBooks,
@@ -679,9 +705,11 @@ internal fun HomeShell(
                         isWide = isWide,
                         selectedOfflineBook = selectedOfflineBook,
                         selectedKavitaSeries = selectedKavitaSeries,
+                        selectedChapterId = selectedChapterId,
                         onCloseDetail = {
                             selectedOfflineBook = null
                             selectedKavitaSeries = null
+                            selectedChapterId = null
                         },
                         onSelectOfflineBook = { selectedOfflineBook = it },
                         offlineBooks = offlineBooks,
@@ -710,9 +738,11 @@ internal fun HomeShell(
                     isWide = isWide,
                     selectedOfflineBook = selectedOfflineBook,
                     selectedKavitaSeries = selectedKavitaSeries,
+                    selectedChapterId = selectedChapterId,
                     onCloseDetail = {
                         selectedOfflineBook = null
                         selectedKavitaSeries = null
+                        selectedChapterId = null
                     },
                     onSelectOfflineBook = { selectedOfflineBook = it },
                     offlineBooks = offlineBooks,
@@ -740,9 +770,11 @@ internal fun HomeShell(
                     isWide = isWide,
                     selectedOfflineBook = selectedOfflineBook,
                     selectedKavitaSeries = selectedKavitaSeries,
+                    selectedChapterId = selectedChapterId,
                     onCloseDetail = {
                         selectedOfflineBook = null
                         selectedKavitaSeries = null
+                        selectedChapterId = null
                     },
                     onSelectOfflineBook = { selectedOfflineBook = it },
                     offlineBooks = offlineBooks,
@@ -773,6 +805,7 @@ private fun DualPaneOrSingleContent(
     isWide: Boolean,
     selectedOfflineBook: LocalBook?,
     selectedKavitaSeries: SeriesDto?,
+    selectedChapterId: Int? = null,
     onCloseDetail: () -> Unit,
     onSelectOfflineBook: (LocalBook) -> Unit = {},
     offlineBooks: List<LocalBook>,
@@ -831,6 +864,7 @@ private fun DualPaneOrSingleContent(
                         libraryId = selectedKavitaSeries.libraryId ?: 0,
                         seriesId = selectedKavitaSeries.id,
                         seriesName = selectedKavitaSeries.name,
+                        selectedChapterId = selectedChapterId,
                         onOpenFilteredSeries = onOpenFilteredSeries,
                         onOpenSettings = onOpenSettings,
                         onBack = onCloseDetail,

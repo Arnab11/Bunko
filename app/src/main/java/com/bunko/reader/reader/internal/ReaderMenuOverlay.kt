@@ -1547,13 +1547,24 @@ internal fun ReaderMenuOverlay(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Page indicator: "1/26"
-                    Text(
-                        text = "${jumpPage + 1}/$safePageCount",
-                        color = onBarVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
+                    // Reader Options ("Aa") Button
+                    Surface(
+                        onClick = { showDisplayOptions = !showDisplayOptions },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (showDisplayOptions) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                        contentColor = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "Aa",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Serif,
+                                color = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar
+                            )
+                        }
+                    }
 
                     // Page slider
                     ValueBubbleSlider(
@@ -1575,24 +1586,13 @@ internal fun ReaderMenuOverlay(
                         modifier = Modifier.weight(1f)
                     )
 
-                    // Reader Options ("Aa") Button
-                    Surface(
-                        onClick = { showDisplayOptions = !showDisplayOptions },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (showDisplayOptions) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                        contentColor = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "Aa",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Serif,
-                                color = if (showDisplayOptions) MaterialTheme.colorScheme.onSecondaryContainer else onBar
-                            )
-                        }
-                    }
+                    // Page indicator: "1/26"
+                    Text(
+                        text = "${jumpPage + 1}/$safePageCount",
+                        color = onBarVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
 
                 val menuProgressPercent = if (safePageCount > 0) {
