@@ -21,8 +21,10 @@ commonsCompress = "1.26.1"
 xz = "1.9"
 jsoup = "1.17.2"
 leakcanary = "2.14"
+mlkitTextRecognition = "16.0.1"
 
 [libraries]
+mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "androidxAppcompat" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

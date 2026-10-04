@@ -223,6 +223,42 @@ internal class CropBordersTransformation : Transformation {
     }
 }
 
+/**
+ * Resolves a comic/manga page model to an in-memory Bitmap for vision processing & Bubble Zoom.
+ */
+internal suspend fun resolvePageBitmap(
+    context: Context,
+    imageLoader: ImageLoader,
+    model: Any?
+): Bitmap? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    if (model == null) return@withContext null
+    if (model is OfflinePage) {
+        val cached = getCachedOfflinePage(model)
+        if (cached != null && !cached.isRecycled) return@withContext cached
+        return@withContext try {
+            decodeOfflinePage(model, 1280, 1920) as? Bitmap
+        } catch (_: Throwable) {
+            null
+        }
+    }
+    if (model is Bitmap && !model.isRecycled) return@withContext model
+    try {
+        val request = ImageRequest.Builder(context)
+            .data(model)
+            .allowHardware(false)
+            .build()
+        val result = imageLoader.execute(request)
+        if (result is SuccessResult) {
+            result.drawable.toBitmap()
+        } else {
+            null
+        }
+    } catch (t: Throwable) {
+        BunkoLog.w("resolvePageBitmap failed", t)
+        null
+    }
+}
+
 private const val SmartInvertSampleSize = 64
 private const val SmartInvertColorThreshold = 0.1f
 private const val SmartInvertWhiteChannelMin = 217

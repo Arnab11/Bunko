@@ -37,7 +37,8 @@ A single, shared, non-redundant reader engine powering local files, remote Kavit
 
 ### 🎨 Reading Ergonomics & UI
 - **Modern Flyout Menu & Sheets**: mpvRx-style flyout bottom sheets with smooth gesture dismissals, adaptive height bounds, and persistent immersive mode (gesture navigation bar stays tucked away).
-- **Comprehensive Reader Options**: Grouped tabs for **Layout** (Reading Direction, Turn Animation, Crop Borders, Auto Webtoon Mode, Overview Mode, Cutout Mode, Webtoon Side Padding, Spread Shift, Scale Type, Tap Zones, Invert Tap Zone) and **Lighting** (Color Themes, Brightness slider with Auto/Custom toggle, Night Light warmth control, Smart Invert Mode, and E-Paper B&W/Color Modes).
+- **Comprehensive Reader Options**: Grouped tabs for **Layout** (Reading Direction, Turn Animation, Bubble Zoom, Crop Borders, Auto Webtoon Mode, Overview Mode, Cutout Mode, Webtoon Side Padding, Spread Shift, Scale Type, Tap Zones, Invert Tap Zone) and **Lighting** (Color Themes, Brightness slider with Auto/Custom toggle, Night Light warmth control, Smart Invert Mode, and E-Paper B&W/Color Modes).
+- **Play Books-Style Bubble Zoom**: Fast, on-device vision detection of comic and manga dialog balloons. Tapping any speech bubble smoothly pops up an enlarged, crisp floating balloon with quick Copy, Read Aloud (TTS), and Bubble Navigation actions. Fully togglable from Reader Options.
 - **Bookmark System**: One-tap quick bookmarking with auto-captured text excerpts, timestamps, and an interactive modal bottom sheet to view, jump to, and delete saved bookmarks.
 - **Offline Chapter Navigation & TOC**: Seamless table of contents tree and offline chapter switching for both local files (EPUB, MOBI, FB2) and downloaded series.
 - **Re-Read Support**: Instant restart from the very beginning (first chapter, page 0) when revisiting completed series and books.

@@ -1,5 +1,6 @@
 package com.bunko.reader.reader
 
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.ViewConfiguration
@@ -140,6 +141,10 @@ import com.bunko.reader.reader.internal.ReaderTapLayer
 import com.bunko.reader.reader.internal.ReaderTapZoneOverlay
 import com.bunko.reader.reader.internal.ReaderVerticalScroll
 import com.bunko.reader.reader.internal.ReaderWebtoonDetector
+import com.bunko.reader.reader.internal.ComicSpeechBubble
+import com.bunko.reader.reader.internal.ReaderBubbleDetector
+import com.bunko.reader.reader.internal.BubbleZoomOverlay
+import com.bunko.reader.reader.internal.resolvePageBitmap
 import com.bunko.reader.reader.internal.ReaderZoomEpsilon
 import com.bunko.reader.reader.internal.ReaderZoomPanState
 import com.bunko.reader.reader.internal.lerpTo
@@ -1846,6 +1851,16 @@ fun ReaderScreen(
     val vertical = readingDirection == ReaderReadingDirection.Vertical || isWebtoon
     val spreadPages = spreadPagesFor(page, rtl)
 
+    // Bubble Zoom state (Play Books style)
+    var activeBubble by remember { mutableStateOf<ComicSpeechBubble?>(null) }
+    var detectedBubblesByPage by remember { mutableStateOf<Map<Int, List<ComicSpeechBubble>>>(emptyMap()) }
+    var activeBitmapsByPage by remember { mutableStateOf<Map<Int, Bitmap>>(emptyMap()) }
+
+    // Dismiss active bubble on page change or menu toggle
+    LaunchedEffect(page, showReaderMenu) {
+        if (activeBubble != null) activeBubble = null
+    }
+
     val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val isMintPaper = settings.reader.pageBackground == PageBackground.Mint
     val darkPaper = invertMode != InvertMode.Off ||
@@ -1998,6 +2013,71 @@ fun ReaderScreen(
         val safeBottomPadding = (navBottomInsetDp + 42.dp).coerceAtLeast(50.dp)
         val safeStartPadding = (stableNavInsets.calculateStartPadding(layoutDirection) + 16.dp).coerceAtLeast(20.dp)
         val safeEndPadding = (stableNavInsets.calculateEndPadding(layoutDirection) + 16.dp).coerceAtLeast(20.dp)
+
+        val visiblePageIndices = remember(page, pages, portrait, pageDimensions, isEpub) {
+            readerVisiblePageIndices(page, pages, portrait, pageDimensions, isEpub)
+        }
+
+        LaunchedEffect(
+            visiblePageIndices,
+            currentChapterId,
+            settings.reader.bubbleZoomEnabled,
+            isEpub
+        ) {
+            if (!settings.reader.bubbleZoomEnabled || isEpub || visiblePageIndices.isEmpty()) {
+                return@LaunchedEffect
+            }
+            for (pageIdx in visiblePageIndices) {
+                val model = pageModel(pageIdx) ?: continue
+                val bmp = resolvePageBitmap(ctx, activeImageLoader, model) ?: continue
+                activeBitmapsByPage = activeBitmapsByPage + (pageIdx to bmp)
+                val cacheKey = "bubble_ch_${currentChapterId}_p_$pageIdx"
+                val bubbles = ReaderBubbleDetector.detectBubbles(cacheKey, pageIdx, bmp)
+                if (bubbles.isNotEmpty()) {
+                    detectedBubblesByPage = detectedBubblesByPage + (pageIdx to bubbles)
+                }
+            }
+        }
+
+        fun handleBubbleTapIntercept(tapPosition: Offset): Boolean {
+            if (activeBubble != null) {
+                activeBubble = null
+                return true
+            }
+            if (!settings.reader.bubbleZoomEnabled || isEpub || visiblePageIndices.isEmpty()) {
+                return false
+            }
+            if (viewportWidthPx <= 0f || viewportHeightPx <= 0f) return false
+
+            val currentLayout = readerPageLayout(page, pages, portrait, pageDimensions, isEpub)
+            val targetPage: Int
+            val normX: Float
+            val normY: Float
+
+            if (currentLayout.singlePage) {
+                targetPage = page
+                normX = (tapPosition.x / viewportWidthPx).coerceIn(0f, 1f)
+                normY = (tapPosition.y / viewportHeightPx).coerceIn(0f, 1f)
+            } else {
+                val halfW = viewportWidthPx / 2f
+                if (tapPosition.x < halfW) {
+                    targetPage = spreadPages.leftPage
+                    normX = (tapPosition.x / halfW).coerceIn(0f, 1f)
+                } else {
+                    targetPage = spreadPages.rightPage
+                    normX = ((tapPosition.x - halfW) / halfW).coerceIn(0f, 1f)
+                }
+                normY = (tapPosition.y / viewportHeightPx).coerceIn(0f, 1f)
+            }
+
+            val bubblesForPage = detectedBubblesByPage[targetPage] ?: emptyList()
+            val hitBubble = ReaderBubbleDetector.findTappedBubble(Offset(normX, normY), bubblesForPage)
+            if (hitBubble != null) {
+                activeBubble = hitBubble
+                return true
+            }
+            return false
+        }
 
         val galleryTopInset = stableStatusBarHeight
         val navBarBottomDp = WindowInsets.navigationBarsIgnoringVisibility.asPaddingValues().calculateBottomPadding()
@@ -3956,6 +4036,7 @@ fun ReaderScreen(
                     requestSingleStep(ReaderTurnDirection.Previous, false)
                 },
                 onCenterTap = { showReaderMenu = !showReaderMenu },
+                onTapIntercept = ::handleBubbleTapIntercept,
                 turnVisualDistancePx = turnVisualDistancePx,
                 zoomPanEnabled = zoomPanEnabled,
                 panOffsetX = zoomPan.offsetX,
@@ -4377,6 +4458,10 @@ fun ReaderScreen(
                 onSetCropBorders = { newCrop ->
                     scope.launch { settingsStore.setCropBorders(newCrop) }
                 },
+                bubbleZoomEnabled = settings.reader.bubbleZoomEnabled,
+                onSetBubbleZoomEnabled = { enabled ->
+                    scope.launch { settingsStore.setBubbleZoomEnabled(enabled) }
+                },
                 navigationMode = settings.reader.navigationMode,
                 onSetNavigationMode = { newNav ->
                     if (newNav != settings.reader.navigationMode &&
@@ -4495,6 +4580,31 @@ fun ReaderScreen(
                 }
             )
             }
+        }
+
+        // Play Books-style Bubble Zoom overlay for comics and manga
+        if (activeBubble != null) {
+            val bubble = activeBubble!!
+            val bubblePage = bubble.pageIndex
+            val bmp = activeBitmapsByPage[bubblePage]
+            val currentLayout = readerPageLayout(page, pages, portrait, pageDimensions, isEpub)
+            val isSpreadLeft = !currentLayout.singlePage && bubblePage == spreadPages.leftPage
+            val isSpreadRight = !currentLayout.singlePage && bubblePage == spreadPages.rightPage
+            val pageBounds = when {
+                isSpreadLeft -> androidx.compose.ui.geometry.Rect(0f, 0f, viewportWidthPx / 2f, viewportHeightPx)
+                isSpreadRight -> androidx.compose.ui.geometry.Rect(viewportWidthPx / 2f, 0f, viewportWidthPx, viewportHeightPx)
+                else -> androidx.compose.ui.geometry.Rect(0f, 0f, viewportWidthPx, viewportHeightPx)
+            }
+
+            BubbleZoomOverlay(
+                activeBubble = bubble,
+                allBubblesOnPage = detectedBubblesByPage[bubblePage] ?: emptyList(),
+                sourceBitmap = bmp,
+                zoomScale = settings.reader.bubbleZoomScale,
+                pageDisplayBounds = pageBounds,
+                onDismiss = { activeBubble = null },
+                onSelectBubble = { activeBubble = it }
+            )
         }
 
         // Floating TTS mini bubble (visible when read aloud session is active)

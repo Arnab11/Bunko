@@ -192,6 +192,8 @@ internal fun ReaderMenuOverlay(
     onSetImageScaleType: (ReaderImageScaleType) -> Unit = {},
     cropBorders: Boolean = false,
     onSetCropBorders: (Boolean) -> Unit = {},
+    bubbleZoomEnabled: Boolean = true,
+    onSetBubbleZoomEnabled: (Boolean) -> Unit = {},
     navigationMode: ReaderNavigationMode = ReaderNavigationMode.Default,
     onSetNavigationMode: (ReaderNavigationMode) -> Unit = {},
     tappingInvertMode: ReaderTappingInvertMode = ReaderTappingInvertMode.None,
@@ -868,6 +870,32 @@ internal fun ReaderMenuOverlay(
                                             checked = cropBorders,
                                             onCheckedChange = { onSetCropBorders(it) },
                                             text = if (cropBorders) "On" else "Off"
+                                        )
+                                    }
+
+                                    // Bubble Zoom (Play Books style)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Bubble zoom",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = unselectedText
+                                            )
+                                            Text(
+                                                text = "Tap dialogs to magnify speech bubbles",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = unselectedText.copy(alpha = 0.7f),
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        DialogToggleButton(
+                                            checked = bubbleZoomEnabled,
+                                            onCheckedChange = { onSetBubbleZoomEnabled(it) },
+                                            text = if (bubbleZoomEnabled) "On" else "Off"
                                         )
                                     }
                                 }

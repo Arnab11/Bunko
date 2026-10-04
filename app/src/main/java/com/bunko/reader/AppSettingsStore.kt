@@ -127,7 +127,9 @@ data class ReaderSettings(
     val volumeKeysNavigation: Boolean = false,
     val ttsSpeechRate: Float = 1f,
     val ttsEnabled: Boolean = false,
-    val drawUnderCutout: Boolean = true
+    val drawUnderCutout: Boolean = true,
+    val bubbleZoomEnabled: Boolean = true,
+    val bubbleZoomScale: Float = 1.4f
 ) {
     val rightToLeft: Boolean
         get() = readingDirection == ReaderReadingDirection.RightToLeft
@@ -185,6 +187,8 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_READER_DRAW_UNDER_CUTOUT = booleanPreferencesKey("reader_draw_under_cutout")
     private val KEY_READER_TTS_ENABLED = booleanPreferencesKey("reader_tts_enabled")
     private val KEY_TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
+    private val KEY_READER_BUBBLE_ZOOM_ENABLED = booleanPreferencesKey("reader_bubble_zoom_enabled")
+    private val KEY_READER_BUBBLE_ZOOM_SCALE = floatPreferencesKey("reader_bubble_zoom_scale")
     private val KEY_GRID_COVER_SIZE_DP = intPreferencesKey("grid_cover_size_dp")
     private val KEY_LIST_COVER_SIZE_DP = intPreferencesKey("list_cover_size_dp")
 
@@ -255,7 +259,9 @@ class AppSettingsStore(private val context: Context) {
                 volumeKeysNavigation = prefs[KEY_READER_VOLUME_KEYS_NAVIGATION] ?: false,
                 ttsSpeechRate = (prefs[KEY_TTS_SPEECH_RATE] ?: 1f).coerceIn(0.25f, 3f),
                 ttsEnabled = prefs[KEY_READER_TTS_ENABLED] ?: false,
-                drawUnderCutout = prefs[KEY_READER_DRAW_UNDER_CUTOUT] ?: true
+                drawUnderCutout = prefs[KEY_READER_DRAW_UNDER_CUTOUT] ?: true,
+                bubbleZoomEnabled = prefs[KEY_READER_BUBBLE_ZOOM_ENABLED] ?: true,
+                bubbleZoomScale = (prefs[KEY_READER_BUBBLE_ZOOM_SCALE] ?: 1.4f).coerceIn(1.2f, 2.5f)
             )
         )
     }
@@ -380,6 +386,14 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setTtsSpeechRate(value: Float) {
         context.settingsDataStore.edit { it[KEY_TTS_SPEECH_RATE] = value.coerceIn(0.25f, 3f) }
+    }
+
+    suspend fun setBubbleZoomEnabled(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_READER_BUBBLE_ZOOM_ENABLED] = value }
+    }
+
+    suspend fun setBubbleZoomScale(value: Float) {
+        context.settingsDataStore.edit { it[KEY_READER_BUBBLE_ZOOM_SCALE] = value.coerceIn(1.2f, 2.5f) }
     }
 
     suspend fun setAppTheme(value: com.bunko.reader.ui.theme.AppTheme) {
