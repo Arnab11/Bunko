@@ -2598,10 +2598,10 @@ fun ReaderScreen(
             settings.reader.pageTurnMode == PageTurnMode.PlayCurl &&
                 settings.reader.pageTransitionAnimation &&
                 !portrait &&
-                // The PlayLikeCurl spread renderer addresses two half-width viewports,
-                // so spreads only run on landscape viewports; a forced two-page layout
-                // on a portrait screen falls back to Slide (same as centred singles).
-                viewportWidthPx > viewportHeightPx &&
+                // Same gate as the Curl spread path: the spread renderer simply splits
+                // the viewport into two halves, so a forced two-page layout on a
+                // portrait screen curls its (narrow) halves instead of falling back
+                // to Slide.
                 // A wide page is one sheet printed across the whole spread, so it turns as
                 // a full-width leaf with the fold at the centre. Other landscape singles
                 // (cover, chapter end, the page displayed alone next to a wide one) sit
@@ -3563,7 +3563,16 @@ fun ReaderScreen(
                         epubFontSizeSp = epubFontSizeSp,
                         epubFontFamily = settings.reader.epubFontFamily,
                         epubTextAlign = settings.reader.epubTextAlign,
-                        epubContentPadding = portraitPadding,
+                        // Landscape halves split the padding into outer/inner spine margins
+                        // exactly like the Slide path's landscapeLeft/RightPadding, so keep
+                        // the same outer margin on both sides here and let the deck's glue
+                        // logic derive the inner one.
+                        epubContentPadding = if (usePortraitPlayCurl) portraitPadding else PaddingValues(
+                            start = landscapeOuterMargin,
+                            top = safeTopPadding,
+                            end = landscapeOuterMargin,
+                            bottom = safeBottomPadding
+                        ),
                         density = density,
                         isEpub = isEpub,
                         epubSubpages = epubSubpages,

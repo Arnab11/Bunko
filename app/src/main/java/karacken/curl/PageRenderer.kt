@@ -392,7 +392,11 @@ class PageRenderer(
             GLES20.glUniform1i(overlayTextureUniform, 1)
             GLES20.glUniform1i(backTextureUniform, 2)
 
-            if (landscapeSpreadModel != null && viewportWidth > viewportHeight) {
+            // A landscape spread deck draws on any viewport aspect: each half leaf
+            // sizes its frustum and mesh from its own dimensions, so forced two-page
+            // spreads on portrait screens curl their (narrow) halves instead of
+            // clearing to blank paper.
+            if (landscapeSpreadModel != null) {
                 drawLandscapeSpread()
             } else if (portraitModel != null) {
                 drawPortraitPage()

@@ -544,15 +544,27 @@ private data class PlayCurlSheet(
         rightBitmap.setHasAlpha(false)
         val boundedLeft = leftIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
         val boundedRight = rightIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+        // The halves of one sheet must never share a logical id, even when they show
+        // the same source page (a centered wide/cover/lone single split at the spine):
+        // identical ids collapse to one texture in the GL cache, so both leaves would
+        // sample the left half — duplicated art with a paper bar at the spine.
+        // Ordinals stay the source page index so turn settlement mapping is unchanged.
         return PageImage(
-            generationId, "page-$boundedLeft", boundedLeft,
+            generationId, playCurlHalfLogicalId(boundedLeft, PlayCurlHalf.Left), boundedLeft,
             leftBitmap.width, leftBitmap.height, leftBitmap
         ) to PageImage(
-            generationId, "page-$boundedRight", boundedRight,
+            generationId, playCurlHalfLogicalId(boundedRight, PlayCurlHalf.Right), boundedRight,
             rightBitmap.width, rightBitmap.height, rightBitmap
         )
     }
 }
+
+/**
+ * Distinct texture identity for one half of a landscape sheet. Pure function so the
+ * uniqueness contract is unit-testable without Android bitmaps.
+ */
+internal fun playCurlHalfLogicalId(pageIndex: Int, side: PlayCurlHalf): String =
+    "page-$pageIndex-${if (side == PlayCurlHalf.Left) "L" else "R"}"
 
 private suspend fun playCurlSingle(
     generationId: Long,
@@ -603,24 +615,29 @@ private suspend fun playCurlSpread(
         pageDimensions = pageDimensions,
         isEpub = style.isEpub
     )
-    val (leftIndex, rightIndex) = if (layout.singlePage) {
-        boundedAnchor to boundedAnchor
-    } else {
+    // An EPUB tail single is not a foldout: Slide/Curl glue the last subpage into the
+    // near half with blank paper opposite, so the book deck does the same instead of
+    // a centered full-width sheet. Every other single (cover, wide foldout, the lone
+    // page beside a wide one) stays a centered sheet split at the spine.
+    val epubTailSingle = layout.singlePage && style.isEpub && !pageDimensions.pageIsWide(boundedAnchor)
+    val (leftIndex, rightIndex) = if (!layout.singlePage || epubTailSingle) {
         val spread = spreadPagesFor(boundedAnchor, rightToLeft)
         spread.leftPage to spread.rightPage
+    } else {
+        boundedAnchor to boundedAnchor
     }
     val bitmap = renderPlayCurlSheet(
         context = context,
         width = viewW,
         height = viewH,
         leftIndex = leftIndex,
-        rightIndex = if (layout.singlePage) null else rightIndex,
+        rightIndex = if (layout.singlePage && !epubTailSingle) null else rightIndex,
         style = style,
         pageModel = pageModel,
         imageLoader = imageLoader,
         invertDecisionCache = invertDecisionCache
     )
-    return PlayCurlSheet(bitmap, leftIndex, rightIndex, layout.singlePage)
+    return PlayCurlSheet(bitmap, leftIndex, rightIndex, layout.singlePage && !epubTailSingle)
 }
 
 /**
