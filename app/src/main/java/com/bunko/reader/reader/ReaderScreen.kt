@@ -4188,11 +4188,22 @@ fun ReaderScreen(
             )
         }
 
-        // Top reading header bar: book title (only for text-based formats)
-        if (!isOverviewActive && isEpub) {
+        // Effective background under the status bars: EPUB uses the chosen paper theme;
+        // comic books, manga, and PDFs are printed on white paper unless inverted.
+        val statusBarBgColor = if (isEpub) {
+            readerPageBackground
+        } else if (invertMode != InvertMode.Off) {
+            Color.Black
+        } else {
+            Color.White
+        }
+
+        // Top reading header bar: time on the left, book title in center (for text-based formats)
+        if (!isOverviewActive) {
             ReaderTopHeaderBar(
-                bookTitle = seriesName.ifBlank { currentChapter.displayName },
-                pageBackground = readerPageBackground,
+                bookTitle = if (isEpub) seriesName.ifBlank { currentChapter.displayName } else "",
+                pageBackground = statusBarBgColor,
+                isEpub = isEpub,
                 visible = !showReaderMenu && readerReady && error == null && chapterBoundary == null,
                 headerHeight = 38.dp,
                 modifier = Modifier.align(Alignment.TopCenter)
@@ -4204,7 +4215,8 @@ fun ReaderScreen(
             ReaderBottomStatusBar(
                 currentPage = page,
                 totalPages = pages,
-                pageBackground = readerPageBackground,
+                pageBackground = statusBarBgColor,
+                isEpub = isEpub,
                 visible = !showReaderMenu && readerReady && error == null && chapterBoundary == null,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )

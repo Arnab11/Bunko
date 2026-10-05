@@ -8,6 +8,7 @@ import android.os.BatteryManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
@@ -143,6 +145,33 @@ internal fun BatteryIcon(
     )
 }
 
+private val MintPaperColor = Color(0xFFE5F3EA)
+
+@Composable
+private fun StatusPill(
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    if (enabled) {
+        Box(
+            modifier = modifier
+                .background(
+                    color = Color(0x99000000),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .padding(horizontal = 8.dp, vertical = 2.5.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
+    } else {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            content()
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderBottomStatusBar(
@@ -150,6 +179,7 @@ internal fun ReaderBottomStatusBar(
     totalPages: Int,
     pageBackground: Color,
     visible: Boolean,
+    isEpub: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val batteryState = rememberBatteryState()
@@ -158,22 +188,33 @@ internal fun ReaderBottomStatusBar(
     val progressPercent = ((displayPage.toFloat() / safePages) * 100).roundToInt()
 
     val isLightBg = pageBackground.luminance() > 0.5f
-    val isSepia = isLightBg && pageBackground != Color.White
-    val textColor = when {
-        isSepia -> Color(0x99423224)
-        isLightBg -> Color(0x99000000)
-        else -> Color(0x99FFFFFF)
+    val isMint = pageBackground == MintPaperColor
+    val isSepia = isLightBg && !isMint && pageBackground != Color.White
+    val textColor = if (isEpub) {
+        when {
+            isSepia -> Color(0x99423224)
+            isMint -> Color(0x9914251D)
+            isLightBg -> Color(0x99000000)
+            else -> Color(0x99FFFFFF)
+        }
+    } else {
+        Color(0xF2FFFFFF)
     }
-    val shadowColor = if (isLightBg) Color(0x33FFFFFF) else Color(0x55000000)
-
-    val style = TextStyle(
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Medium,
-        shadow = Shadow(
+    val shadow = if (isEpub) {
+        val shadowColor = if (isLightBg) Color(0x33FFFFFF) else Color(0x55000000)
+        Shadow(
             color = shadowColor,
             offset = Offset(0f, 1f),
             blurRadius = 2f
         )
+    } else {
+        null
+    }
+
+    val style = TextStyle(
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        shadow = shadow
     )
 
     AnimatedVisibility(
@@ -200,38 +241,75 @@ internal fun ReaderBottomStatusBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 1. Page in book / chapter
-                Text(
-                    text = "Page $displayPage of $safePages",
-                    color = textColor,
-                    style = style
-                )
-
-                // 2. Percentage completed
-                Text(
-                    text = "$progressPercent%",
-                    color = textColor,
-                    style = style
-                )
-
-                // 3. Battery percentage
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    BatteryIcon(
-                        batteryState = batteryState,
-                        tint = textColor,
-                        modifier = Modifier.size(13.dp)
-                    )
+                StatusPill(enabled = !isEpub) {
                     Text(
-                        text = "${batteryState.level}%",
+                        text = "Page $displayPage of $safePages",
                         color = textColor,
                         style = style
                     )
                 }
+
+                // 2. Percentage completed
+                StatusPill(enabled = !isEpub) {
+                    Text(
+                        text = "$progressPercent%",
+                        color = textColor,
+                        style = style
+                    )
+                }
+
+                // 3. Battery percentage
+                StatusPill(enabled = !isEpub) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        BatteryIcon(
+                            batteryState = batteryState,
+                            tint = textColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "${batteryState.level}%",
+                            color = textColor,
+                            style = style
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+internal fun rememberCurrentTime(): String {
+    val context = LocalContext.current
+    fun formatTime(): String {
+        return android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date())
+    }
+
+    var timeStr by remember { mutableStateOf(formatTime()) }
+
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                timeStr = formatTime()
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_TIME_TICK)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        context.registerReceiver(receiver, filter)
+        onDispose {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (_: Throwable) {}
+        }
+    }
+
+    return timeStr
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -240,30 +318,48 @@ internal fun ReaderTopHeaderBar(
     bookTitle: String,
     pageBackground: Color,
     visible: Boolean,
-    headerHeight: Dp = 44.dp,
+    isEpub: Boolean = false,
+    headerHeight: Dp = 38.dp,
     modifier: Modifier = Modifier
 ) {
-    if (bookTitle.isBlank()) return
+    val currentTime = rememberCurrentTime()
 
     val isLightBg = pageBackground.luminance() > 0.5f
-    val isSepia = isLightBg && pageBackground != Color.White
-    val textColor = when {
-        isSepia -> Color(0x99423224)
-        isLightBg -> Color(0x99000000)
-        else -> Color(0x99FFFFFF)
+    val isMint = pageBackground == MintPaperColor
+    val isSepia = isLightBg && !isMint && pageBackground != Color.White
+    val textColor = if (isEpub) {
+        when {
+            isSepia -> Color(0x99423224)
+            isMint -> Color(0x9914251D)
+            isLightBg -> Color(0x99000000)
+            else -> Color(0x99FFFFFF)
+        }
+    } else {
+        Color(0xF2FFFFFF)
     }
-    val shadowColor = if (isLightBg) Color(0x33FFFFFF) else Color(0x55000000)
-
-    val style = TextStyle(
-        fontSize = 11.5.sp,
-        fontWeight = FontWeight.Normal,
-        letterSpacing = 0.2.sp,
-        textAlign = TextAlign.Center,
-        shadow = Shadow(
+    val shadow = if (isEpub) {
+        val shadowColor = if (isLightBg) Color(0x33FFFFFF) else Color(0x55000000)
+        Shadow(
             color = shadowColor,
             offset = Offset(0f, 1f),
             blurRadius = 2f
         )
+    } else {
+        null
+    }
+
+    val timeStyle = TextStyle(
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        shadow = shadow
+    )
+
+    val titleStyle = TextStyle(
+        fontSize = 11.5.sp,
+        fontWeight = FontWeight.Normal,
+        letterSpacing = 0.2.sp,
+        textAlign = TextAlign.Center,
+        shadow = shadow
     )
 
     AnimatedVisibility(
@@ -280,24 +376,42 @@ internal fun ReaderTopHeaderBar(
         val sideInsets = WindowInsets.navigationBarsIgnoringVisibility
             .union(WindowInsets.displayCutout)
             .asPaddingValues()
-        val startPadding = (sideInsets.calculateStartPadding(layoutDirection) + 32.dp).coerceAtLeast(32.dp)
-        val endPadding = (sideInsets.calculateEndPadding(layoutDirection) + 32.dp).coerceAtLeast(32.dp)
+        val startPadding = (sideInsets.calculateStartPadding(layoutDirection) + 24.dp).coerceAtLeast(24.dp)
+        val endPadding = (sideInsets.calculateEndPadding(layoutDirection) + 24.dp).coerceAtLeast(24.dp)
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = statusBarTop, start = startPadding, end = endPadding)
-                .height(headerHeight),
-            contentAlignment = Alignment.Center
+                .height(headerHeight)
         ) {
-            Text(
-                text = bookTitle,
-                color = textColor,
-                style = style,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            // 1. Time on top-left
+            StatusPill(
+                enabled = !isEpub,
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                Text(
+                    text = currentTime,
+                    color = textColor,
+                    style = timeStyle
+                )
+            }
+
+            // 2. Book Title in the center (when present, e.g. text/epub formats)
+            if (bookTitle.isNotBlank()) {
+                Text(
+                    text = bookTitle,
+                    color = textColor,
+                    style = titleStyle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 64.dp)
+                )
+            }
         }
     }
 }
+
 
