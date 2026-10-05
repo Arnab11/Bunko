@@ -1262,15 +1262,6 @@ fun ReaderSettingsScreen(
                         )
                         CategoryRowGap()
                         SwitchSettingRow(
-                            title = "Bubble Zoom (Play Books style)",
-                            subtitle = "Tap comic dialogue balloons to smoothly magnify speech bubbles",
-                            checked = settings.reader.bubbleZoomEnabled,
-                            onCheckedChange = { enabled ->
-                                scope.launch { settingsStore.setBubbleZoomEnabled(enabled) }
-                            }
-                        )
-                        CategoryRowGap()
-                        SwitchSettingRow(
                             title = "Show Content in Cutout Area",
                             subtitle = "Extend reader viewer into display cutout / notch / punch hole area",
                             checked = settings.reader.drawUnderCutout,

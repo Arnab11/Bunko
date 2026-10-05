@@ -54,7 +54,6 @@ internal fun ReaderTapLayer(
     onCloseDragEnd: (Boolean) -> Unit = {},
     onCloseDragCancel: () -> Unit = {},
     onDoubleTap: (Offset) -> Unit = {},
-    onTapIntercept: ((Offset) -> Boolean)? = null,
     onTransform: (Float, Offset, Offset) -> Unit = { _, _, _ -> },
     onTransformEnd: (velocityScale: Float) -> Unit = {}
 ) {
@@ -126,8 +125,7 @@ internal fun ReaderTapLayer(
                 onNextLongPress = {
                     if (!zoomPanEnabled) latestOnNextSingle()
                 },
-                onCenterDoubleTap = latestOnDoubleTap,
-                onTapIntercept = onTapIntercept
+                onCenterDoubleTap = latestOnDoubleTap
             )
     )
 }
@@ -219,8 +217,7 @@ private fun Modifier.readerGestures(
     onMoveRightLongPress: () -> Unit = {},
     onPrevLongPress: () -> Unit = {},
     onNextLongPress: () -> Unit = {},
-    onCenterDoubleTap: (Offset) -> Unit = {},
-    onTapIntercept: ((Offset) -> Boolean)? = null
+    onCenterDoubleTap: (Offset) -> Unit = {}
 ): Modifier {
     val latestRightToLeft by rememberUpdatedState(rightToLeft)
     val latestTurnVisualDistancePx by rememberUpdatedState(turnVisualDistancePx)
@@ -252,7 +249,6 @@ private fun Modifier.readerGestures(
     val latestOnPrevLongPress by rememberUpdatedState(onPrevLongPress)
     val latestOnNextLongPress by rememberUpdatedState(onNextLongPress)
     val latestOnCenterDoubleTap by rememberUpdatedState(onCenterDoubleTap)
-    val latestOnTapIntercept by rememberUpdatedState(onTapIntercept)
     // Keep the pointerInput key stable; volatile gesture state is read through rememberUpdatedState to avoid restarting mid-swipe.
     return pointerInput(Unit) {
         var totalDragX = 0f
@@ -328,10 +324,6 @@ private fun Modifier.readerGestures(
         }
 
         fun handleTap(position: Offset, uptimeMillis: Long) {
-            if (latestOnTapIntercept?.invoke(position) == true) {
-                flushPendingCenterTap()
-                return
-            }
             when (resolveTapAction(position, size, latestNavigationMode, latestTappingInvertMode)) {
                 ReaderTapAction.MoveLeft -> {
                     flushPendingCenterTap()
