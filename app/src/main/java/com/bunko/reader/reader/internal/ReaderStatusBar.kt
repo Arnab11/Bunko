@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import com.bunko.reader.ReaderItemPosition
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -147,6 +148,12 @@ internal fun BatteryIcon(
 
 private val MintPaperColor = Color(0xFFE5F3EA)
 
+internal fun ReaderItemPosition.isTop(): Boolean =
+    this == ReaderItemPosition.TopLeft || this == ReaderItemPosition.TopCenter || this == ReaderItemPosition.TopRight
+
+internal fun ReaderItemPosition.isBottom(): Boolean =
+    this == ReaderItemPosition.BottomLeft || this == ReaderItemPosition.BottomCenter || this == ReaderItemPosition.BottomRight
+
 @Composable
 private fun StatusPill(
     enabled: Boolean,
@@ -172,6 +179,115 @@ private fun StatusPill(
     }
 }
 
+@Composable
+private fun ReaderSlotItems(
+    slot: ReaderItemPosition,
+    timePosition: ReaderItemPosition,
+    titlePosition: ReaderItemPosition,
+    pageNumberPosition: ReaderItemPosition,
+    progressPercentPosition: ReaderItemPosition,
+    batteryPosition: ReaderItemPosition,
+    currentTime: String,
+    bookTitle: String,
+    displayPage: Int,
+    safePages: Int,
+    progressPercent: Int,
+    batteryState: BatteryState,
+    textColor: Color,
+    style: TextStyle,
+    isEpub: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val items = mutableListOf<@Composable () -> Unit>()
+
+    // Current Time
+    if (timePosition == slot) {
+        items.add {
+            StatusPill(enabled = !isEpub) {
+                Text(
+                    text = currentTime,
+                    color = textColor,
+                    style = style
+                )
+            }
+        }
+    }
+
+    // Book Title (only when non-blank)
+    if (titlePosition == slot && bookTitle.isNotBlank()) {
+        items.add {
+            StatusPill(enabled = !isEpub) {
+                Text(
+                    text = bookTitle,
+                    color = textColor,
+                    style = style,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+
+    // Page Number
+    if (pageNumberPosition == slot) {
+        items.add {
+            StatusPill(enabled = !isEpub) {
+                Text(
+                    text = "Page $displayPage of $safePages",
+                    color = textColor,
+                    style = style
+                )
+            }
+        }
+    }
+
+    // Reading Progress %
+    if (progressPercentPosition == slot) {
+        items.add {
+            StatusPill(enabled = !isEpub) {
+                Text(
+                    text = "$progressPercent%",
+                    color = textColor,
+                    style = style
+                )
+            }
+        }
+    }
+
+    // Battery
+    if (batteryPosition == slot) {
+        items.add {
+            StatusPill(enabled = !isEpub) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    BatteryIcon(
+                        batteryState = batteryState,
+                        tint = textColor,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "${batteryState.level}%",
+                        color = textColor,
+                        style = style
+                    )
+                }
+            }
+        }
+    }
+
+    if (items.isNotEmpty()) {
+        Row(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items.forEach { it() }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderBottomStatusBar(
@@ -180,9 +296,24 @@ internal fun ReaderBottomStatusBar(
     pageBackground: Color,
     visible: Boolean,
     isEpub: Boolean = false,
+    bookTitle: String = "",
+    timePosition: ReaderItemPosition = ReaderItemPosition.TopLeft,
+    titlePosition: ReaderItemPosition = ReaderItemPosition.TopCenter,
+    pageNumberPosition: ReaderItemPosition = ReaderItemPosition.BottomLeft,
+    progressPercentPosition: ReaderItemPosition = ReaderItemPosition.BottomCenter,
+    batteryPosition: ReaderItemPosition = ReaderItemPosition.BottomRight,
     modifier: Modifier = Modifier
 ) {
+    val hasBottomItems = timePosition.isBottom() ||
+        (titlePosition.isBottom() && bookTitle.isNotBlank()) ||
+        pageNumberPosition.isBottom() ||
+        progressPercentPosition.isBottom() ||
+        batteryPosition.isBottom()
+
+    if (!hasBottomItems) return
+
     val batteryState = rememberBatteryState()
+    val currentTime = rememberCurrentTime()
     val safePages = totalPages.coerceAtLeast(1)
     val displayPage = (currentPage + 1).coerceIn(1, safePages)
     val progressPercent = ((displayPage.toFloat() / safePages) * 100).roundToInt()
@@ -235,48 +366,67 @@ internal fun ReaderBottomStatusBar(
                 .fillMaxWidth()
                 .padding(bottom = bottomInset, start = startInset, end = endInset)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 1. Page in book / chapter
-                StatusPill(enabled = !isEpub) {
-                    Text(
-                        text = "Page $displayPage of $safePages",
-                        color = textColor,
-                        style = style
-                    )
-                }
+            // Start (Bottom Left)
+            ReaderSlotItems(
+                slot = ReaderItemPosition.BottomLeft,
+                timePosition = timePosition,
+                titlePosition = titlePosition,
+                pageNumberPosition = pageNumberPosition,
+                progressPercentPosition = progressPercentPosition,
+                batteryPosition = batteryPosition,
+                currentTime = currentTime,
+                bookTitle = bookTitle,
+                displayPage = displayPage,
+                safePages = safePages,
+                progressPercent = progressPercent,
+                batteryState = batteryState,
+                textColor = textColor,
+                style = style,
+                isEpub = isEpub,
+                modifier = Modifier.align(Alignment.CenterStart)
+            )
 
-                // 2. Percentage completed
-                StatusPill(enabled = !isEpub) {
-                    Text(
-                        text = "$progressPercent%",
-                        color = textColor,
-                        style = style
-                    )
-                }
+            // Center (Bottom Center)
+            ReaderSlotItems(
+                slot = ReaderItemPosition.BottomCenter,
+                timePosition = timePosition,
+                titlePosition = titlePosition,
+                pageNumberPosition = pageNumberPosition,
+                progressPercentPosition = progressPercentPosition,
+                batteryPosition = batteryPosition,
+                currentTime = currentTime,
+                bookTitle = bookTitle,
+                displayPage = displayPage,
+                safePages = safePages,
+                progressPercent = progressPercent,
+                batteryState = batteryState,
+                textColor = textColor,
+                style = style,
+                isEpub = isEpub,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 48.dp)
+            )
 
-                // 3. Battery percentage
-                StatusPill(enabled = !isEpub) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        BatteryIcon(
-                            batteryState = batteryState,
-                            tint = textColor,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = "${batteryState.level}%",
-                            color = textColor,
-                            style = style
-                        )
-                    }
-                }
-            }
+            // End (Bottom Right)
+            ReaderSlotItems(
+                slot = ReaderItemPosition.BottomRight,
+                timePosition = timePosition,
+                titlePosition = titlePosition,
+                pageNumberPosition = pageNumberPosition,
+                progressPercentPosition = progressPercentPosition,
+                batteryPosition = batteryPosition,
+                currentTime = currentTime,
+                bookTitle = bookTitle,
+                displayPage = displayPage,
+                safePages = safePages,
+                progressPercent = progressPercent,
+                batteryState = batteryState,
+                textColor = textColor,
+                style = style,
+                isEpub = isEpub,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
         }
     }
 }
@@ -319,10 +469,29 @@ internal fun ReaderTopHeaderBar(
     pageBackground: Color,
     visible: Boolean,
     isEpub: Boolean = false,
+    timePosition: ReaderItemPosition = ReaderItemPosition.TopLeft,
+    titlePosition: ReaderItemPosition = ReaderItemPosition.TopCenter,
+    pageNumberPosition: ReaderItemPosition = ReaderItemPosition.BottomLeft,
+    progressPercentPosition: ReaderItemPosition = ReaderItemPosition.BottomCenter,
+    batteryPosition: ReaderItemPosition = ReaderItemPosition.BottomRight,
+    currentPage: Int = 0,
+    totalPages: Int = 1,
     headerHeight: Dp = 38.dp,
     modifier: Modifier = Modifier
 ) {
+    val hasTopItems = timePosition.isTop() ||
+        (titlePosition.isTop() && bookTitle.isNotBlank()) ||
+        pageNumberPosition.isTop() ||
+        progressPercentPosition.isTop() ||
+        batteryPosition.isTop()
+
+    if (!hasTopItems) return
+
     val currentTime = rememberCurrentTime()
+    val batteryState = rememberBatteryState()
+    val safePages = totalPages.coerceAtLeast(1)
+    val displayPage = (currentPage + 1).coerceIn(1, safePages)
+    val progressPercent = ((displayPage.toFloat() / safePages) * 100).roundToInt()
 
     val isLightBg = pageBackground.luminance() > 0.5f
     val isMint = pageBackground == MintPaperColor
@@ -385,31 +554,67 @@ internal fun ReaderTopHeaderBar(
                 .padding(top = statusBarTop, start = startPadding, end = endPadding)
                 .height(headerHeight)
         ) {
-            // 1. Time on top-left
-            StatusPill(
-                enabled = !isEpub,
+            // Start (Top Left)
+            ReaderSlotItems(
+                slot = ReaderItemPosition.TopLeft,
+                timePosition = timePosition,
+                titlePosition = titlePosition,
+                pageNumberPosition = pageNumberPosition,
+                progressPercentPosition = progressPercentPosition,
+                batteryPosition = batteryPosition,
+                currentTime = currentTime,
+                bookTitle = bookTitle,
+                displayPage = displayPage,
+                safePages = safePages,
+                progressPercent = progressPercent,
+                batteryState = batteryState,
+                textColor = textColor,
+                style = timeStyle,
+                isEpub = isEpub,
                 modifier = Modifier.align(Alignment.CenterStart)
-            ) {
-                Text(
-                    text = currentTime,
-                    color = textColor,
-                    style = timeStyle
-                )
-            }
+            )
 
-            // 2. Book Title in the center (when present, e.g. text/epub formats)
-            if (bookTitle.isNotBlank()) {
-                Text(
-                    text = bookTitle,
-                    color = textColor,
-                    style = titleStyle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 64.dp)
-                )
-            }
+            // Center (Top Center)
+            ReaderSlotItems(
+                slot = ReaderItemPosition.TopCenter,
+                timePosition = timePosition,
+                titlePosition = titlePosition,
+                pageNumberPosition = pageNumberPosition,
+                progressPercentPosition = progressPercentPosition,
+                batteryPosition = batteryPosition,
+                currentTime = currentTime,
+                bookTitle = bookTitle,
+                displayPage = displayPage,
+                safePages = safePages,
+                progressPercent = progressPercent,
+                batteryState = batteryState,
+                textColor = textColor,
+                style = titleStyle,
+                isEpub = isEpub,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 48.dp)
+            )
+
+            // End (Top Right)
+            ReaderSlotItems(
+                slot = ReaderItemPosition.TopRight,
+                timePosition = timePosition,
+                titlePosition = titlePosition,
+                pageNumberPosition = pageNumberPosition,
+                progressPercentPosition = progressPercentPosition,
+                batteryPosition = batteryPosition,
+                currentTime = currentTime,
+                bookTitle = bookTitle,
+                displayPage = displayPage,
+                safePages = safePages,
+                progressPercent = progressPercent,
+                batteryState = batteryState,
+                textColor = textColor,
+                style = timeStyle,
+                isEpub = isEpub,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
         }
     }
 }

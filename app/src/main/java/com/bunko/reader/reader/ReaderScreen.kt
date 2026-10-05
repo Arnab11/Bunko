@@ -4198,26 +4198,39 @@ fun ReaderScreen(
             Color.White
         }
 
-        // Top reading header bar: time on the left, book title in center (for text-based formats)
+        // Top reading header bar: configurable slots (TopLeft, TopCenter, TopRight)
         if (!isOverviewActive) {
             ReaderTopHeaderBar(
-                bookTitle = if (isEpub) seriesName.ifBlank { currentChapter.displayName } else "",
+                bookTitle = seriesName.ifBlank { currentChapter.displayName },
                 pageBackground = statusBarBgColor,
                 isEpub = isEpub,
-                visible = !showReaderMenu && readerReady && error == null && chapterBoundary == null,
+                timePosition = settings.reader.timePosition,
+                titlePosition = settings.reader.titlePosition,
+                pageNumberPosition = settings.reader.pageNumberPosition,
+                progressPercentPosition = settings.reader.progressPercentPosition,
+                batteryPosition = settings.reader.batteryPosition,
+                currentPage = page,
+                totalPages = pages,
+                visible = settings.reader.showStatusBar && !showReaderMenu && readerReady && error == null && chapterBoundary == null,
                 headerHeight = 38.dp,
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }
 
-        // Bottom reading status bar: page in chapter, percentage completed, battery percentage
+        // Bottom reading status bar: configurable slots (BottomLeft, BottomCenter, BottomRight)
         if (!isOverviewActive) {
             ReaderBottomStatusBar(
                 currentPage = page,
                 totalPages = pages,
                 pageBackground = statusBarBgColor,
                 isEpub = isEpub,
-                visible = !showReaderMenu && readerReady && error == null && chapterBoundary == null,
+                bookTitle = seriesName.ifBlank { currentChapter.displayName },
+                timePosition = settings.reader.timePosition,
+                titlePosition = settings.reader.titlePosition,
+                pageNumberPosition = settings.reader.pageNumberPosition,
+                progressPercentPosition = settings.reader.progressPercentPosition,
+                batteryPosition = settings.reader.batteryPosition,
+                visible = settings.reader.showStatusBar && !showReaderMenu && readerReady && error == null && chapterBoundary == null,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -4433,6 +4446,18 @@ fun ReaderScreen(
                     drawUnderCutout = enabled
                     scope.launch { settingsStore.setDrawUnderCutout(enabled) }
                 },
+                showStatusBar = settings.reader.showStatusBar,
+                onSetShowStatusBar = { enabled -> scope.launch { settingsStore.setShowStatusBar(enabled) } },
+                timePosition = settings.reader.timePosition,
+                onSetTimePosition = { pos -> scope.launch { settingsStore.setReaderTimePosition(pos) } },
+                titlePosition = settings.reader.titlePosition,
+                onSetTitlePosition = { pos -> scope.launch { settingsStore.setReaderTitlePosition(pos) } },
+                pageNumberPosition = settings.reader.pageNumberPosition,
+                onSetPageNumberPosition = { pos -> scope.launch { settingsStore.setReaderPageNumberPosition(pos) } },
+                progressPercentPosition = settings.reader.progressPercentPosition,
+                onSetProgressPercentPosition = { pos -> scope.launch { settingsStore.setReaderProgressPercentPosition(pos) } },
+                batteryPosition = settings.reader.batteryPosition,
+                onSetBatteryPosition = { pos -> scope.launch { settingsStore.setReaderBatteryPosition(pos) } },
                 // Fall back to the current chapter so the list is never empty
                 // (e.g. offline opens where the volumes call failed).
                 chapters = chapterSequence.ifEmpty { listOf(currentChapter) },

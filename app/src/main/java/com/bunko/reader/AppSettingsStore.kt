@@ -98,6 +98,16 @@ enum class NavigationBarStyle(
 internal const val DefaultReaderPrefetchTurns = 4
 internal const val MaxReaderPrefetchTurns = 8
 
+enum class ReaderItemPosition(val label: String) {
+    TopLeft("Top Left"),
+    TopCenter("Top Center"),
+    TopRight("Top Right"),
+    BottomLeft("Bottom Left"),
+    BottomCenter("Bottom Center"),
+    BottomRight("Bottom Right"),
+    Hidden("Hidden")
+}
+
 data class ReaderSettings(
     val readingDirection: ReaderReadingDirection = ReaderReadingDirection.LeftToRight,
     val pageLayoutMode: PageLayoutMode = PageLayoutMode.Auto,
@@ -127,7 +137,13 @@ data class ReaderSettings(
     val volumeKeysNavigation: Boolean = false,
     val ttsSpeechRate: Float = 1f,
     val ttsEnabled: Boolean = false,
-    val drawUnderCutout: Boolean = true
+    val drawUnderCutout: Boolean = true,
+    val showStatusBar: Boolean = true,
+    val timePosition: ReaderItemPosition = ReaderItemPosition.TopLeft,
+    val titlePosition: ReaderItemPosition = ReaderItemPosition.TopCenter,
+    val pageNumberPosition: ReaderItemPosition = ReaderItemPosition.BottomLeft,
+    val progressPercentPosition: ReaderItemPosition = ReaderItemPosition.BottomCenter,
+    val batteryPosition: ReaderItemPosition = ReaderItemPosition.BottomRight
 ) {
     val rightToLeft: Boolean
         get() = readingDirection == ReaderReadingDirection.RightToLeft
@@ -183,8 +199,14 @@ class AppSettingsStore(private val context: Context) {
     private val KEY_READER_OVERVIEW_MODE = booleanPreferencesKey("reader_overview_mode")
     private val KEY_READER_VOLUME_KEYS_NAVIGATION = booleanPreferencesKey("reader_volume_keys_navigation")
     private val KEY_READER_DRAW_UNDER_CUTOUT = booleanPreferencesKey("reader_draw_under_cutout")
+    private val KEY_READER_SHOW_STATUS_BAR = booleanPreferencesKey("reader_show_status_bar")
     private val KEY_READER_TTS_ENABLED = booleanPreferencesKey("reader_tts_enabled")
     private val KEY_TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
+    private val KEY_READER_TIME_POSITION = stringPreferencesKey("reader_time_position")
+    private val KEY_READER_TITLE_POSITION = stringPreferencesKey("reader_title_position")
+    private val KEY_READER_PAGE_NUMBER_POSITION = stringPreferencesKey("reader_page_number_position")
+    private val KEY_READER_PROGRESS_PERCENT_POSITION = stringPreferencesKey("reader_progress_percent_position")
+    private val KEY_READER_BATTERY_POSITION = stringPreferencesKey("reader_battery_position")
     private val KEY_GRID_COVER_SIZE_DP = intPreferencesKey("grid_cover_size_dp")
     private val KEY_LIST_COVER_SIZE_DP = intPreferencesKey("list_cover_size_dp")
 
@@ -255,7 +277,23 @@ class AppSettingsStore(private val context: Context) {
                 volumeKeysNavigation = prefs[KEY_READER_VOLUME_KEYS_NAVIGATION] ?: false,
                 ttsSpeechRate = (prefs[KEY_TTS_SPEECH_RATE] ?: 1f).coerceIn(0.25f, 3f),
                 ttsEnabled = prefs[KEY_READER_TTS_ENABLED] ?: false,
-                drawUnderCutout = prefs[KEY_READER_DRAW_UNDER_CUTOUT] ?: true
+                drawUnderCutout = prefs[KEY_READER_DRAW_UNDER_CUTOUT] ?: true,
+                showStatusBar = prefs[KEY_READER_SHOW_STATUS_BAR] ?: true,
+                timePosition = prefs[KEY_READER_TIME_POSITION]?.let {
+                    runCatching { ReaderItemPosition.valueOf(it) }.getOrNull()
+                } ?: ReaderItemPosition.TopLeft,
+                titlePosition = prefs[KEY_READER_TITLE_POSITION]?.let {
+                    runCatching { ReaderItemPosition.valueOf(it) }.getOrNull()
+                } ?: ReaderItemPosition.TopCenter,
+                pageNumberPosition = prefs[KEY_READER_PAGE_NUMBER_POSITION]?.let {
+                    runCatching { ReaderItemPosition.valueOf(it) }.getOrNull()
+                } ?: ReaderItemPosition.BottomLeft,
+                progressPercentPosition = prefs[KEY_READER_PROGRESS_PERCENT_POSITION]?.let {
+                    runCatching { ReaderItemPosition.valueOf(it) }.getOrNull()
+                } ?: ReaderItemPosition.BottomCenter,
+                batteryPosition = prefs[KEY_READER_BATTERY_POSITION]?.let {
+                    runCatching { ReaderItemPosition.valueOf(it) }.getOrNull()
+                } ?: ReaderItemPosition.BottomRight
             )
         )
     }
@@ -380,6 +418,30 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun setTtsSpeechRate(value: Float) {
         context.settingsDataStore.edit { it[KEY_TTS_SPEECH_RATE] = value.coerceIn(0.25f, 3f) }
+    }
+
+    suspend fun setShowStatusBar(value: Boolean) {
+        context.settingsDataStore.edit { it[KEY_READER_SHOW_STATUS_BAR] = value }
+    }
+
+    suspend fun setReaderTimePosition(value: ReaderItemPosition) {
+        context.settingsDataStore.edit { it[KEY_READER_TIME_POSITION] = value.name }
+    }
+
+    suspend fun setReaderTitlePosition(value: ReaderItemPosition) {
+        context.settingsDataStore.edit { it[KEY_READER_TITLE_POSITION] = value.name }
+    }
+
+    suspend fun setReaderPageNumberPosition(value: ReaderItemPosition) {
+        context.settingsDataStore.edit { it[KEY_READER_PAGE_NUMBER_POSITION] = value.name }
+    }
+
+    suspend fun setReaderProgressPercentPosition(value: ReaderItemPosition) {
+        context.settingsDataStore.edit { it[KEY_READER_PROGRESS_PERCENT_POSITION] = value.name }
+    }
+
+    suspend fun setReaderBatteryPosition(value: ReaderItemPosition) {
+        context.settingsDataStore.edit { it[KEY_READER_BATTERY_POSITION] = value.name }
     }
 
     suspend fun setAppTheme(value: com.bunko.reader.ui.theme.AppTheme) {

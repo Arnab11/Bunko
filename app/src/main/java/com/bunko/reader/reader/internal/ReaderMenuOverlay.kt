@@ -223,7 +223,19 @@ internal fun ReaderMenuOverlay(
     onToggleTts: (() -> Unit)? = null,
     onSetTtsRate: ((Float) -> Unit)? = null,
     drawUnderCutout: Boolean = true,
-    onSetDrawUnderCutout: (Boolean) -> Unit = {}
+    onSetDrawUnderCutout: (Boolean) -> Unit = {},
+    showStatusBar: Boolean = true,
+    onSetShowStatusBar: ((Boolean) -> Unit)? = null,
+    timePosition: com.bunko.reader.ReaderItemPosition = com.bunko.reader.ReaderItemPosition.TopLeft,
+    onSetTimePosition: ((com.bunko.reader.ReaderItemPosition) -> Unit)? = null,
+    titlePosition: com.bunko.reader.ReaderItemPosition = com.bunko.reader.ReaderItemPosition.TopCenter,
+    onSetTitlePosition: ((com.bunko.reader.ReaderItemPosition) -> Unit)? = null,
+    pageNumberPosition: com.bunko.reader.ReaderItemPosition = com.bunko.reader.ReaderItemPosition.BottomLeft,
+    onSetPageNumberPosition: ((com.bunko.reader.ReaderItemPosition) -> Unit)? = null,
+    progressPercentPosition: com.bunko.reader.ReaderItemPosition = com.bunko.reader.ReaderItemPosition.BottomCenter,
+    onSetProgressPercentPosition: ((com.bunko.reader.ReaderItemPosition) -> Unit)? = null,
+    batteryPosition: com.bunko.reader.ReaderItemPosition = com.bunko.reader.ReaderItemPosition.BottomRight,
+    onSetBatteryPosition: ((com.bunko.reader.ReaderItemPosition) -> Unit)? = null
 ) {
     val rightToLeft = readingDirection == ReaderReadingDirection.RightToLeft
     val safePageCount = pages.coerceAtLeast(1)
@@ -1162,6 +1174,78 @@ internal fun ReaderMenuOverlay(
                                                         )
                                                     }
                                                 }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Status Bar & Header Items
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Show status & header bars",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = unselectedText
+                                            )
+                                        }
+                                        DialogToggleButton(
+                                            checked = showStatusBar,
+                                            onCheckedChange = { onSetShowStatusBar?.invoke(it) },
+                                            text = if (showStatusBar) "On" else "Off"
+                                        )
+                                    }
+
+                                    if (showStatusBar) {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            onSetTimePosition?.let { onSet ->
+                                                com.bunko.reader.ReaderItemPositionSettingRow(
+                                                    title = "Current Time",
+                                                    subtitle = "Live system clock",
+                                                    currentPosition = timePosition,
+                                                    onPositionSelected = onSet
+                                                )
+                                            }
+                                            if (isEpub) {
+                                                onSetTitlePosition?.let { onSet ->
+                                                    com.bunko.reader.ReaderItemPositionSettingRow(
+                                                        title = "Book / Chapter Title",
+                                                        subtitle = "Title display",
+                                                        currentPosition = titlePosition,
+                                                        onPositionSelected = onSet
+                                                    )
+                                                }
+                                            }
+                                            onSetPageNumberPosition?.let { onSet ->
+                                                com.bunko.reader.ReaderItemPositionSettingRow(
+                                                    title = "Page Number",
+                                                    subtitle = "Current / total pages",
+                                                    currentPosition = pageNumberPosition,
+                                                    onPositionSelected = onSet
+                                                )
+                                            }
+                                            onSetProgressPercentPosition?.let { onSet ->
+                                                com.bunko.reader.ReaderItemPositionSettingRow(
+                                                    title = "Reading Progress",
+                                                    subtitle = "Progress percentage",
+                                                    currentPosition = progressPercentPosition,
+                                                    onPositionSelected = onSet
+                                                )
+                                            }
+                                            onSetBatteryPosition?.let { onSet ->
+                                                com.bunko.reader.ReaderItemPositionSettingRow(
+                                                    title = "Battery Indicator",
+                                                    subtitle = "Battery % and icon",
+                                                    currentPosition = batteryPosition,
+                                                    onPositionSelected = onSet
+                                                )
                                             }
                                         }
                                     }

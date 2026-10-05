@@ -1,6 +1,11 @@
 package com.bunko.reader
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,6 +67,8 @@ import com.bunko.reader.settings.RadioSettingRow
 import com.bunko.reader.settings.SettingsSectionCard
 import com.bunko.reader.settings.SwitchSettingRow
 import com.bunko.reader.ui.theme.themeToggleModifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
@@ -72,6 +79,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -1294,6 +1302,82 @@ fun ReaderSettingsScreen(
                     }
                 }
 
+                // Section 3d: Status Bar & Header Items
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Status Bar & Header Items",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    SettingsSectionCard {
+                        SwitchSettingRow(
+                            title = "Show Status & Header Bars",
+                            subtitle = "Display reading information such as clock, title, page numbers, and battery",
+                            checked = settings.reader.showStatusBar,
+                            onCheckedChange = { enabled ->
+                                scope.launch { settingsStore.setShowStatusBar(enabled) }
+                            }
+                        )
+
+                        AnimatedVisibility(
+                            visible = settings.reader.showStatusBar,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column {
+                                CategoryRowGap()
+                                ReaderItemPositionSettingRow(
+                                    title = "Current Time",
+                                    subtitle = "Live system clock display",
+                                    currentPosition = settings.reader.timePosition,
+                                    onPositionSelected = { pos ->
+                                        scope.launch { settingsStore.setReaderTimePosition(pos) }
+                                    }
+                                )
+                                CategoryRowGap()
+                                ReaderItemPositionSettingRow(
+                                    title = "Book / Chapter Title",
+                                    subtitle = "Title of the reading item (text formats)",
+                                    currentPosition = settings.reader.titlePosition,
+                                    onPositionSelected = { pos ->
+                                        scope.launch { settingsStore.setReaderTitlePosition(pos) }
+                                    }
+                                )
+                                CategoryRowGap()
+                                ReaderItemPositionSettingRow(
+                                    title = "Page Number",
+                                    subtitle = "Current page and total page count",
+                                    currentPosition = settings.reader.pageNumberPosition,
+                                    onPositionSelected = { pos ->
+                                        scope.launch { settingsStore.setReaderPageNumberPosition(pos) }
+                                    }
+                                )
+                                CategoryRowGap()
+                                ReaderItemPositionSettingRow(
+                                    title = "Reading Progress",
+                                    subtitle = "Percentage of reading completed",
+                                    currentPosition = settings.reader.progressPercentPosition,
+                                    onPositionSelected = { pos ->
+                                        scope.launch { settingsStore.setReaderProgressPercentPosition(pos) }
+                                    }
+                                )
+                                CategoryRowGap()
+                                ReaderItemPositionSettingRow(
+                                    title = "Battery Indicator",
+                                    subtitle = "Battery percentage and charging icon",
+                                    currentPosition = settings.reader.batteryPosition,
+                                    onPositionSelected = { pos ->
+                                        scope.launch { settingsStore.setReaderBatteryPosition(pos) }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Section 4: Page Margins & Background
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -1576,3 +1660,120 @@ private fun SettingRow(title: String, desc: String, checked: Boolean, onToggle: 
         )
     }
 }
+
+@Composable
+internal fun ReaderItemPositionSettingRow(
+    title: String,
+    subtitle: String,
+    currentPosition: ReaderItemPosition,
+    onPositionSelected: (ReaderItemPosition) -> Unit
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showDialog = true }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = if (currentPosition != ReaderItemPosition.Hidden) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            },
+            border = BorderStroke(
+                1.dp,
+                if (currentPosition != ReaderItemPosition.Hidden) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                }
+            )
+        ) {
+            Text(
+                text = currentPosition.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (currentPosition != ReaderItemPosition.Hidden) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            )
+        }
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(text = "Position for $title") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    ReaderItemPosition.entries.forEach { position ->
+                        val isSelected = currentPosition == position
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    onPositionSelected(position)
+                                    showDialog = false
+                                }
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                    else Color.Transparent
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = position.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+}
+
