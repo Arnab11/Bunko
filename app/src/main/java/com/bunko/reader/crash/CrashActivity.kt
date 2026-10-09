@@ -429,23 +429,23 @@ class CrashActivity : ComponentActivity() {
             authority: String = "${context.packageName}.provider"
         ) {
             val sharedLogsDir = File(context.cacheDir, "shared_logs").apply { mkdirs() }
-            val logName = "${file.nameWithoutExtension}.log"
-            val logFile = File(sharedLogsDir, logName)
-            file.copyTo(logFile, overwrite = true)
+            val reportName = "${file.nameWithoutExtension}.txt"
+            val reportFile = File(sharedLogsDir, reportName)
+            file.copyTo(reportFile, overwrite = true)
 
             sharedLogsDir
-                .listFiles { candidate -> candidate.isFile && candidate.name.startsWith("bunko-crash-") && candidate.extension == "log" }
+                .listFiles { candidate -> candidate.isFile && candidate.name.startsWith("bunko-crash-") && (candidate.extension == "txt" || candidate.extension == "log") }
                 ?.sortedByDescending(File::lastModified)
                 ?.drop(5)
                 ?.forEach { candidate -> candidate.delete() }
 
-            val uri = FileProvider.getUriForFile(context, authority, logFile)
+            val uri = FileProvider.getUriForFile(context, authority, reportFile)
             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_SUBJECT, "Bunko Crash Report")
-                putExtra(Intent.EXTRA_TITLE, logFile.name)
+                putExtra(Intent.EXTRA_TITLE, reportFile.name)
                 putExtra(Intent.EXTRA_STREAM, uri)
-                clipData = ClipData.newRawUri(logFile.name, uri)
+                clipData = ClipData.newRawUri(reportFile.name, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             val chooser = Intent.createChooser(sendIntent, "Share Bunko crash report").apply {

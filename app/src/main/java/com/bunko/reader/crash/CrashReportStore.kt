@@ -143,8 +143,8 @@ internal object CrashReportStore {
             ?: runCatching { UUID.fromString(metadata?.optString("reportId")) }.getOrNull()?.toString()
             ?: UUID.randomUUID().toString()
 
-        val report = File(directory, "bunko-crash-$reportId.log")
-        val legacyReport = File(directory, "bunko-crash-$reportId.txt")
+        val report = File(directory, "bunko-crash-$reportId.txt")
+        val legacyReport = File(directory, "bunko-crash-$reportId.log")
         if (legacyReport.isFile && !report.isFile) {
             legacyReport.renameTo(report)
         }
