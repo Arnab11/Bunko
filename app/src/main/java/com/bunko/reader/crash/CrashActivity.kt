@@ -145,7 +145,8 @@ class CrashActivity : ComponentActivity() {
         val report = reportFile ?: return
         try {
             shareReportFile(this, report)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("CrashActivity", "Failed to share report", e)
             Toast.makeText(this, "Failed to share report", Toast.LENGTH_SHORT).show()
         }
     }
@@ -427,14 +428,33 @@ class CrashActivity : ComponentActivity() {
             file: File,
             authority: String = "${context.packageName}.provider"
         ) {
-            val uri = FileProvider.getUriForFile(context, authority, file)
+            val sharedLogsDir = File(context.cacheDir, "shared_logs").apply { mkdirs() }
+            val logName = "${file.nameWithoutExtension}.log"
+            val logFile = File(sharedLogsDir, logName)
+            file.copyTo(logFile, overwrite = true)
+
+            sharedLogsDir
+                .listFiles { candidate -> candidate.isFile && candidate.name.startsWith("bunko-crash-") && candidate.extension == "log" }
+                ?.sortedByDescending(File::lastModified)
+                ?.drop(5)
+                ?.forEach { candidate -> candidate.delete() }
+
+            val uri = FileProvider.getUriForFile(context, authority, logFile)
             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "Bunko Crash Report")
+                putExtra(Intent.EXTRA_TITLE, logFile.name)
                 putExtra(Intent.EXTRA_STREAM, uri)
-                clipData = ClipData.newRawUri("Bunko crash report", uri)
+                clipData = ClipData.newRawUri(logFile.name, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(sendIntent, "Share Bunko crash report"))
+            val chooser = Intent.createChooser(sendIntent, "Share Bunko crash report").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (context !is Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(chooser)
         }
     }
 }

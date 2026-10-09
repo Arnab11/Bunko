@@ -143,7 +143,11 @@ internal object CrashReportStore {
             ?: runCatching { UUID.fromString(metadata?.optString("reportId")) }.getOrNull()?.toString()
             ?: UUID.randomUUID().toString()
 
-        val report = File(directory, "bunko-crash-$reportId.txt")
+        val report = File(directory, "bunko-crash-$reportId.log")
+        val legacyReport = File(directory, "bunko-crash-$reportId.txt")
+        if (legacyReport.isFile && !report.isFile) {
+            legacyReport.renameTo(report)
+        }
         if (metadata != null && metadata.optString("reportId") == reportId && metadata.optBoolean("completed") && report.isFile) {
             return report
         }
@@ -183,7 +187,7 @@ internal object CrashReportStore {
             (metadata ?: JSONObject()).put("reportId", reportId).put("completed", true)
         )
 
-        directory.listFiles { file -> file.name.startsWith("bunko-crash-") && file.extension == "txt" }
+        directory.listFiles { file -> file.name.startsWith("bunko-crash-") && (file.extension == "log" || file.extension == "txt") }
             ?.sortedByDescending(File::lastModified)
             ?.drop(5)
             ?.forEach { it.delete() }
