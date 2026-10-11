@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,6 +44,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.Stable
+import com.bunko.reader.ReaderImageScaleType
+import com.bunko.reader.EpubTextAlign
+import com.bunko.reader.tts.TtsHighlight
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -71,6 +76,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -85,6 +91,7 @@ import eu.wewox.pagecurl.page.PageCurl
 import eu.wewox.pagecurl.page.PageCurlState
 import eu.wewox.pagecurl.page.PageCurlTurnDirection
 import com.bunko.reader.reader.internal.PlayCurlPage
+import com.bunko.reader.reader.internal.PlayCurlHostState
 import com.bunko.reader.reader.internal.rememberPlayCurlHostState
 import com.bunko.reader.AppSettings
 import com.bunko.reader.AppSettingsStore
@@ -372,43 +379,33 @@ fun ReaderScreen(
     var api by remember { mutableStateOf<KavitaApi?>(null) }
     var currentChapterId by rememberSaveable(chapterId, localBookId) { mutableIntStateOf(chapterId) }
     var currentVolumeId by rememberSaveable(volumeId, localBookId) { mutableIntStateOf(volumeId) }
-    var chapterSequence by remember(chapterId, localBookId) { mutableStateOf<List<ReaderChapterEntry>>(emptyList()) }
-    var currentChapter by remember(chapterId, localBookId) {
-        mutableStateOf(
-            ReaderChapterEntry(
-                chapterId = chapterId,
-                volumeId = volumeId,
-                volumeName = null,
-                chapterName = "Chapter"
-            )
+    // Grouped state holders (declared at the bottom of this file): a single
+    // @Composable lambda capturing `book`/`turn`/`view` stays small enough for
+    // ART bytecode verification in release builds. Lifetimes and reset keys
+    // match the previous per-state remember calls.
+    val audioManager = remember(ctx) { ctx.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager }
+    val maxAudioVolume = remember(audioManager) { audioManager?.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) ?: 15 }
+    val book = remember(chapterId, localBookId) { ReaderBookState(chapterId, volumeId) }
+    val turn = remember(chapterId, localBookId) { ReaderTurnState() }
+    val view = remember {
+        val current = audioManager?.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) ?: (maxAudioVolume / 2)
+        ReaderViewState(
+            readingDirection = settings.reader.readingDirection,
+            invertMode = settings.reader.invertMode,
+            ePaperMode = settings.reader.ePaperMode,
+            readerBrightness = settings.reader.readerBrightness,
+            nightModeEnabled = settings.reader.nightModeEnabled,
+            nightLightIntensity = settings.reader.nightLightIntensity,
+            drawUnderCutout = settings.reader.drawUnderCutout,
+            initialAudioVolume = (current.toFloat() / maxAudioVolume.coerceAtLeast(1)).coerceIn(0f, 1f)
         )
     }
-    var seriesName by remember(chapterId, localBookId) { mutableStateOf("") }
-    var chapterSwitching by remember(chapterId, localBookId) { mutableStateOf(false) }
-    var chapterBoundary by remember(chapterId, localBookId) { mutableStateOf<ReaderChapterBoundary?>(null) }
-    var boundaryDragDirection by remember(chapterId, localBookId) { mutableStateOf<ReaderTurnDirection?>(null) }
-    var boundaryDragProgress by remember(chapterId, localBookId) { mutableFloatStateOf(0f) }
     var pages by remember(chapterId, localBookId) { mutableIntStateOf(0) }
-    var pageDimensions by remember(chapterId, localBookId) { mutableStateOf<Map<Int, FileDimensionDto>>(emptyMap()) }
     var page by rememberSaveable(chapterId, localBookId) { mutableIntStateOf(initialPage ?: 0) }
     var hasAppliedInitialPage by rememberSaveable(chapterId, localBookId) { mutableStateOf(initialPage != null) }
-    var readerReady by remember(chapterId, localBookId) { mutableStateOf(false) }
-    var error by remember(chapterId, localBookId) { mutableStateOf<String?>(null) }
-    var showReaderMenu by remember { mutableStateOf(false) }
-    // Mihon-style tap-zone preview, shown when the zones change in the dialog.
-    var tapZoneOverlayVisible by remember { mutableStateOf(false) }
-    var readingDirection by remember { mutableStateOf(settings.reader.readingDirection) }
-    // Per-book overrides survive a short close/reopen cycle in process memory. The server
-    // direction and global Reader setting remain authoritative after the cache expires.
-    var invertMode by remember { mutableStateOf(settings.reader.invertMode) }
-    var ePaperMode by remember { mutableStateOf(settings.reader.ePaperMode) }
-    var readerBrightness by remember { mutableFloatStateOf(settings.reader.readerBrightness) }
-    var nightModeEnabled by remember { mutableStateOf(settings.reader.nightModeEnabled) }
-    var nightLightIntensity by remember { mutableFloatStateOf(settings.reader.nightLightIntensity) }
-    var drawUnderCutout by remember { mutableStateOf(settings.reader.drawUnderCutout) }
     ReaderFullscreenEffect(
-        showStatusBar = showReaderMenu,
-        brightness = readerBrightness
+        showStatusBar = book.showReaderMenu,
+        brightness = view.readerBrightness
     )
     val bookmarkRepo = remember { BookmarkRepository(ctx) }
     val currentBookId = localBookId ?: if (seriesId != 0) "series_${seriesId}_vol_${currentVolumeId}" else "remote_${currentChapterId}"
@@ -417,73 +414,26 @@ fun ReaderScreen(
         bookBookmarks.any { it.page == page && (it.chapterId == 0 || it.chapterId == currentChapterId) }
     }
 
-    var sessionPreferenceKey by remember { mutableStateOf<String?>(null) }
-    var zoomPan by remember { mutableStateOf(ReaderZoomPanState()) }
-    var completingRead by remember { mutableStateOf(false) }
-    var offlineChapter by remember { mutableStateOf<OfflineChapter?>(null) }
-    var readerImageLoader by remember { mutableStateOf<ImageLoader?>(null) }
-    var activeTransition by remember { mutableStateOf<ReaderPageTransition?>(null) }
-    var transitionProgress by remember { mutableFloatStateOf(0f) }
-    var transitionSettling by remember { mutableStateOf(false) }
-    var activeCurlDirection by remember { mutableStateOf<ReaderTurnDirection?>(null) }
-    var activeCurlTargetPage by remember { mutableStateOf<Int?>(null) }
-    var curlDragStartPointer by remember { mutableStateOf<Offset?>(null) }
-    var curlDragProgress by remember { mutableFloatStateOf(0f) }
-    var queuedTurn by remember { mutableStateOf<PendingReaderTurn?>(null) }
-    var pendingZoomLandingDirection by remember { mutableStateOf<ReaderTurnDirection?>(null) }
-    var dragBoundaryDirection by remember { mutableStateOf<ReaderTurnDirection?>(null) }
-    var zoomAnimationJob by remember { mutableStateOf<Job?>(null) }
-    var closeDragOffsetY by remember { mutableFloatStateOf(0f) }
-    // Tracks a live pinch-to-enter/exit-overview drag.  When the user pinches
-    // below 100% zoom the value goes 0→1, driving overviewProgressAnim directly.
-    // On release we snap-animate it to 0 (cancel) or 1 (commit).
-    var overviewDragProgress by remember { mutableFloatStateOf(0f) }
-    var isDraggingOverview by remember { mutableStateOf(false) }
-    var overviewAnimJob by remember { mutableStateOf<Job?>(null) }
-    var closeAnimationJob by remember { mutableStateOf<Job?>(null) }
-    var verticalRestoreNonce by remember { mutableIntStateOf(0) }
     val invertDecisionCache = remember { mutableStateMapOf<ReaderInvertCacheKey, Boolean>() }
     val offlineRepository = remember(ctx) { OfflineIssueRepository(ctx) }
     val minimumFlingVelocity = remember(ctx) {
         ViewConfiguration.get(ctx).scaledMinimumFlingVelocity.toFloat()
     }
-    var pendingRemoteProgress by remember { mutableStateOf<PendingReaderRemoteProgress?>(null) }
-    val lastRemoteProgressPages = remember { ConcurrentHashMap<Int, Int>() }
-    val progressRevisionClocks = remember { mutableMapOf<Int, AtomicLong>() }
     // Exact EPUB resume anchor (from Kavita bookScrollId or the offline record),
     // consumed by the pagination effect once subpages are computed.
-    var pendingEpubScrollRestore by remember { mutableStateOf<ReaderEpubScrollAnchor?>(null) }
-    val lastRemoteScrollIds = remember { ConcurrentHashMap<Int, String>() }
 
-    var isEpub by remember { mutableStateOf(false) }
-    var isPdf by remember { mutableStateOf(false) }
-    var epubSpineBlocks by remember { mutableStateOf<List<List<EpubBlock>>>(emptyList()) }
-    var epubSubpages by remember { mutableStateOf<List<EpubSubpage>>(emptyList()) }
     // E-book-only TTS (read aloud + word highlight). Lives for the whole reader
     // session so speech survives recompositions; shut down on dispose/exit.
     val ttsManager = remember(ctx) { com.bunko.reader.tts.TtsManager(ctx) }
     val ttsSpeaking by ttsManager.speaking.collectAsState()
     val ttsHighlight by ttsManager.highlight.collectAsState()
-    var ttsPage by remember { mutableIntStateOf(-1) }
-    var ttsAutoContinue by remember { mutableStateOf(false) }
-    var ttsAutoAdvancing by remember { mutableStateOf(false) }
-    var isTtsActive by remember { mutableStateOf(false) }
     fun stopTts() {
-        ttsAutoContinue = false
+        view.ttsAutoContinue = false
         ttsManager.stop()
-        ttsPage = -1
-        isTtsActive = false
-    }
-    val audioManager = remember(ctx) { ctx.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager }
-    val maxAudioVolume = remember(audioManager) { audioManager?.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) ?: 15 }
-    var currentAudioVolume by remember(audioManager) {
-        val current = audioManager?.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) ?: (maxAudioVolume / 2)
-        mutableFloatStateOf((current.toFloat() / maxAudioVolume.coerceAtLeast(1)).coerceIn(0f, 1f))
+        view.ttsPage = -1
+        view.isTtsActive = false
     }
     val epubFontSizeSp = settings.reader.epubFontSizeSp
-    var pinchBaseFontSize by remember { mutableFloatStateOf(18f) }
-    var pinchAccumulatedScale by remember { mutableFloatStateOf(1f) }
-    var isPinchChangingFontSize by remember { mutableStateOf(false) }
 
     suspend fun loadEpubSpines(
         chapterId: Int,
@@ -517,7 +467,8 @@ fun ReaderScreen(
         return res
     }
 
-    DisposableEffect(readerImageLoader, localBookId) {
+    DisposableEffect(book.readerImageLoader, localBookId) {
+        with(book) {
         val activeLoader = readerImageLoader
         onDispose {
             ttsManager.stop()
@@ -533,6 +484,7 @@ fun ReaderScreen(
                 }
             }
         }
+        }
     }
 
     // Keep engine speech rate in sync with the persisted setting.
@@ -542,6 +494,7 @@ fun ReaderScreen(
 
     // Manual page turns stop speech; auto-advance sets the bypass flag first.
     LaunchedEffect(page) {
+        with(view) {
         if (ttsAutoAdvancing) {
             ttsAutoAdvancing = false
         } else if (ttsSpeaking && ttsPage != page) {
@@ -549,13 +502,14 @@ fun ReaderScreen(
             ttsManager.stop()
             ttsPage = -1
         }
+        }
     }
 
     fun epubSpineForSubpage(subpage: Int): Int {
-        return epubSubpages.getOrNull(subpage)?.spineIndex ?: subpage
+        return book.epubSubpages.getOrNull(subpage)?.spineIndex ?: subpage
     }
     fun epubScrollForSubpage(subpage: Int): String? {
-        val sub = epubSubpages.getOrNull(subpage) ?: return null
+        val sub = book.epubSubpages.getOrNull(subpage) ?: return null
         val overall = if (pages > 1) subpage.toFloat() / (pages - 1).toFloat() else 0f
         return buildReaderEpubScrollAnchor(sub, overall)
     }
@@ -568,7 +522,7 @@ fun ReaderScreen(
         offline: Boolean,
         scrollId: String? = null
     ): ReaderRemoteProgressTarget {
-        val revisionClock = progressRevisionClocks.getOrPut(targetChapterId) { AtomicLong(0L) }
+        val revisionClock = book.progressRevisionClocks.getOrPut(targetChapterId) { AtomicLong(0L) }
         return ReaderRemoteProgressTarget(
             chapterId = targetChapterId,
             volumeId = targetVolumeId,
@@ -586,6 +540,7 @@ fun ReaderScreen(
         targetApi: KavitaApi? = api,
         targetSession: KavitaSession? = session
     ): Boolean {
+        with(book) {
         if (incognito) return false
         if (target.pageCount <= 0 || target.page !in 0 until target.pageCount) return false
         if (lastRemoteProgressPages[target.chapterId] == target.page &&
@@ -643,8 +598,10 @@ fun ReaderScreen(
                 false
             }
         }
+        }
     }
     suspend fun flushPendingRemoteProgressNow() {
+        with(book) {
         if (incognito) return
         val target = pendingRemoteProgress?.target ?: run {
             if (pages <= 0 || page !in 0 until pages) return
@@ -662,9 +619,11 @@ fun ReaderScreen(
             )
         }
         saveRemoteProgress(target, clearPending = true)
+        }
     }
 
     val handleBack = {
+        with(book) {
         stopTts()
         val activity = ctx.findActivity()
         if (activity != null) {
@@ -693,17 +652,20 @@ fun ReaderScreen(
             }
         }
         onBack()
+        }
     }
 
     BackHandler {
-        if (showReaderMenu) {
-            showReaderMenu = false
+        if (book.showReaderMenu) {
+            book.showReaderMenu = false
         } else {
             handleBack()
         }
     }
 
     fun completeChapter(exitAfter: Boolean = true) {
+        with(book) {
+        with(turn) {
         if (completingRead || pages <= 0) return
         completingRead = true
         showReaderMenu = false
@@ -797,10 +759,14 @@ fun ReaderScreen(
                         )
                     }
                 }
+                }
             }
+        }
         }
     }
     fun resetChapterAndExit(exitAfter: Boolean = true) {
+        with(book) {
+        with(turn) {
         if (completingRead) return
         completingRead = true
         showReaderMenu = false
@@ -856,7 +822,9 @@ fun ReaderScreen(
                         )
                     }
                 }
+                }
             }
+        }
         }
     }
     fun jumpToPage(targetPage: Int) {
@@ -866,6 +834,8 @@ fun ReaderScreen(
         }
     }
     fun speakEpubPage(targetPage: Int) {
+        with(book) {
+        with(view) {
         val subpage = epubSubpages.getOrNull(targetPage) ?: return
         ttsPage = targetPage
         ttsAutoContinue = true
@@ -889,8 +859,12 @@ fun ReaderScreen(
             isTtsActive = false
             BunkoLog.w("TTS: no speakable text on page $targetPage (image-only?).")
         }
+        }
+        }
     }
     fun toggleTts() {
+        with(book) {
+        with(view) {
         if (!isEpub) return
         if (ttsSpeaking) {
             ttsAutoContinue = false
@@ -899,8 +873,13 @@ fun ReaderScreen(
         } else {
             speakEpubPage(page)
         }
+        }
+        }
     }
     fun switchChapter(target: ReaderChapterEntry, openAtLastPage: Boolean) {
+        with(book) {
+        with(turn) {
+        with(view) {
         if (chapterSwitching) return
         if (localBookId == null && target.chapterId == currentChapterId) return
         stopTts()
@@ -1087,9 +1066,15 @@ fun ReaderScreen(
                 chapterSwitching = false
             }
         }
+        }
+        }
+        }
     }
 
     LaunchedEffect(chapterId, localBookId) {
+        with(book) {
+        with(turn) {
+        with(view) {
         // Seed the session invert override from the persisted global value. `.first()` on the
         // store flow yields the real DataStore value (not the collectAsState default), so this
         // is correct even before `settings` has emitted.
@@ -1118,27 +1103,27 @@ fun ReaderScreen(
                 readingDirection = persistedReaderSettings.readingDirection
             }
             try {
-                val book = localRepository.getBook(localBookId)
-                if (book == null) {
+                val localBook = localRepository.getBook(localBookId)
+                if (localBook == null) {
                     error = "Book not found in library."
                     return@LaunchedEffect
                 }
-                seriesName = book.title
+                seriesName = localBook.title
                 currentChapter = ReaderChapterEntry(
                     chapterId = 0,
                     volumeId = 0,
                     volumeName = null,
-                    chapterName = book.title
+                    chapterName = localBook.title
                 )
                 chapterSequence = listOf(currentChapter)
 
-                val file = localRepository.prepareBookFile(book)
+                val file = localRepository.prepareBookFile(localBook)
                 if (!file.isFile || file.length() == 0L) {
                     error = "Could not open book file from storage."
                     return@LaunchedEffect
                 }
 
-                val document = ReaderDocumentFactory.openLocalDocument(ctx, file, book.title)
+                val document = ReaderDocumentFactory.openLocalDocument(ctx, file, localBook.title)
                 when (document) {
                     is ReaderDocument.Comic -> {
                         val resolvedPages = document.pages.map { resource ->
@@ -1161,7 +1146,7 @@ fun ReaderScreen(
                         pageDimensions = dimensionsDtoMap
                         val resumePage = if (!hasAppliedInitialPage) {
                             hasAppliedInitialPage = true
-                            initialPage ?: book.lastReadPage
+                            initialPage ?: localBook.lastReadPage
                         } else {
                             page
                         }
@@ -1173,8 +1158,8 @@ fun ReaderScreen(
                                 libraryId = 0,
                                 seriesId = 0,
                                 volumeId = 0,
-                                seriesName = book.title,
-                                issueName = book.title,
+                                seriesName = localBook.title,
+                                issueName = localBook.title,
                                 downloadId = 0L,
                                 archivePath = file.absolutePath,
                                 localPage = page,
@@ -1194,7 +1179,7 @@ fun ReaderScreen(
                                 tags = document.tags,
                                 publishers = listOfNotNull(document.publisher),
                                 summary = document.summary,
-                                seriesName = book.title
+                                seriesName = localBook.title
                             )
                         }
                         readingDirection = effectiveDirection
@@ -1220,7 +1205,7 @@ fun ReaderScreen(
                         pageDimensions = dimensionsDtoMap
                         val resumePage = if (!hasAppliedInitialPage) {
                             hasAppliedInitialPage = true
-                            initialPage ?: book.lastReadPage
+                            initialPage ?: localBook.lastReadPage
                         } else {
                             page
                         }
@@ -1232,8 +1217,8 @@ fun ReaderScreen(
                                 libraryId = 0,
                                 seriesId = 0,
                                 volumeId = 0,
-                                seriesName = book.title,
-                                issueName = book.title,
+                                seriesName = localBook.title,
+                                issueName = localBook.title,
                                 downloadId = 0L,
                                 archivePath = file.absolutePath,
                                 localPage = page,
@@ -1269,12 +1254,12 @@ fun ReaderScreen(
                         // (e.g. 6/100 = 6%) into spine range (e.g. 0..7) and remap it to
                         // ~85-100% on reopen.
                         val spineCount = spineBlocks.size
-                        pages = if (book.pageCount > spineCount) {
-                            book.pageCount
-                        } else if (book.pageCount > 0) {
+                        pages = if (localBook.pageCount > spineCount) {
+                            localBook.pageCount
+                        } else if (localBook.pageCount > 0) {
                             // Previously corrupted saves stored spineCount as pageCount.
                             // Keep the larger of the two so we never shrink below spine count.
-                            maxOf(book.pageCount, spineCount)
+                            maxOf(localBook.pageCount, spineCount)
                         } else {
                             spineCount
                         }
@@ -1306,7 +1291,7 @@ fun ReaderScreen(
 
                         val resumePage = if (!hasAppliedInitialPage) {
                             hasAppliedInitialPage = true
-                            initialPage ?: book.lastReadPage
+                            initialPage ?: localBook.lastReadPage
                         } else {
                             page
                         }
@@ -1684,9 +1669,13 @@ fun ReaderScreen(
                 error = readerLoadErrorMessage(t)
             }
         }
+        }
+        }
+        }
     }
 
-    LaunchedEffect(page, isEpub, epubSubpages, chapterSequence) {
+    LaunchedEffect(page, book.isEpub, book.epubSubpages, book.chapterSequence) {
+        with(book) {
         if (isEpub && epubSubpages.isNotEmpty() && chapterSequence.isNotEmpty()) {
             val activeSpineIndex = epubSubpages.getOrNull(page)?.spineIndex
             if (activeSpineIndex != null) {
@@ -1698,20 +1687,22 @@ fun ReaderScreen(
                 }
             }
         }
+        }
     }
 
     LaunchedEffect(
         localBookId,
         currentChapterId,
-        readerReady,
+        book.readerReady,
         pages,
         page,
         incognito,
         session,
-        offlineChapter,
-        isEpub,
-        epubSubpages
+        book.offlineChapter,
+        book.isEpub,
+        book.epubSubpages
     ) {
+        with(book) {
         if (!readerReady) return@LaunchedEffect
         if (incognito) return@LaunchedEffect
         if (pages <= 0 || page !in 0 until pages) return@LaunchedEffect
@@ -1737,20 +1728,22 @@ fun ReaderScreen(
                 offlineRepository.saveLocalProgress(loadedSession, currentChapterId, offlinePage, scrollId = scrollId)
             }
         }
+        }
     }
 
     LaunchedEffect(
         api,
         currentChapterId,
         currentVolumeId,
-        readerReady,
+        book.readerReady,
         pages,
         page,
         incognito,
-        chapterSwitching,
-        isEpub,
-        epubSubpages
+        book.chapterSwitching,
+        book.isEpub,
+        book.epubSubpages
     ) {
+        with(book) {
         if (!readerReady) return@LaunchedEffect
         if (incognito) return@LaunchedEffect
         if (chapterSwitching) return@LaunchedEffect
@@ -1782,6 +1775,7 @@ fun ReaderScreen(
         )
         delay(ReaderProgressSyncDelayMillis)
         saveRemoteProgress(target)
+        }
     }
 
     val latestFlushProgress by rememberUpdatedState<suspend () -> Unit>({
@@ -1809,10 +1803,10 @@ fun ReaderScreen(
         return
     }
 
-    if (!readerReady && (!isEpub || epubSpineBlocks.isEmpty())) {
+    if (!book.readerReady && (!book.isEpub || book.epubSpineBlocks.isEmpty())) {
         ReaderLoadingScreen(
-            preparingPdf = isPdf,
-            error = error,
+            preparingPdf = book.isPdf,
+            error = book.error,
             onBack = handleBack
         )
         return
@@ -1820,8 +1814,9 @@ fun ReaderScreen(
 
     val kavitaPageClient = remember { KavitaClient(ctx, sessionStore) }
     val komgaPageBackend = backend
-    val activeImageLoader = readerImageLoader ?: fallbackImageLoader
-    fun pageModel(index: Int): Any? = if (isEpub) {
+    val activeImageLoader = book.readerImageLoader ?: fallbackImageLoader
+    fun pageModel(index: Int): Any? = with(book) {
+        if (isEpub) {
         epubSubpages.getOrNull(index)
     } else {
         offlineChapter?.pages?.getOrNull(index)
@@ -1841,14 +1836,15 @@ fun ReaderScreen(
                 null
             }
     }
-    val rtl = readingDirection == ReaderReadingDirection.RightToLeft
-    val isWebtoon = readingDirection == ReaderReadingDirection.Webtoon
-    val vertical = readingDirection == ReaderReadingDirection.Vertical || isWebtoon
+    }
+    val rtl = view.readingDirection == ReaderReadingDirection.RightToLeft
+    val isWebtoon = view.readingDirection == ReaderReadingDirection.Webtoon
+    val vertical = view.readingDirection == ReaderReadingDirection.Vertical || isWebtoon
     val spreadPages = spreadPagesFor(page, rtl)
 
     val isLightMode = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val isMintPaper = settings.reader.pageBackground == PageBackground.Mint
-    val darkPaper = invertMode != InvertMode.Off ||
+    val darkPaper = view.invertMode != InvertMode.Off ||
         settings.reader.pageBackground == PageBackground.Dark
     val defaultReaderBg = when {
         isMintPaper -> MintPaperColor
@@ -1864,7 +1860,7 @@ fun ReaderScreen(
     }
 
     val isOverviewDisabled = vertical || !settings.reader.overviewMode
-    val isOverviewMenuOpen = showReaderMenu && !isOverviewDisabled && chapterBoundary == null
+    val isOverviewMenuOpen = book.showReaderMenu && !isOverviewDisabled && book.chapterBoundary == null
     // Use an Animatable so the overview transition can be driven both by a live
     // pinch gesture (snapTo during drag) and by a settling animation (animateTo
     // after release or a menu-button tap).
@@ -1887,7 +1883,8 @@ fun ReaderScreen(
     }
     val isOverviewActive = !isOverviewDisabled && (overviewEngaged || isOverviewMenuOpen)
     // When NOT in a live drag, let isOverviewMenuOpen settle the animation.
-    LaunchedEffect(isOverviewMenuOpen, isDraggingOverview) {
+    LaunchedEffect(isOverviewMenuOpen, view.isDraggingOverview) {
+        with(view) {
         if (!isDraggingOverview) {
             overviewAnimJob?.cancel()
             overviewAnimJob = null
@@ -1899,19 +1896,20 @@ fun ReaderScreen(
                 animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
             )
         }
+        }
     }
 
     LaunchedEffect(isOverviewActive) {
         if (!isOverviewActive) {
-            zoomPan = ReaderZoomPanState()
+            view.zoomPan = ReaderZoomPanState()
         }
     }
 
     // Auto-hide the tap-zone preview after a beat (a tap on it hides it sooner).
-    LaunchedEffect(tapZoneOverlayVisible) {
-        if (tapZoneOverlayVisible) {
+    LaunchedEffect(view.tapZoneOverlayVisible) {
+        if (view.tapZoneOverlayVisible) {
             delay(1500L)
-            tapZoneOverlayVisible = false
+            view.tapZoneOverlayVisible = false
         }
     }
 
@@ -1919,7 +1917,7 @@ fun ReaderScreen(
     // smoothly on a normal tap-to-dismiss (when overview is not active).  When
     // the overview IS active/exiting, effectiveMenuAlpha delegates to
     // overviewProgress so both layers animate in perfect lock-step.
-    val menuContentVisible = showReaderMenu && chapterBoundary == null
+    val menuContentVisible = book.showReaderMenu && book.chapterBoundary == null
     val menuAlphaState = animateFloatAsState(
         targetValue = if (menuContentVisible) 1f else 0f,
         animationSpec = tween(durationMillis = 160, easing = LinearEasing),
@@ -1951,7 +1949,7 @@ fun ReaderScreen(
     // paper beige — that mismatch flashed black bars around the card on every
     // overview open/slide. Inverted PDFs render dark (via colorFilter), so they
     // need a dark paper to match the inverted bitmap.
-    val pdfPaperColor = if (invertMode != InvertMode.Off) {
+    val pdfPaperColor = if (view.invertMode != InvertMode.Off) {
         if (settings.reader.usePurePageBackgroundColors) Color.Black else Color(0xFF101010)
     } else {
         // Respect the lighting / page-background setting so Dark/White/Theme/Paper
@@ -1963,9 +1961,12 @@ fun ReaderScreen(
             isMint = isMintPaper
         )
     }
-    val screenBgColor = if (isPdf) pdfPaperColor else defaultReaderBg
+    val screenBgColor = if (book.isPdf) pdfPaperColor else defaultReaderBg
 
     BoxWithConstraints(Modifier.fillMaxSize().background(screenBgColor)) {
+        with(book) {
+        with(turn) {
+        with(view) {
         val pageLayoutMode = settings.reader.pageLayoutMode
         val portrait = when (pageLayoutMode) {
             PageLayoutMode.Auto -> maxHeight > maxWidth
@@ -2160,133 +2161,6 @@ fun ReaderScreen(
                 page = resolvedTargetPage
                 lastRemoteProgressPages[currentChapterId] = resolvedTargetPage
                 readerReady = true
-            }
-        }
-
-        @Composable
-        fun RenderReaderPage(
-            cursor: Int,
-            pageCount: Int,
-            portrait: Boolean,
-            pageDimensions: Map<Int, FileDimensionDto>,
-            rightToLeft: Boolean,
-            pageModel: (Int) -> Any?,
-            imageLoader: ImageLoader,
-            invertMode: InvertMode,
-            ePaperMode: EPaperMode,
-            whiteThreshold: Float,
-            invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
-            pageBackground: Color,
-            singlePageAlignmentOverride: Alignment? = null,
-            modifier: Modifier = Modifier,
-            epubFontSizeSpOverride: Float? = null,
-            epubContentPaddingOverride: PaddingValues? = null,
-            epubBlockSpacingOverride: Dp? = null
-        ) {
-            val effectiveEpubFontSizeSp = epubFontSizeSpOverride ?: epubFontSizeSp
-            val effectiveBlockSpacing = epubBlockSpacingOverride ?: 10.dp
-            Box(modifier = modifier) {
-                if (isEpub && epubSubpages.isNotEmpty()) {
-                    if (portrait || singlePageAlignmentOverride != null) {
-                        val safeIndex = cursor.coerceIn(0, epubSubpages.lastIndex)
-                        ReaderEpubPageView(
-                            subpage = epubSubpages[safeIndex],
-                            fontSizeSp = effectiveEpubFontSizeSp,
-                            pageBackground = pageBackground,
-                            invertMode = invertMode,
-                            ePaperMode = ePaperMode,
-                            epubFontFamily = settings.reader.epubFontFamily,
-                            epubTextAlign = settings.reader.epubTextAlign,
-                            imageLoader = imageLoader,
-                            contentPadding = epubContentPaddingOverride ?: portraitPadding,
-                            blockSpacingDp = effectiveBlockSpacing,
-                            ttsHighlight = ttsHighlight.takeIf { ttsPage == safeIndex },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        val spread = spreadPagesFor(cursor, rightToLeft)
-                        Box(modifier = modifier.fillMaxSize()) {
-                            Row(modifier = Modifier.fillMaxSize().background(pageBackground)) {
-                                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                    if (spread.leftPage in epubSubpages.indices) {
-                                        ReaderEpubPageView(
-                                            subpage = epubSubpages[spread.leftPage],
-                                            fontSizeSp = effectiveEpubFontSizeSp,
-                                            pageBackground = pageBackground,
-                                            invertMode = invertMode,
-                                            ePaperMode = ePaperMode,
-                                            epubFontFamily = settings.reader.epubFontFamily,
-                                            epubTextAlign = settings.reader.epubTextAlign,
-                                            imageLoader = imageLoader,
-                                            contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
-                                            blockSpacingDp = effectiveBlockSpacing,
-                                            ttsHighlight = ttsHighlight.takeIf { ttsPage == spread.leftPage },
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .background(pageBackground)
-                                        )
-                                    }
-                                }
-                                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                    if (spread.rightPage in epubSubpages.indices) {
-                                        ReaderEpubPageView(
-                                            subpage = epubSubpages[spread.rightPage],
-                                            fontSizeSp = effectiveEpubFontSizeSp,
-                                            pageBackground = pageBackground,
-                                            invertMode = invertMode,
-                                            ePaperMode = ePaperMode,
-                                            epubFontFamily = settings.reader.epubFontFamily,
-                                            epubTextAlign = settings.reader.epubTextAlign,
-                                            imageLoader = imageLoader,
-                                            contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
-                                            blockSpacingDp = effectiveBlockSpacing,
-                                            ttsHighlight = ttsHighlight.takeIf { ttsPage == spread.rightPage },
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .background(pageBackground)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    ReaderPageView(
-                        cursor = cursor,
-                        pageCount = pageCount,
-                        portrait = portrait,
-                        pageDimensions = pageDimensions,
-                        rightToLeft = rightToLeft,
-                        pageModel = pageModel,
-                        imageLoader = imageLoader,
-                        invertMode = invertMode,
-                        whiteThreshold = whiteThreshold,
-                        invertDecisionCache = invertDecisionCache,
-                        pageBackground = pageBackground,
-                        ePaperMode = ePaperMode,
-                        imageScaleType = settings.reader.imageScaleType,
-                        cropBorders = settings.reader.cropBorders,
-                        singlePageAlignmentOverride = singlePageAlignmentOverride,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                if (nightModeEnabled && nightLightIntensity > 0f) {
-                    val amberAlpha = (nightLightIntensity * 0.38f).coerceIn(0f, 0.45f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFFFF9E3D).copy(alpha = amberAlpha))
-                    )
-                }
             }
         }
 
@@ -3307,87 +3181,32 @@ fun ReaderScreen(
                 }
         ) {
             if (vertical) {
-                val neighbors = readerChapterNeighbors(chapterSequence, currentChapterId)
-                val previousBoundary = neighbors.previous?.let { previous ->
-                    ReaderChapterBoundary(
-                        direction = ReaderTurnDirection.Previous,
-                        current = currentChapter,
-                        neighbor = previous
-                    )
-                }
-                val nextBoundary = neighbors.next?.let { next ->
-                    ReaderChapterBoundary(
-                        direction = ReaderTurnDirection.Next,
-                        current = currentChapter,
-                        neighbor = next
-                    )
-                }
-                ReaderVerticalScroll(
-                    pageCount = pages,
-                    pageDimensions = pageDimensions,
-                    pageModel = ::pageModel,
-                    imageLoader = activeImageLoader,
-                    invertMode = invertMode,
-                    ePaperMode = ePaperMode,
-                    whiteThreshold = settings.reader.invertWhiteThreshold,
+                ReaderVerticalBranch(
+                    book = book,
+                    turn = turn,
+                    view = view,
+                    page = page,
+                    pages = pages,
+                    currentChapterId = currentChapterId,
+                    appSettings = settings,
+                    activeImageLoader = activeImageLoader,
                     invertDecisionCache = invertDecisionCache,
-                    pageBackground = readerPageBackground,
-                    nightModeEnabled = nightModeEnabled,
-                    nightLightIntensity = nightLightIntensity,
+                    readerPageBackground = readerPageBackground,
                     viewportHeight = viewportHeight,
-                    fallbackPageAspectRatio = (viewportWidthPx / viewportHeightPx.coerceAtLeast(1f))
-                        .coerceAtLeast(0.01f),
-                    listState = verticalListState,
-                    previousBoundary = previousBoundary,
-                    nextBoundary = nextBoundary,
-                    seriesName = seriesName,
-                    chapterSwitching = chapterSwitching,
-                    boundaryHasError = error != null,
-                    onCurrentPageChanged = { currentPage ->
-                        if (page != currentPage) page = currentPage
-                        if (completingRead) completingRead = false
-                    },
-                    onBoundaryReached = { direction ->
-                        if (verticalBoundariesEnabled && !completingRead) {
-                            when (direction) {
-                                ReaderTurnDirection.Next -> {
-                                    completeChapter(exitAfter = false)
-                                }
-                                ReaderTurnDirection.Previous -> {
-                                    if (neighbors.previous != null) {
-                                        resetChapterAndExit(exitAfter = false)
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    onContinueBoundary = { direction ->
-                        val neighbor = when (direction) {
-                            ReaderTurnDirection.Next -> neighbors.next
-                            ReaderTurnDirection.Previous -> neighbors.previous
-                        }
-                        neighbor?.let { target ->
-                            switchChapter(
-                                target = target,
-                                openAtLastPage = direction == ReaderTurnDirection.Previous
-                            )
-                        }
-                    },
-                    onBackToSeries = handleBack,
-                    onMenuToggle = { showReaderMenu = !showReaderMenu },
-                    epubSubpages = epubSubpages,
-                    epubFontSizeSp = epubFontSizeSp,
-                    epubFontFamily = settings.reader.epubFontFamily,
-                    epubTextAlign = settings.reader.epubTextAlign,
-                    epubContentPadding = portraitPadding,
-                    ttsPage = ttsPage,
-                    ttsHighlight = ttsHighlight,
+                    viewportWidthPx = viewportWidthPx,
+                    viewportHeightPx = viewportHeightPx,
+                    verticalListState = verticalListState,
+                    verticalBoundariesEnabled = verticalBoundariesEnabled,
                     isWebtoon = isWebtoon,
-                    sidePaddingPercent = settings.reader.webtoonSidePadding,
-                    navigationMode = settings.reader.navigationMode,
-                    tappingInvertMode = settings.reader.tappingInvertMode,
-                    imageScaleType = settings.reader.imageScaleType,
-                    cropBorders = settings.reader.cropBorders
+                    epubFontSizeSp = epubFontSizeSp,
+                    portraitPadding = portraitPadding,
+                    ttsHighlight = ttsHighlight,
+                    pageModel = ::pageModel,
+                    onPageChange = { page = it },
+                    onCompleteChapter = ::completeChapter,
+                    onResetChapter = ::resetChapterAndExit,
+                    onSwitchChapter = ::switchChapter,
+                    onBack = handleBack
                 )
             } else {
                 Box(
@@ -3438,93 +3257,38 @@ fun ReaderScreen(
             // surface and show the identical Compose page instead; the deck rebuilds
             // warm from the Coil cache when the overview closes.
             if (usePortraitPlayCurl || useSpreadPlayCurl) {
-                // Engaged for the whole zoom (mounts/unmounts at the ends only),
-                // so the GL surface never churns mid-animation.
-                val overviewTakingOver = overviewEngaged
-                // Settle in-flight turn state before unmounting the surface for the
-                // overview (dispose cancels the GL settlement without committing).
-                // Tap-turns have no live drag pointer, so commit their target — the
-                // GL animation would have landed there anyway. Live drag-turns are
-                // cancelled instead: the page stays where it was.
-                LaunchedEffect(overviewTakingOver) {
-                    if (overviewTakingOver && activeCurlTargetPage != null) {
-                        if (curlDragStartPointer == null) {
-                            page = activeCurlTargetPage!!.coerceIn(0, (pages - 1).coerceAtLeast(0))
-                        } else {
-                            playCurlHost.cancelDrag()
-                        }
-                        activeCurlDirection = null
-                        activeCurlTargetPage = null
-                        curlDragStartPointer = null
-                        curlDragProgress = 0f
-                        dragBoundaryDirection = null
-                    }
-                }
-                if (!overviewTakingOver) {
-                    PlayCurlPage(
-                        page = page,
-                        pageCount = pages,
-                        portrait = usePortraitPlayCurl,
-                        rightToLeft = rtl,
-                        viewportWidthPx = viewportWidthPx,
-                        viewportHeightPx = viewportHeightPx,
-                        paperColor = readerPageBackground,
-                        pageModel = ::pageModel,
-                        imageLoader = activeImageLoader,
-                        pageDimensions = pageDimensions,
-                        invertMode = invertMode,
-                        whiteThreshold = settings.reader.invertWhiteThreshold,
-                        invertDecisionCache = invertDecisionCache,
-                        ePaperMode = ePaperMode,
-                        imageScaleType = settings.reader.imageScaleType,
-                        cropBorders = settings.reader.cropBorders,
-                        nightModeEnabled = nightModeEnabled,
-                        nightLightIntensity = nightLightIntensity,
-                        epubFontSizeSp = epubFontSizeSp,
-                        epubFontFamily = settings.reader.epubFontFamily,
-                        epubTextAlign = settings.reader.epubTextAlign,
-                        // Landscape halves split the padding into outer/inner spine margins
-                        // exactly like the Slide path's landscapeLeft/RightPadding, so keep
-                        // the same outer margin on both sides here and let the deck's glue
-                        // logic derive the inner one.
-                        epubContentPadding = if (usePortraitPlayCurl) portraitPadding else PaddingValues(
-                            start = landscapeOuterMargin,
-                            top = safeTopPadding,
-                            end = landscapeOuterMargin,
-                            bottom = safeBottomPadding
-                        ),
-                        density = density,
-                        isEpub = isEpub,
-                        epubSubpages = epubSubpages,
-                        host = playCurlHost,
-                        onPageTurned = ::onPlayCurlSettled,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                if (overviewTakingOver || !playCurlHost.ready || (isEpub && (ttsSpeaking || isTtsActive))) {
-                    RenderReaderPage(
-                        cursor = page,
-                        pageCount = pages,
-                        portrait = portrait,
-                        pageDimensions = pageDimensions,
-                        rightToLeft = rtl,
-                        pageModel = ::pageModel,
-                        imageLoader = activeImageLoader,
-                        invertMode = invertMode,
-                        ePaperMode = ePaperMode,
-                        whiteThreshold = settings.reader.invertWhiteThreshold,
-                        invertDecisionCache = invertDecisionCache,
-                        pageBackground = readerPageBackground,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                translationX = zoomPan.offsetX
-                                translationY = zoomPan.offsetY
-                                scaleX = totalZoomScale
-                                scaleY = totalZoomScale
-                            }
-                    )
-                }
+                ReaderPlayCurlBranch(
+                    book = book,
+                    turn = turn,
+                    view = view,
+                    page = page,
+                    pages = pages,
+                    rtl = rtl,
+                    viewportWidthPx = viewportWidthPx,
+                    viewportHeightPx = viewportHeightPx,
+                    readerPageBackground = readerPageBackground,
+                    pageModel = ::pageModel,
+                    appSettings = settings,
+                    invertDecisionCache = invertDecisionCache,
+                    epubFontSizeSp = epubFontSizeSp,
+                    portraitPadding = portraitPadding,
+                    landscapeOuterMargin = landscapeOuterMargin,
+                    safeTopPadding = safeTopPadding,
+                    safeBottomPadding = safeBottomPadding,
+                    landscapeLeftPadding = landscapeLeftPadding,
+                    landscapeRightPadding = landscapeRightPadding,
+                    density = density,
+                    playCurlHost = playCurlHost,
+                    overviewTakingOver = overviewEngaged,
+                    ttsSpeaking = ttsSpeaking,
+                    ttsHighlight = ttsHighlight,
+                    totalZoomScale = totalZoomScale,
+                    usePortraitPlayCurl = usePortraitPlayCurl,
+                    portrait = portrait,
+                    activeImageLoader = activeImageLoader,
+                    onPageChange = { page = it },
+                    onPlayCurlSettled = ::onPlayCurlSettled
+                )
             } else if (usePortraitCurl) {
                 val curlMirror = if (rtl) -1f else 1f
                 PageCurl(
@@ -3558,139 +3322,48 @@ fun ReaderScreen(
                             whiteThreshold = settings.reader.invertWhiteThreshold,
                             invertDecisionCache = invertDecisionCache,
                             pageBackground = readerPageBackground,
+                            isEpub = isEpub,
+                            epubSubpages = epubSubpages,
+                            epubFontSizeSp = epubFontSizeSp,
+                            epubFontFamily = settings.reader.epubFontFamily,
+                            epubTextAlign = settings.reader.epubTextAlign,
+                            portraitPadding = portraitPadding,
+                            landscapeLeftPadding = landscapeLeftPadding,
+                            landscapeRightPadding = landscapeRightPadding,
+                            ttsHighlight = ttsHighlight,
+                            ttsPage = ttsPage,
+                            imageScaleType = settings.reader.imageScaleType,
+                            cropBorders = settings.reader.cropBorders,
+                            nightModeEnabled = nightModeEnabled,
+                            nightLightIntensity = nightLightIntensity,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
             } else if (useSpreadCurl) {
-                val curlMirror = if (rtl) -1f else 1f
-                // During a turn the under/flap pages come from the in-flight target; at rest
-                // they pre-render the forward target spread (the likely next turn), which
-                // warms its images while the reader sits on the current spread.
-                val forwardRestTargetPage = turnTarget(ReaderTurnDirection.Next, nextPageTurnStep, false) ?: page
-                val underPage = activeCurlTargetPage ?: forwardRestTargetPage
-                PageCurl(
-                    count = ReaderSpreadCurlVisualPageCount,
-                    state = spreadCurlState,
-                    config = spreadCurlConfig,
-                    interactionsEnabled = false,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = curlMirror
-                        },
-                    backContent = { _, forward ->
-                        val targetIsWide = pageDimensions.pageIsWide(underPage)
-                        val backPage = readerSpreadCurlBackPageIndex(
-                            targetPage = underPage,
-                            pageCount = pages,
-                            direction = if (forward) ReaderTurnDirection.Next else ReaderTurnDirection.Previous,
-                            targetIsWide = targetIsWide
-                        )
-                        if (targetIsWide) {
-                            // A wide page lands spanning the whole spread, so its back-face
-                            // content is laid out full width; the fold clip reveals the near
-                            // half of the artwork as the leaf turns.
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer {
-                                        scaleX = curlMirror
-                                    }
-                            ) {
-                                RenderReaderPage(
-                                    cursor = backPage,
-                                    pageCount = pages,
-                                    portrait = false,
-                                    pageDimensions = pageDimensions,
-                                    rightToLeft = rtl,
-                                    pageModel = ::pageModel,
-                                    imageLoader = activeImageLoader,
-                                    invertMode = invertMode,
-                                    ePaperMode = ePaperMode,
-                                    whiteThreshold = settings.reader.invertWhiteThreshold,
-                                    invertDecisionCache = invertDecisionCache,
-                                    pageBackground = readerPageBackground,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        } else {
-                            val backPageAlignment = if (forward == rtl) {
-                                Alignment.CenterStart
-                            } else {
-                                Alignment.CenterEnd
-                            }
-                            val backPageEpubPadding = if (backPageAlignment == Alignment.CenterStart) {
-                                landscapeLeftPadding
-                            } else {
-                                landscapeRightPadding
-                            }
-                            Box(Modifier.fillMaxSize()) {
-                                Box(
-                                    Modifier
-                                        .fillMaxHeight()
-                                        .fillMaxWidth(0.5f)
-                                        .align(if (forward) Alignment.CenterStart else Alignment.CenterEnd)
-                                ) {
-                                    Box(
-                                        Modifier
-                                            .fillMaxSize()
-                                            .graphicsLayer {
-                                                scaleX = curlMirror
-                                            }
-                                    ) {
-                                        RenderReaderPage(
-                                            cursor = backPage,
-                                            pageCount = pages,
-                                            portrait = true,
-                                            pageDimensions = pageDimensions,
-                                            rightToLeft = rtl,
-                                            pageModel = ::pageModel,
-                                            imageLoader = activeImageLoader,
-                                            invertMode = invertMode,
-                                            ePaperMode = ePaperMode,
-                                            whiteThreshold = settings.reader.invertWhiteThreshold,
-                                            invertDecisionCache = invertDecisionCache,
-                                            pageBackground = readerPageBackground,
-                                            singlePageAlignmentOverride = backPageAlignment,
-                                            epubContentPaddingOverride = backPageEpubPadding,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                ) { cursor ->
-                    val renderPage = if (cursor != spreadCurlState.current) {
-                        underPage
-                    } else {
-                        page
-                    }
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                scaleX = curlMirror
-                            }
-                    ) {
-                        RenderReaderPage(
-                            cursor = renderPage,
-                            pageCount = pages,
-                            portrait = portrait,
-                            pageDimensions = pageDimensions,
-                            rightToLeft = rtl,
-                            pageModel = ::pageModel,
-                            imageLoader = activeImageLoader,
-                            invertMode = invertMode,
-                            ePaperMode = ePaperMode,
-                            whiteThreshold = settings.reader.invertWhiteThreshold,
-                            invertDecisionCache = invertDecisionCache,
-                            pageBackground = readerPageBackground,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
+                ReaderSpreadCurlBranch(
+                    book = book,
+                    turn = turn,
+                    view = view,
+                    page = page,
+                    pages = pages,
+                    portrait = portrait,
+                    rtl = rtl,
+                    pageModel = ::pageModel,
+                    activeImageLoader = activeImageLoader,
+                    appSettings = settings,
+                    invertDecisionCache = invertDecisionCache,
+                    readerPageBackground = readerPageBackground,
+                    epubFontSizeSp = epubFontSizeSp,
+                    portraitPadding = portraitPadding,
+                    landscapeLeftPadding = landscapeLeftPadding,
+                    landscapeRightPadding = landscapeRightPadding,
+                    ttsHighlight = ttsHighlight,
+                    spreadCurlState = spreadCurlState,
+                    spreadCurlConfig = spreadCurlConfig,
+                    nextPageTurnStep = nextPageTurnStep,
+                    onTurnTarget = ::turnTarget
+                )
             } else if (!usePlayCurl && !useCurl) {
                 RenderReaderPage(
                     cursor = page,
@@ -3705,6 +3378,20 @@ fun ReaderScreen(
                     whiteThreshold = settings.reader.invertWhiteThreshold,
                     invertDecisionCache = invertDecisionCache,
                     pageBackground = readerPageBackground,
+                    isEpub = isEpub,
+                    epubSubpages = epubSubpages,
+                    epubFontSizeSp = epubFontSizeSp,
+                    epubFontFamily = settings.reader.epubFontFamily,
+                    epubTextAlign = settings.reader.epubTextAlign,
+                    portraitPadding = portraitPadding,
+                    landscapeLeftPadding = landscapeLeftPadding,
+                    landscapeRightPadding = landscapeRightPadding,
+                    ttsHighlight = ttsHighlight,
+                    ttsPage = ttsPage,
+                    imageScaleType = settings.reader.imageScaleType,
+                    cropBorders = settings.reader.cropBorders,
+                    nightModeEnabled = nightModeEnabled,
+                    nightLightIntensity = nightLightIntensity,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
@@ -3718,133 +3405,31 @@ fun ReaderScreen(
             // The slide transition draws on top of whichever base is composed (a mounted
             // curl or nothing), fully covering it with its two opaque pages.
             if (transitionVisible) {
-                requireNotNull(transition)
-                val progress = transitionProgress.coerceIn(0f, 1f)
-                val physicalSign = readerTurnPhysicalSign(rtl, transition.direction)
-                val slideDistancePx = viewportWidthPx * transition.distanceFraction
-                val targetOffsetX = if (zoomPanEnabled) {
-                    zoomTurnLandingOffsetX(transition.direction)
-                } else {
-                    zoomPan.offsetX
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(readerPageBackground)
-                ) {
-                    if (transition.distanceFraction < 1f && !zoomPanEnabled) {
-                        // Spread shift: the two whole-spread layers cannot slide seamlessly
-                        // because each hugs the pages to its own spine — at the layer seam the
-                        // outer margins meet and open a gap at the spine. Instead draw one
-                        // paper background and the three page images (enter / stay / exit)
-                        // glued edge-to-edge, all travelling by the staying page's rendered
-                        // width; the leaving page fades out.
-                        fun halfPageWidthPx(pageIndex: Int): Float {
-                            val dims = pageDimensions[pageIndex] ?: return viewportWidthPx / 2f
-                            val w = dims.width?.toFloat() ?: return viewportWidthPx / 2f
-                            val h = dims.height?.toFloat() ?: return viewportWidthPx / 2f
-                            if (w <= 0f || h <= 0f) return viewportWidthPx / 2f
-                            return minOf(viewportWidthPx / 2f, viewportHeightPx * (w / h))
-                        }
-
-                        val (enterPage, stayPage, exitPage) = readerShiftStripPages(
-                            outgoingPage = transition.outgoingPage,
-                            targetPage = transition.targetPage,
-                            direction = transition.direction
-                        )
-                        val geometry = readerShiftStripGeometry(
-                            physicalSign = physicalSign,
-                            halfViewportPx = viewportWidthPx / 2f,
-                            stayWidthPx = halfPageWidthPx(stayPage),
-                            enterWidthPx = halfPageWidthPx(enterPage),
-                            exitWidthPx = halfPageWidthPx(exitPage)
-                        )
-                        listOf(
-                            // The entering page starts glued to the staying page, which puts
-                            // a sliver of it inside the resting view's outer margin; fade it
-                            // in over the first quarter so it does not pop into existence.
-                            Triple(enterPage, geometry.enterStartLeftPx, (progress * 4f).coerceAtMost(1f)),
-                            Triple(stayPage, geometry.stayStartLeftPx, 1f),
-                            Triple(exitPage, geometry.exitStartLeftPx, 1f - progress)
-                        ).forEach { (stripPage, startLeftPx, pageAlpha) ->
-                            if (stripPage in 0 until pages) {
-                                val widthDp = with(density) { halfPageWidthPx(stripPage).toDp() }
-                                key(stripPage) {
-                                    Box(
-                                        Modifier
-                                            .fillMaxHeight()
-                                            .width(widthDp)
-                                            .graphicsLayer {
-                                                translationX = startLeftPx + geometry.travelPx * progress
-                                                alpha = pageAlpha
-                                            }
-                                    ) {
-                                        RenderReaderPage(
-                                            cursor = stripPage,
-                                            pageCount = pages,
-                                            portrait = true,
-                                            pageDimensions = pageDimensions,
-                                            rightToLeft = rtl,
-                                            pageModel = ::pageModel,
-                                            imageLoader = activeImageLoader,
-                                            invertMode = invertMode,
-                                            ePaperMode = ePaperMode,
-                                            whiteThreshold = settings.reader.invertWhiteThreshold,
-                                            invertDecisionCache = invertDecisionCache,
-                                            pageBackground = readerPageBackground,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        RenderReaderPage(
-                            cursor = transition.targetPage,
-                            pageCount = pages,
-                            portrait = portrait,
-                            pageDimensions = pageDimensions,
-                            rightToLeft = rtl,
-                            pageModel = ::pageModel,
-                            imageLoader = activeImageLoader,
-                            invertMode = invertMode,
-                            ePaperMode = ePaperMode,
-                            whiteThreshold = settings.reader.invertWhiteThreshold,
-                            invertDecisionCache = invertDecisionCache,
-                            pageBackground = readerPageBackground,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    translationX = -physicalSign * slideDistancePx * (1f - progress) + targetOffsetX
-                                    translationY = zoomPan.offsetY
-                                    scaleX = totalZoomScale
-                                    scaleY = totalZoomScale
-                                }
-                        )
-                        RenderReaderPage(
-                            cursor = transition.outgoingPage,
-                            pageCount = pages,
-                            portrait = portrait,
-                            pageDimensions = pageDimensions,
-                            rightToLeft = rtl,
-                            pageModel = ::pageModel,
-                            imageLoader = activeImageLoader,
-                            invertMode = invertMode,
-                            ePaperMode = ePaperMode,
-                            whiteThreshold = settings.reader.invertWhiteThreshold,
-                            invertDecisionCache = invertDecisionCache,
-                            pageBackground = readerPageBackground,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    translationX = physicalSign * slideDistancePx * progress + zoomPan.offsetX
-                                    translationY = zoomPan.offsetY
-                                    scaleX = totalZoomScale
-                                    scaleY = totalZoomScale
-                                }
-                        )
-                    }
-                }
+                ReaderSlideTransitionStrip(
+                    book = book,
+                    turn = turn,
+                    view = view,
+                    transition = transition,
+                    rtl = rtl,
+                    viewportWidthPx = viewportWidthPx,
+                    viewportHeightPx = viewportHeightPx,
+                    zoomPanEnabled = zoomPanEnabled,
+                    totalZoomScale = totalZoomScale,
+                    portrait = portrait,
+                    density = density,
+                    readerPageBackground = readerPageBackground,
+                    pages = pages,
+                    pageModel = ::pageModel,
+                    activeImageLoader = activeImageLoader,
+                    invertDecisionCache = invertDecisionCache,
+                    epubFontSizeSp = epubFontSizeSp,
+                    portraitPadding = portraitPadding,
+                    landscapeLeftPadding = landscapeLeftPadding,
+                    landscapeRightPadding = landscapeRightPadding,
+                    ttsHighlight = ttsHighlight,
+                    appSettings = settings,
+                    onZoomLandingOffsetX = ::zoomTurnLandingOffsetX
+                )
             }
             }
 
@@ -3860,322 +3445,74 @@ fun ReaderScreen(
             // Keep the overview gallery mounted for the entire duration of the exit
             // animation (driven by overviewProgress → 0).
             if (isOverviewActive) {
-                val overviewCursors = remember(pages, portrait, pageDimensions, isEpub) {
-                    readerOverviewCursors(
-                        pageCount = pages,
-                        portrait = portrait,
-                        pageDimensions = pageDimensions,
-                        isEpub = isEpub
-                    )
-                }
-                ReaderOverviewGallery(
-                    cursors = overviewCursors,
-                    currentCursor = page,
-                    reverseLayout = rtl,
-                    progressState = overviewProgressState,
-                    tapZoneOverlayVisible = tapZoneOverlayVisible,
-                    tapZoneNavigationMode = settings.reader.navigationMode,
-                    tapZoneTappingInvertMode = settings.reader.tappingInvertMode,
-                    tapZoneRightToLeft = rtl,
-                    onTapZoneOverlayDismiss = { tapZoneOverlayVisible = false },
-                    onSelect = { cursor ->
-                        page = cursor
-                        lastRemoteProgressPages[currentChapterId] = cursor
-                    },
-                    onCenterTap = {
-                        zoomPan = initialZoomPanState
-                        showReaderMenu = false
-                    },
-                    // Route pinch gestures from within the overview gallery to the same
-                    // onTransform/onTransformEnd handlers used by ReaderTapLayer.  The
-                    // gallery's Initial-pass interceptor captures 2-finger events before
-                    // HorizontalPager can misinterpret them as horizontal scroll.
-                    onTransform = { zoomChange, _, _ ->
-                        if (isOverviewMenuOpen) {
-                            if (zoomChange > 1f + ReaderZoomEpsilon || (isDraggingOverview && zoomChange < 1f - ReaderZoomEpsilon)) {
-                                val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
-                                val delta = (zoomChange - 1f) * 4f
-                                val next = (startProgress - delta).coerceIn(0f, 1f)
-                                isDraggingOverview = true
-                                overviewDragProgress = next
-                                zoomPan = initialZoomPanState
-                                scope.launch { overviewProgressAnim.snapTo(next) }
-                            }
-                        }
-                    },
-                    onTransformEnd = { _ ->
-                        if (isDraggingOverview) {
-                            isDraggingOverview = false
-                            val shouldDismiss = overviewDragProgress <= 0.65f
-                            zoomPan = initialZoomPanState
-                            if (shouldDismiss) {
-                                showReaderMenu = false
-                                overviewDragProgress = 0f
-                            } else {
-                                overviewDragProgress = 1f
-                                scope.launch {
-                                    overviewProgressAnim.animateTo(
-                                        1f,
-                                        tween(200, easing = FastOutSlowInEasing)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                ) { cursor, cardModifier ->
-                    RenderReaderPage(
-                        cursor = cursor,
-                        pageCount = pages,
-                        portrait = portrait,
-                        pageDimensions = pageDimensions,
-                        rightToLeft = rtl,
-                        pageModel = ::pageModel,
-                        imageLoader = activeImageLoader,
-                        invertMode = invertMode,
-                        ePaperMode = ePaperMode,
-                        whiteThreshold = settings.reader.invertWhiteThreshold,
-                        invertDecisionCache = invertDecisionCache,
-                        pageBackground = readerPageBackground,
-                        modifier = cardModifier
-                    )
-                }
-            }
-        }
-        }
-        }
-
-
-
-        if (!vertical && chapterBoundary == null && !showReaderMenu) {
-            key(page, rtl, nextPageTurnStep, previousPageTurnStep, showingFinalPage) {
-                ReaderTapLayer(
-                rightToLeft = rtl,
-                navigationMode = settings.reader.navigationMode,
-                tappingInvertMode = settings.reader.tappingInvertMode,
-                onNextSpread = { position ->
-                    requestTurnFromTap(ReaderTurnDirection.Next, nextPageTurnStep, showingFinalPage, position)
-                },
-                onPreviousSpread = { position ->
-                    requestTurnFromTap(ReaderTurnDirection.Previous, previousPageTurnStep, false, position)
-                },
-                onNextSingle = {
-                    requestSingleStep(ReaderTurnDirection.Next, page >= pages - 1)
-                },
-                onPreviousSingle = {
-                    requestSingleStep(ReaderTurnDirection.Previous, false)
-                },
-                onCenterTap = { showReaderMenu = !showReaderMenu },
-                turnVisualDistancePx = turnVisualDistancePx,
-                zoomPanEnabled = zoomPanEnabled,
-                panOffsetX = zoomPan.offsetX,
-                panOffsetY = zoomPan.offsetY,
-                panMaxX = panBounds.maxX,
-                panMaxY = panBounds.maxY,
-                onPan = { x, y ->
-                    zoomAnimationJob?.cancel()
-                    zoomPan = zoomPan.copy(offsetX = x, offsetY = y)
-                },
-                onTurnDragStart = ::beginTurnDrag,
-                onTurnDrag = ::updateTurnDrag,
-                onTurnDragEnd = ::settleTurnDrag,
-                onTurnDragCancel = ::cancelTurnDrag,
-                directionLockEnabled = usePlayCurl || useCurl,
-                closeSwipeEnabled = false,
-                closeVisualDistancePx = viewportHeightPx,
-                onCloseDrag = {},
-                onCloseDragEnd = {},
-                onCloseDragCancel = {},
-                onDoubleTap = {
-                    val start = zoomPan
-                    val target = start.withDoubleTapZoom(
-                        tapPosition = it,
-                        baseZoomScale = baseZoomScale,
-                        viewportWidthPx = viewportWidthPx,
-                        viewportHeightPx = viewportHeightPx,
-                        initialState = initialZoomPanState
-                    )
-                    zoomAnimationJob?.cancel()
-                    zoomAnimationJob = scope.launch {
-                        Animatable(0f).animateTo(
-                            targetValue = 1f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
-                        ) {
-                            zoomPan = start.lerpTo(target, value)
-                        }
-                        zoomPan = target
-                    }
-                },
-                onTransform = { zoomChange, panChange, focalPoint ->
-                    zoomAnimationJob?.cancel()
-                    if (isEpub && !isOverviewMenuOpen) {
-                        // For text-based formats (EPUB), pinch-to-zoom scales the text size (like Kindle)
-                        if (!isPinchChangingFontSize) {
-                            pinchBaseFontSize = epubFontSizeSp
-                            pinchAccumulatedScale = 1f
-                            isPinchChangingFontSize = true
-                        }
-                        pinchAccumulatedScale *= zoomChange
-                        val newSize = (pinchBaseFontSize * pinchAccumulatedScale).roundToInt().toFloat().coerceIn(12f, 36f)
-                        if (newSize != epubFontSizeSp) {
-                            scope.launch { settingsStore.setEpubFontSizeSp(newSize) }
-                        }
-                        zoomPan = initialZoomPanState
-                    } else {
-                        val candidate = zoomPan.withTransform(
-                            zoomChange = zoomChange,
-                            panChange = panChange,
-                            focalPoint = focalPoint,
-                            baseZoomScale = baseZoomScale,
-                            viewportWidthPx = viewportWidthPx,
-                            viewportHeightPx = viewportHeightPx
-                        )
-                        when {
-                            // ── Overview already open: pinch-out (spread) → dismiss it ───
-                            isOverviewMenuOpen && zoomChange > 1f + ReaderZoomEpsilon -> {
-                                // On the FIRST frame of the dismiss gesture, overviewDragProgress
-                                // is 0f (it stays 0 when overview was opened via button, not gesture).
-                                // Seed it to 1f so the drag has the full 1→0 range to work with.
-                                val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
-                                val delta = (zoomChange - 1f) * 4f
-                                val next = (startProgress - delta).coerceIn(0f, 1f)
-                                isDraggingOverview = true
-                                overviewDragProgress = next
-                                zoomPan = initialZoomPanState
-                                scope.launch { overviewProgressAnim.snapTo(next) }
-                            }
-                            // ── At 1× zoom: pinch-in → enter overview ──────────────────────
-                            // Stay in drag mode if isDraggingOverview is already true, even
-                            // when zoomChange oscillates near 1f on slow pinches — only exit
-                            // on a clear pinch-OUT (zoomChange > 1+ε, handled above/in else).
-                            !isOverviewDisabled &&
-                            !isOverviewMenuOpen &&
-                            candidate.userScale <= 1f + ReaderZoomEpsilon &&
-                            (isDraggingOverview || zoomChange < 1f - ReaderZoomEpsilon) -> {
-                                val delta = (1f - zoomChange).coerceAtLeast(0f) * 4f
-                                val next = (overviewDragProgress + delta).coerceIn(0f, 1f)
-                                isDraggingOverview = true
-                                overviewDragProgress = next
-                                zoomPan = initialZoomPanState
-                                scope.launch { overviewProgressAnim.snapTo(next) }
-                            }
-                            // ── Normal zoom / clear reversal ────────────────────────────────
-                            else -> {
-                                if (isDraggingOverview) {
-                                    // Only cancel the overview drag when the user clearly
-                                    // spreads fingers (zooming IN).  Near-1 zoomChange values
-                                    // from a slow pinch must NOT cancel; just hold position.
-                                    if (zoomChange > 1f + ReaderZoomEpsilon) {
-                                        isDraggingOverview = false
-                                        overviewDragProgress = 0f
-                                        scope.launch {
-                                            overviewProgressAnim.animateTo(
-                                                0f,
-                                                tween(200, easing = FastOutSlowInEasing)
-                                            )
-                                        }
-                                    }
-                                    zoomPan = initialZoomPanState
-                                    // else: near-1 zoomChange while dragging → hold current progress
-                                } else {
-                                    zoomPan = candidate
-                                }
-                            }
-                        }
-                    }
-                },
-                onTransformEnd = { _ ->
-                    if (isEpub && isPinchChangingFontSize) {
-                        isPinchChangingFontSize = false
-                        pinchAccumulatedScale = 1f
-                        zoomPan = initialZoomPanState
-                        return@ReaderTapLayer
-                    }
-                    if (isDraggingOverview) {
-                        isDraggingOverview = false
-                        val shouldCommit = overviewDragProgress >= 0.35f
-                        zoomPan = initialZoomPanState
-                        if (isOverviewMenuOpen) {
-                            // Was overview open, dragging to dismiss
-                            val shouldDismiss = overviewDragProgress <= 0.65f
-                            if (shouldDismiss) {
-                                // Progress went below threshold → dismiss overview
-                                showReaderMenu = false
-                                overviewDragProgress = 0f
-                                // isOverviewMenuOpen → false → LaunchedEffect animates to 0
-                            } else {
-                                // Didn't drag enough → snap back to fully open
-                                overviewDragProgress = 1f
-                                scope.launch {
-                                    overviewProgressAnim.animateTo(
-                                        1f,
-                                        tween(200, easing = FastOutSlowInEasing)
-                                    )
-                                }
-                            }
-                        } else {
-                            // Was reading, dragging to open overview
-                            if (shouldCommit) {
-                                // Open the overview: set showReaderMenu → triggers isOverviewMenuOpen
-                                showReaderMenu = true
-                                overviewDragProgress = 0f
-                                // isOverviewMenuOpen → true → LaunchedEffect animates to 1
-                            } else {
-                                // Not enough → snap back to reading
-                                overviewDragProgress = 0f
-                                scope.launch {
-                                    overviewProgressAnim.animateTo(
-                                        0f,
-                                        tween(200, easing = FastOutSlowInEasing)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                ReaderOverviewSection(
+                    book = book,
+                    view = view,
+                    page = page,
+                    pages = pages,
+                    currentChapterId = currentChapterId,
+                    portrait = portrait,
+                    rtl = rtl,
+                    appSettings = settings,
+                    scope = scope,
+                    overviewProgressState = overviewProgressState,
+                    isOverviewMenuOpen = isOverviewMenuOpen,
+                    overviewProgressAnim = overviewProgressAnim,
+                    initialZoomPanState = initialZoomPanState,
+                    activeImageLoader = activeImageLoader,
+                    invertDecisionCache = invertDecisionCache,
+                    readerPageBackground = readerPageBackground,
+                    portraitPadding = portraitPadding,
+                    landscapeLeftPadding = landscapeLeftPadding,
+                    landscapeRightPadding = landscapeRightPadding,
+                    epubFontSizeSp = epubFontSizeSp,
+                    ttsHighlight = ttsHighlight,
+                    pageModel = ::pageModel,
+                    onPageChange = { page = it }
                 )
             }
-        } else if (!vertical && !showReaderMenu) {
-            ReaderTapLayer(
-                rightToLeft = rtl,
-                navigationMode = settings.reader.navigationMode,
-                tappingInvertMode = settings.reader.tappingInvertMode,
-                onNextSpread = { turnChapterBoundary(ReaderTurnDirection.Next) },
-                onPreviousSpread = { turnChapterBoundary(ReaderTurnDirection.Previous) },
-                onNextSingle = { turnChapterBoundary(ReaderTurnDirection.Next) },
-                onPreviousSingle = { turnChapterBoundary(ReaderTurnDirection.Previous) },
-                onCenterTap = {},
-                turnVisualDistancePx = turnVisualDistancePx,
-                onTurnDragStart = { direction, _ ->
-                    boundaryDragDirection = direction
-                    boundaryDragProgress = 0f
-                },
-                onTurnDrag = { direction, progress, _ ->
-                    boundaryDragDirection = direction
-                    boundaryDragProgress = progress
-                },
-                onTurnDragEnd = { velocityX ->
-                    val direction = boundaryDragDirection
-                    if (direction != null && shouldCommitReaderTurn(
-                            progress = boundaryDragProgress,
-                            velocityX = velocityX,
-                            direction = direction,
-                            rightToLeft = rtl,
-                            minimumFlingVelocity = minimumFlingVelocity
-                        )) {
-                        turnChapterBoundary(direction)
-                    }
-                    boundaryDragDirection = null
-                    boundaryDragProgress = 0f
-                },
-                onTurnDragCancel = {
-                    boundaryDragDirection = null
-                    boundaryDragProgress = 0f
-                }
-            )
         }
+        }
+        }
+
+
+
+        ReaderTapStack(
+            book = book,
+            turn = turn,
+            view = view,
+            page = page,
+            pages = pages,
+            rtl = rtl,
+            vertical = vertical,
+            appSettings = settings,
+            settingsStore = settingsStore,
+            scope = scope,
+            turnVisualDistancePx = turnVisualDistancePx,
+            zoomPanEnabled = zoomPanEnabled,
+            panMaxX = panBounds.maxX,
+            panMaxY = panBounds.maxY,
+            baseZoomScale = baseZoomScale,
+            viewportWidthPx = viewportWidthPx,
+            viewportHeightPx = viewportHeightPx,
+            initialZoomPanState = initialZoomPanState,
+            isOverviewDisabled = isOverviewDisabled,
+            isOverviewMenuOpen = isOverviewMenuOpen,
+            overviewProgressAnim = overviewProgressAnim,
+            minimumFlingVelocity = minimumFlingVelocity,
+            epubFontSizeSp = epubFontSizeSp,
+            nextPageTurnStep = nextPageTurnStep,
+            previousPageTurnStep = previousPageTurnStep,
+            showingFinalPage = showingFinalPage,
+            directionLockEnabled = usePlayCurl || useCurl,
+            onRequestTurnFromTap = ::requestTurnFromTap,
+            onRequestSingleStep = ::requestSingleStep,
+            onTurnChapterBoundary = ::turnChapterBoundary,
+            onBeginTurnDrag = ::beginTurnDrag,
+            onUpdateTurnDrag = ::updateTurnDrag,
+            onSettleTurnDrag = ::settleTurnDrag,
+            onCancelTurnDrag = ::cancelTurnDrag
+        )
 
         chapterBoundary?.let { boundary ->
             ReaderChapterBoundaryScreen(
@@ -4247,301 +3584,39 @@ fun ReaderScreen(
             onDismiss = { tapZoneOverlayVisible = false }
         )
 
-        // Mount the menu overlay layer whenever any portion of its alpha is still
-        // positive — either during the overview exit or the normal menu fade.
-        // Both the mount boolean and the alpha resolve off draw-phase reads, so
-        // menu fading never recomposes the reader.
-        var menuLayerMounted by remember { mutableStateOf(false) }
-        LaunchedEffect(isOverviewDisabled) {
-            snapshotFlow {
-                if (isOverviewDisabled) {
-                    menuAlphaState.value
-                } else {
-                    overviewMenuFractionState.value
-                }
-            }.collect { alpha ->
-                val mounted = alpha > 0f
-                if (mounted != menuLayerMounted) menuLayerMounted = mounted
-            }
-        }
-        if (menuLayerMounted) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        alpha = if (isOverviewDisabled) {
-                            menuAlphaState.value
-                        } else {
-                            overviewMenuFractionState.value
-                        }
-                    }
-            ) {
-            ReaderMenuOverlay(
-                visible = menuContentVisible,
-                menuFraction = overviewMenuFractionState,
-                dismissOnBackgroundTap = isOverviewDisabled,
-                seriesName = seriesName,
-                chapterName = currentChapter.displayName,
-                page = page,
-                pages = pages,
-                readingDirection = readingDirection,
-                pageLayoutMode = settings.reader.pageLayoutMode,
-                showSpreadShift = !vertical && !portrait && settings.reader.showSpreadShiftButtons,
-                onBack = handleBack,
-                onDismiss = { showReaderMenu = false },
-                onSetReadingDirection = { direction ->
-                    // Per-book session override only. The global fallback lives in Reader
-                    // Settings; a per-series direction lives on the Kavita server. This
-                    // toggle flips the current reading session without writing either, so it
-                    // never silently changes other books or fights the server value.
-                    readingDirection = direction
-                    sessionPreferenceKey?.let { key ->
-                        ReaderSessionPreferenceCache.put(
-                            key = key,
-                            preferences = ReaderSessionPreferences(direction, invertMode, ePaperMode),
-                            nowMillis = System.currentTimeMillis()
-                        )
-                        ReaderExitWriteScope.launch {
-                            ReaderSessionPreferenceCache.persist(ctx.cacheDir)
-                        }
-                    }
-                },
-                onSetPageLayoutMode = { mode ->
-                    scope.launch { settingsStore.setPageLayoutMode(mode) }
-                },
-                invertMode = invertMode,
-                onSetInvertMode = { mode ->
-                    // Per-book session override only (see the invertMode declaration above);
-                    // does not write global Reader Settings.
-                    invertMode = mode
-                    sessionPreferenceKey?.let { key ->
-                        ReaderSessionPreferenceCache.put(
-                            key = key,
-                            preferences = ReaderSessionPreferences(readingDirection, mode, ePaperMode),
-                            nowMillis = System.currentTimeMillis()
-                        )
-                        ReaderExitWriteScope.launch {
-                            ReaderSessionPreferenceCache.persist(ctx.cacheDir)
-                        }
-                    }
-                },
-                ePaperMode = ePaperMode,
-                onSetEPaperMode = { mode ->
-                    ePaperMode = mode
-                    scope.launch { settingsStore.setEPaperMode(mode) }
-                    sessionPreferenceKey?.let { key ->
-                        ReaderSessionPreferenceCache.put(
-                            key = key,
-                            preferences = ReaderSessionPreferences(readingDirection, invertMode, mode),
-                            nowMillis = System.currentTimeMillis()
-                        )
-                        ReaderExitWriteScope.launch {
-                            ReaderSessionPreferenceCache.persist(ctx.cacheDir)
-                        }
-                    }
-                },
-                readerBrightness = readerBrightness,
-                onSetReaderBrightness = { value ->
-                    readerBrightness = value
-                    scope.launch { settingsStore.setReaderBrightness(value) }
-                },
-                nightModeEnabled = nightModeEnabled,
-                onSetNightModeEnabled = { enabled ->
-                    nightModeEnabled = enabled
-                    scope.launch { settingsStore.setNightModeEnabled(enabled) }
-                },
-                nightLightIntensity = nightLightIntensity,
-                onSetNightLightIntensity = { intensity ->
-                    nightLightIntensity = intensity
-                    scope.launch { settingsStore.setNightLightIntensity(intensity) }
-                },
-                onNextSingle = {
-                    requestSingleStep(ReaderTurnDirection.Next, page >= pages - 1)
-                },
-                onPreviousSingle = {
-                    requestSingleStep(ReaderTurnDirection.Previous, false)
-                },
-                onJumpToPage = { targetPage ->
-                    jumpToPage(targetPage)
-                    if (vertical) {
-                        scope.launch { verticalListState.scrollToItem(targetPage + 1) }
-                    }
-                },
-                isEpub = isEpub,
-                epubFontSizeSp = epubFontSizeSp,
-                onSetEpubFontSizeSp = { newSize ->
-                    scope.launch { settingsStore.setEpubFontSizeSp(newSize) }
-                },
-                epubFontFamily = settings.reader.epubFontFamily,
-                onSetEpubFontFamily = { newFamily ->
-                    scope.launch { settingsStore.setEpubFontFamily(newFamily) }
-                },
-                epubTextAlign = settings.reader.epubTextAlign,
-                onSetEpubTextAlign = { newAlign ->
-                    scope.launch { settingsStore.setEpubTextAlign(newAlign) }
-                },
-                isTtsVisible = isEpub && settings.reader.ttsEnabled,
-                isTtsSpeaking = ttsSpeaking,
-                ttsRate = settings.reader.ttsSpeechRate,
-                onToggleTts = { toggleTts() },
-                onSetTtsRate = { rate ->
-                    scope.launch { settingsStore.setTtsSpeechRate(rate) }
-                },
-                pageBackground = settings.reader.pageBackground,
-                onSetPageBackground = { newBg ->
-                    scope.launch { settingsStore.setPageBackground(newBg) }
-                },
-                usePureColors = settings.reader.usePurePageBackgroundColors,
-                onSetUsePureColors = { newPure ->
-                    scope.launch { settingsStore.setUsePurePageBackgroundColors(newPure) }
-                },
-                pageTransitionAnimation = settings.reader.pageTransitionAnimation,
-                onSetPageTransitionAnimation = { enabled ->
-                    scope.launch { settingsStore.setPageTransitionAnimation(enabled) }
-                },
-                pageTurnMode = settings.reader.pageTurnMode,
-                onSetPageTurnMode = { newMode ->
-                    scope.launch { settingsStore.setPageTurnMode(newMode) }
-                },
-                imageScaleType = settings.reader.imageScaleType,
-                onSetImageScaleType = { newScale ->
-                    scope.launch { settingsStore.setImageScaleType(newScale) }
-                },
-                cropBorders = settings.reader.cropBorders,
-                onSetCropBorders = { newCrop ->
-                    scope.launch { settingsStore.setCropBorders(newCrop) }
-                },
-                navigationMode = settings.reader.navigationMode,
-                onSetNavigationMode = { newNav ->
-                    if (newNav != settings.reader.navigationMode &&
-                        newNav != ReaderNavigationMode.Disabled
-                    ) {
-                        tapZoneOverlayVisible = true
-                    }
-                    scope.launch { settingsStore.setNavigationMode(newNav) }
-                },
-                tappingInvertMode = settings.reader.tappingInvertMode,
-                onSetTappingInvertMode = { newInvert ->
-                    if (newInvert != settings.reader.tappingInvertMode &&
-                        settings.reader.navigationMode != ReaderNavigationMode.Disabled
-                    ) {
-                        tapZoneOverlayVisible = true
-                    }
-                    scope.launch { settingsStore.setTappingInvertMode(newInvert) }
-                },
-                autoWebtoonMode = settings.reader.autoWebtoonMode,
-                onSetAutoWebtoonMode = { newAuto ->
-                    scope.launch { settingsStore.setAutoWebtoonMode(newAuto) }
-                },
-                webtoonSidePadding = settings.reader.webtoonSidePadding,
-                onSetWebtoonSidePadding = { newPadding ->
-                    scope.launch { settingsStore.setWebtoonSidePadding(newPadding) }
-                },
-                overviewMode = settings.reader.overviewMode,
-                onSetOverviewMode = { enabled ->
-                    scope.launch { settingsStore.setOverviewMode(enabled) }
-                },
-                drawUnderCutout = drawUnderCutout,
-                onSetDrawUnderCutout = { enabled ->
-                    drawUnderCutout = enabled
-                    scope.launch { settingsStore.setDrawUnderCutout(enabled) }
-                },
-                showStatusBar = settings.reader.showStatusBar,
-                onSetShowStatusBar = { enabled -> scope.launch { settingsStore.setShowStatusBar(enabled) } },
-                timePosition = settings.reader.timePosition,
-                onSetTimePosition = { pos -> scope.launch { settingsStore.setReaderTimePosition(pos) } },
-                titlePosition = settings.reader.titlePosition,
-                onSetTitlePosition = { pos -> scope.launch { settingsStore.setReaderTitlePosition(pos) } },
-                pageNumberPosition = settings.reader.pageNumberPosition,
-                onSetPageNumberPosition = { pos -> scope.launch { settingsStore.setReaderPageNumberPosition(pos) } },
-                progressPercentPosition = settings.reader.progressPercentPosition,
-                onSetProgressPercentPosition = { pos -> scope.launch { settingsStore.setReaderProgressPercentPosition(pos) } },
-                batteryPosition = settings.reader.batteryPosition,
-                onSetBatteryPosition = { pos -> scope.launch { settingsStore.setReaderBatteryPosition(pos) } },
-                // Fall back to the current chapter so the list is never empty
-                // (e.g. offline opens where the volumes call failed).
-                chapters = chapterSequence.ifEmpty { listOf(currentChapter) },
-                currentChapterId = currentChapterId,
-                onSelectChapter = { target ->
-                    switchChapter(target, false)
-                },
-                bookmarks = bookBookmarks,
-                isBookmarked = isCurrentPageBookmarked,
-                onToggleBookmark = {
-                    scope.launch {
-                        val snippet = if (isEpub) {
-                            val subpage = epubSubpages.getOrNull(page)
-                            subpage?.blocks?.firstNotNullOfOrNull { block ->
-                                when (block) {
-                                    is EpubBlock.TextBlock -> block.text.text.trim().take(160).takeIf { it.isNotBlank() }
-                                    is EpubBlock.ImageBlock -> "[Image]"
-                                    else -> null
-                                }
-                            }
-                        } else {
-                            "Page ${page + 1} of $pages"
-                        }
-                        val wasAdded = bookmarkRepo.toggleBookmark(
-                            bookId = currentBookId,
-                            bookTitle = seriesName.ifBlank { currentChapter.displayName },
-                            chapterName = currentChapter.displayName,
-                            chapterId = currentChapterId,
-                            page = page,
-                            pageCount = pages,
-                            previewText = snippet
-                        )
-                        if (s != null && s.baseUrl.isNotBlank() && seriesId > 0 && currentChapterId > 0) {
-                            runCatching {
-                                val kApi = api ?: return@runCatching
-                                val dto = BookmarkDto(
-                                    seriesId = seriesId,
-                                    volumeId = currentVolumeId,
-                                    chapterId = currentChapterId,
-                                    page = page
-                                )
-                                if (wasAdded) {
-                                    kApi.bookmark(dto)
-                                } else {
-                                    kApi.unBookmark(dto)
-                                }
-                            }.onFailure { BunkoLog.w("Failed to sync bookmark with Kavita server", it) }
-                        }
-                    }
-                },
-                onDeleteBookmark = { bookmarkId ->
-                    scope.launch {
-                        val targetBm = bookBookmarks.firstOrNull { it.id == bookmarkId }
-                        bookmarkRepo.removeBookmark(bookmarkId)
-                        if (targetBm != null && s != null && s.baseUrl.isNotBlank() && seriesId > 0 && targetBm.chapterId > 0) {
-                            runCatching {
-                                val kApi = api ?: return@runCatching
-                                kApi.unBookmark(
-                                    BookmarkDto(
-                                        seriesId = seriesId,
-                                        volumeId = currentVolumeId,
-                                        chapterId = targetBm.chapterId,
-                                        page = targetBm.page
-                                    )
-                                )
-                            }.onFailure { BunkoLog.w("Failed to remove bookmark from Kavita server", it) }
-                        }
-                    }
-                },
-                onJumpToBookmark = { bm ->
-                    if (bm.chapterId != 0 && bm.chapterId != currentChapterId) {
-                        val targetChapter = chapterSequence.firstOrNull { it.chapterId == bm.chapterId }
-                        if (targetChapter != null) {
-                            switchChapter(targetChapter, false)
-                        }
-                    }
-                    jumpToPage(bm.page)
-                    if (vertical) {
-                        scope.launch { verticalListState.scrollToItem(bm.page + 1) }
-                    }
-                }
-            )
-            }
-        }
+        ReaderMenuSection(
+            book = book,
+            view = view,
+            page = page,
+            pages = pages,
+            currentChapterId = currentChapterId,
+            currentVolumeId = currentVolumeId,
+            seriesId = seriesId,
+            vertical = vertical,
+            portrait = portrait,
+            appSettings = settings,
+            settingsStore = settingsStore,
+            scope = scope,
+            ctx = ctx,
+            ttsSpeaking = ttsSpeaking,
+            bookmarks = bookBookmarks,
+            isBookmarked = isCurrentPageBookmarked,
+            session = session,
+            api = api,
+            menuContentVisible = menuContentVisible,
+            overviewMenuFractionState = overviewMenuFractionState,
+            isOverviewDisabled = isOverviewDisabled,
+            menuAlphaState = menuAlphaState,
+            verticalListState = verticalListState,
+            epubFontSizeSp = epubFontSizeSp,
+            currentBookId = currentBookId,
+            bookmarkRepo = bookmarkRepo,
+            onRequestSingleStep = ::requestSingleStep,
+            onJumpToPage = ::jumpToPage,
+            onToggleTts = ::toggleTts,
+            onSwitchChapter = ::switchChapter,
+            onBack = handleBack
+        )
 
         // Floating TTS mini bubble (visible when read aloud session is active)
         val isTtsFloatingBubbleVisible = isEpub && settings.reader.ttsEnabled && (isTtsActive || ttsSpeaking) && !showReaderMenu
@@ -4597,6 +3672,1649 @@ fun ReaderScreen(
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp)
         )
+        }
+        }
+    }
+    }
+}
+
+@Composable
+private fun ReaderMenuSection(
+    book: ReaderBookState,
+    view: ReaderViewState,
+    page: Int,
+    pages: Int,
+    currentChapterId: Int,
+    currentVolumeId: Int,
+    seriesId: Int,
+    vertical: Boolean,
+    portrait: Boolean,
+    appSettings: AppSettings,
+    settingsStore: AppSettingsStore,
+    scope: CoroutineScope,
+    ctx: Context,
+    ttsSpeaking: Boolean,
+    bookmarks: List<ReaderBookmark>,
+    isBookmarked: Boolean,
+    session: KavitaSession?,
+    api: KavitaApi?,
+    menuContentVisible: Boolean,
+    overviewMenuFractionState: State<Float>,
+    isOverviewDisabled: Boolean,
+    menuAlphaState: State<Float>,
+    verticalListState: LazyListState,
+    epubFontSizeSp: Float,
+    currentBookId: String,
+    bookmarkRepo: BookmarkRepository,
+    onRequestSingleStep: (ReaderTurnDirection, Boolean) -> Unit,
+    onJumpToPage: (Int) -> Unit,
+    onToggleTts: () -> Unit,
+    onSwitchChapter: (ReaderChapterEntry, Boolean) -> Unit,
+    onBack: () -> Unit
+) {
+    with(book) {
+        with(view) {
+    // Mount the menu overlay layer whenever any portion of its alpha is still
+    // positive — either during the overview exit or the normal menu fade.
+    // Both the mount boolean and the alpha resolve off draw-phase reads, so
+    // menu fading never recomposes the reader.
+    var menuLayerMounted by remember { mutableStateOf(false) }
+    LaunchedEffect(isOverviewDisabled) {
+        snapshotFlow {
+            if (isOverviewDisabled) {
+                menuAlphaState.value
+            } else {
+                overviewMenuFractionState.value
+            }
+        }.collect { alpha ->
+            val mounted = alpha > 0f
+            if (mounted != menuLayerMounted) menuLayerMounted = mounted
+        }
+    }
+    if (menuLayerMounted) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = if (isOverviewDisabled) {
+                        menuAlphaState.value
+                    } else {
+                        overviewMenuFractionState.value
+                    }
+                }
+        ) {
+        ReaderMenuOverlay(
+            visible = menuContentVisible,
+            menuFraction = overviewMenuFractionState,
+            dismissOnBackgroundTap = isOverviewDisabled,
+            seriesName = seriesName,
+            chapterName = currentChapter.displayName,
+            page = page,
+            pages = pages,
+            readingDirection = readingDirection,
+            pageLayoutMode = appSettings.reader.pageLayoutMode,
+            showSpreadShift = !vertical && !portrait && appSettings.reader.showSpreadShiftButtons,
+            onBack = onBack,
+            onDismiss = { showReaderMenu = false },
+            onSetReadingDirection = { direction ->
+                // Per-book session override only. The global fallback lives in Reader
+                // Settings; a per-series direction lives on the Kavita server. This
+                // toggle flips the current reading session without writing either, so it
+                // never silently changes other books or fights the server value.
+                readingDirection = direction
+                sessionPreferenceKey?.let { key ->
+                    ReaderSessionPreferenceCache.put(
+                        key = key,
+                        preferences = ReaderSessionPreferences(direction, invertMode, ePaperMode),
+                        nowMillis = System.currentTimeMillis()
+                    )
+                    ReaderExitWriteScope.launch {
+                        ReaderSessionPreferenceCache.persist(ctx.cacheDir)
+                    }
+                }
+            },
+            onSetPageLayoutMode = { mode ->
+                scope.launch { settingsStore.setPageLayoutMode(mode) }
+            },
+            invertMode = invertMode,
+            onSetInvertMode = { mode ->
+                // Per-book session override only (see the invertMode declaration above);
+                // does not write global Reader Settings.
+                invertMode = mode
+                sessionPreferenceKey?.let { key ->
+                    ReaderSessionPreferenceCache.put(
+                        key = key,
+                        preferences = ReaderSessionPreferences(readingDirection, mode, ePaperMode),
+                        nowMillis = System.currentTimeMillis()
+                    )
+                    ReaderExitWriteScope.launch {
+                        ReaderSessionPreferenceCache.persist(ctx.cacheDir)
+                    }
+                }
+            },
+            ePaperMode = ePaperMode,
+            onSetEPaperMode = { mode ->
+                ePaperMode = mode
+                scope.launch { settingsStore.setEPaperMode(mode) }
+                sessionPreferenceKey?.let { key ->
+                    ReaderSessionPreferenceCache.put(
+                        key = key,
+                        preferences = ReaderSessionPreferences(readingDirection, invertMode, mode),
+                        nowMillis = System.currentTimeMillis()
+                    )
+                    ReaderExitWriteScope.launch {
+                        ReaderSessionPreferenceCache.persist(ctx.cacheDir)
+                    }
+                }
+            },
+            readerBrightness = readerBrightness,
+            onSetReaderBrightness = { value ->
+                readerBrightness = value
+                scope.launch { settingsStore.setReaderBrightness(value) }
+            },
+            nightModeEnabled = nightModeEnabled,
+            onSetNightModeEnabled = { enabled ->
+                nightModeEnabled = enabled
+                scope.launch { settingsStore.setNightModeEnabled(enabled) }
+            },
+            nightLightIntensity = nightLightIntensity,
+            onSetNightLightIntensity = { intensity ->
+                nightLightIntensity = intensity
+                scope.launch { settingsStore.setNightLightIntensity(intensity) }
+            },
+            onNextSingle = {
+                onRequestSingleStep(ReaderTurnDirection.Next, page >= pages - 1)
+            },
+            onPreviousSingle = {
+                onRequestSingleStep(ReaderTurnDirection.Previous, false)
+            },
+            onJumpToPage = { targetPage ->
+                onJumpToPage(targetPage)
+                if (vertical) {
+                    scope.launch { verticalListState.scrollToItem(targetPage + 1) }
+                }
+            },
+            isEpub = isEpub,
+            epubFontSizeSp = epubFontSizeSp,
+            onSetEpubFontSizeSp = { newSize ->
+                scope.launch { settingsStore.setEpubFontSizeSp(newSize) }
+            },
+            epubFontFamily = appSettings.reader.epubFontFamily,
+            onSetEpubFontFamily = { newFamily ->
+                scope.launch { settingsStore.setEpubFontFamily(newFamily) }
+            },
+            epubTextAlign = appSettings.reader.epubTextAlign,
+            onSetEpubTextAlign = { newAlign ->
+                scope.launch { settingsStore.setEpubTextAlign(newAlign) }
+            },
+            isTtsVisible = isEpub && appSettings.reader.ttsEnabled,
+            isTtsSpeaking = ttsSpeaking,
+            ttsRate = appSettings.reader.ttsSpeechRate,
+            onToggleTts = { onToggleTts() },
+            onSetTtsRate = { rate ->
+                scope.launch { settingsStore.setTtsSpeechRate(rate) }
+            },
+            pageBackground = appSettings.reader.pageBackground,
+            onSetPageBackground = { newBg ->
+                scope.launch { settingsStore.setPageBackground(newBg) }
+            },
+            usePureColors = appSettings.reader.usePurePageBackgroundColors,
+            onSetUsePureColors = { newPure ->
+                scope.launch { settingsStore.setUsePurePageBackgroundColors(newPure) }
+            },
+            pageTransitionAnimation = appSettings.reader.pageTransitionAnimation,
+            onSetPageTransitionAnimation = { enabled ->
+                scope.launch { settingsStore.setPageTransitionAnimation(enabled) }
+            },
+            pageTurnMode = appSettings.reader.pageTurnMode,
+            onSetPageTurnMode = { newMode ->
+                scope.launch { settingsStore.setPageTurnMode(newMode) }
+            },
+            imageScaleType = appSettings.reader.imageScaleType,
+            onSetImageScaleType = { newScale ->
+                scope.launch { settingsStore.setImageScaleType(newScale) }
+            },
+            cropBorders = appSettings.reader.cropBorders,
+            onSetCropBorders = { newCrop ->
+                scope.launch { settingsStore.setCropBorders(newCrop) }
+            },
+            navigationMode = appSettings.reader.navigationMode,
+            onSetNavigationMode = { newNav ->
+                if (newNav != appSettings.reader.navigationMode &&
+                    newNav != ReaderNavigationMode.Disabled
+                ) {
+                    tapZoneOverlayVisible = true
+                }
+                scope.launch { settingsStore.setNavigationMode(newNav) }
+            },
+            tappingInvertMode = appSettings.reader.tappingInvertMode,
+            onSetTappingInvertMode = { newInvert ->
+                if (newInvert != appSettings.reader.tappingInvertMode &&
+                    appSettings.reader.navigationMode != ReaderNavigationMode.Disabled
+                ) {
+                    tapZoneOverlayVisible = true
+                }
+                scope.launch { settingsStore.setTappingInvertMode(newInvert) }
+            },
+            autoWebtoonMode = appSettings.reader.autoWebtoonMode,
+            onSetAutoWebtoonMode = { newAuto ->
+                scope.launch { settingsStore.setAutoWebtoonMode(newAuto) }
+            },
+            webtoonSidePadding = appSettings.reader.webtoonSidePadding,
+            onSetWebtoonSidePadding = { newPadding ->
+                scope.launch { settingsStore.setWebtoonSidePadding(newPadding) }
+            },
+            overviewMode = appSettings.reader.overviewMode,
+            onSetOverviewMode = { enabled ->
+                scope.launch { settingsStore.setOverviewMode(enabled) }
+            },
+            drawUnderCutout = drawUnderCutout,
+            onSetDrawUnderCutout = { enabled ->
+                drawUnderCutout = enabled
+                scope.launch { settingsStore.setDrawUnderCutout(enabled) }
+            },
+            showStatusBar = appSettings.reader.showStatusBar,
+            onSetShowStatusBar = { enabled -> scope.launch { settingsStore.setShowStatusBar(enabled) } },
+            timePosition = appSettings.reader.timePosition,
+            onSetTimePosition = { pos -> scope.launch { settingsStore.setReaderTimePosition(pos) } },
+            titlePosition = appSettings.reader.titlePosition,
+            onSetTitlePosition = { pos -> scope.launch { settingsStore.setReaderTitlePosition(pos) } },
+            pageNumberPosition = appSettings.reader.pageNumberPosition,
+            onSetPageNumberPosition = { pos -> scope.launch { settingsStore.setReaderPageNumberPosition(pos) } },
+            progressPercentPosition = appSettings.reader.progressPercentPosition,
+            onSetProgressPercentPosition = { pos -> scope.launch { settingsStore.setReaderProgressPercentPosition(pos) } },
+            batteryPosition = appSettings.reader.batteryPosition,
+            onSetBatteryPosition = { pos -> scope.launch { settingsStore.setReaderBatteryPosition(pos) } },
+            // Fall back to the current chapter so the list is never empty
+            // (e.g. offline opens where the volumes call failed).
+            chapters = chapterSequence.ifEmpty { listOf(currentChapter) },
+            currentChapterId = currentChapterId,
+            onSelectChapter = { target ->
+                onSwitchChapter(target, false)
+            },
+            bookmarks = bookmarks,
+            isBookmarked = isBookmarked,
+            onToggleBookmark = {
+                scope.launch {
+                    val snippet = if (isEpub) {
+                        val subpage = epubSubpages.getOrNull(page)
+                        subpage?.blocks?.firstNotNullOfOrNull { block ->
+                            when (block) {
+                                is EpubBlock.TextBlock -> block.text.text.trim().take(160).takeIf { it.isNotBlank() }
+                                is EpubBlock.ImageBlock -> "[Image]"
+                                else -> null
+                            }
+                        }
+                    } else {
+                        "Page ${page + 1} of $pages"
+                    }
+                    val wasAdded = bookmarkRepo.toggleBookmark(
+                        bookId = currentBookId,
+                        bookTitle = seriesName.ifBlank { currentChapter.displayName },
+                        chapterName = currentChapter.displayName,
+                        chapterId = currentChapterId,
+                        page = page,
+                        pageCount = pages,
+                        previewText = snippet
+                    )
+                    if (session != null && session.baseUrl.isNotBlank() && seriesId > 0 && currentChapterId > 0) {
+                        runCatching {
+                            val kApi = api ?: return@runCatching
+                            val dto = BookmarkDto(
+                                seriesId = seriesId,
+                                volumeId = currentVolumeId,
+                                chapterId = currentChapterId,
+                                page = page
+                            )
+                            if (wasAdded) {
+                                kApi.bookmark(dto)
+                            } else {
+                                kApi.unBookmark(dto)
+                            }
+                        }.onFailure { BunkoLog.w("Failed to sync bookmark with Kavita server", it) }
+                    }
+                }
+            },
+            onDeleteBookmark = { bookmarkId ->
+                scope.launch {
+                    val targetBm = bookmarks.firstOrNull { it.id == bookmarkId }
+                    bookmarkRepo.removeBookmark(bookmarkId)
+                    if (targetBm != null && session != null && session.baseUrl.isNotBlank() && seriesId > 0 && targetBm.chapterId > 0) {
+                        runCatching {
+                            val kApi = api ?: return@runCatching
+                            kApi.unBookmark(
+                                BookmarkDto(
+                                    seriesId = seriesId,
+                                    volumeId = currentVolumeId,
+                                    chapterId = targetBm.chapterId,
+                                    page = targetBm.page
+                                )
+                            )
+                        }.onFailure { BunkoLog.w("Failed to remove bookmark from Kavita server", it) }
+                    }
+                }
+            },
+            onJumpToBookmark = { bm ->
+                if (bm.chapterId != 0 && bm.chapterId != currentChapterId) {
+                    val targetChapter = chapterSequence.firstOrNull { it.chapterId == bm.chapterId }
+                    if (targetChapter != null) {
+                        onSwitchChapter(targetChapter, false)
+                    }
+                }
+                onJumpToPage(bm.page)
+                if (vertical) {
+                    scope.launch { verticalListState.scrollToItem(bm.page + 1) }
+                }
+            }
+        )
+        }
+    }
+        }
+    }
+}
+
+@Composable
+private fun ReaderTapStack(
+    book: ReaderBookState,
+    turn: ReaderTurnState,
+    view: ReaderViewState,
+    page: Int,
+    pages: Int,
+    rtl: Boolean,
+    vertical: Boolean,
+    appSettings: AppSettings,
+    settingsStore: AppSettingsStore,
+    scope: CoroutineScope,
+    turnVisualDistancePx: Float,
+    zoomPanEnabled: Boolean,
+    panMaxX: Float,
+    panMaxY: Float,
+    baseZoomScale: Float,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
+    initialZoomPanState: ReaderZoomPanState,
+    isOverviewDisabled: Boolean,
+    isOverviewMenuOpen: Boolean,
+    overviewProgressAnim: Animatable<Float, *>,
+    minimumFlingVelocity: Float,
+    epubFontSizeSp: Float,
+    nextPageTurnStep: Int,
+    previousPageTurnStep: Int,
+    showingFinalPage: Boolean,
+    directionLockEnabled: Boolean,
+    onRequestTurnFromTap: (ReaderTurnDirection, Int, Boolean, Offset) -> Unit,
+    onRequestSingleStep: (ReaderTurnDirection, Boolean) -> Unit,
+    onTurnChapterBoundary: (ReaderTurnDirection) -> Unit,
+    onBeginTurnDrag: (ReaderTurnDirection, Offset) -> Unit,
+    onUpdateTurnDrag: (ReaderTurnDirection, Float, Offset) -> Unit,
+    onSettleTurnDrag: (Float) -> Unit,
+    onCancelTurnDrag: () -> Unit
+) {
+    with(book) {
+        with(turn) {
+            with(view) {
+    if (!vertical && chapterBoundary == null && !showReaderMenu) {
+        key(page, rtl, nextPageTurnStep, previousPageTurnStep, showingFinalPage) {
+            ReaderTapLayer(
+            rightToLeft = rtl,
+            navigationMode = appSettings.reader.navigationMode,
+            tappingInvertMode = appSettings.reader.tappingInvertMode,
+            onNextSpread = { position ->
+                onRequestTurnFromTap(ReaderTurnDirection.Next, nextPageTurnStep, showingFinalPage, position)
+            },
+            onPreviousSpread = { position ->
+                onRequestTurnFromTap(ReaderTurnDirection.Previous, previousPageTurnStep, false, position)
+            },
+            onNextSingle = {
+                onRequestSingleStep(ReaderTurnDirection.Next, page >= pages - 1)
+            },
+            onPreviousSingle = {
+                onRequestSingleStep(ReaderTurnDirection.Previous, false)
+            },
+            onCenterTap = { showReaderMenu = !showReaderMenu },
+            turnVisualDistancePx = turnVisualDistancePx,
+            zoomPanEnabled = zoomPanEnabled,
+            panOffsetX = zoomPan.offsetX,
+            panOffsetY = zoomPan.offsetY,
+            panMaxX = panMaxX,
+            panMaxY = panMaxY,
+            onPan = { x, y ->
+                zoomAnimationJob?.cancel()
+                zoomPan = zoomPan.copy(offsetX = x, offsetY = y)
+            },
+            onTurnDragStart = onBeginTurnDrag,
+            onTurnDrag = onUpdateTurnDrag,
+            onTurnDragEnd = onSettleTurnDrag,
+            onTurnDragCancel = onCancelTurnDrag,
+            directionLockEnabled = directionLockEnabled,
+            closeSwipeEnabled = false,
+            closeVisualDistancePx = viewportHeightPx,
+            onCloseDrag = {},
+            onCloseDragEnd = {},
+            onCloseDragCancel = {},
+            onDoubleTap = {
+                val start = zoomPan
+                val target = start.withDoubleTapZoom(
+                    tapPosition = it,
+                    baseZoomScale = baseZoomScale,
+                    viewportWidthPx = viewportWidthPx,
+                    viewportHeightPx = viewportHeightPx,
+                    initialState = initialZoomPanState
+                )
+                zoomAnimationJob?.cancel()
+                zoomAnimationJob = scope.launch {
+                    Animatable(0f).animateTo(
+                        targetValue = 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    ) {
+                        zoomPan = start.lerpTo(target, value)
+                    }
+                    zoomPan = target
+                }
+            },
+            onTransform = { zoomChange, panChange, focalPoint ->
+                zoomAnimationJob?.cancel()
+                if (isEpub && !isOverviewMenuOpen) {
+                    // For text-based formats (EPUB), pinch-to-zoom scales the text size (like Kindle)
+                    if (!isPinchChangingFontSize) {
+                        pinchBaseFontSize = epubFontSizeSp
+                        pinchAccumulatedScale = 1f
+                        isPinchChangingFontSize = true
+                    }
+                    pinchAccumulatedScale *= zoomChange
+                    val newSize = (pinchBaseFontSize * pinchAccumulatedScale).roundToInt().toFloat().coerceIn(12f, 36f)
+                    if (newSize != epubFontSizeSp) {
+                        scope.launch { settingsStore.setEpubFontSizeSp(newSize) }
+                    }
+                    zoomPan = initialZoomPanState
+                } else {
+                    val candidate = zoomPan.withTransform(
+                        zoomChange = zoomChange,
+                        panChange = panChange,
+                        focalPoint = focalPoint,
+                        baseZoomScale = baseZoomScale,
+                        viewportWidthPx = viewportWidthPx,
+                        viewportHeightPx = viewportHeightPx
+                    )
+                    when {
+                        // ── Overview already open: pinch-out (spread) → dismiss it ───
+                        isOverviewMenuOpen && zoomChange > 1f + ReaderZoomEpsilon -> {
+                            // On the FIRST frame of the dismiss gesture, overviewDragProgress
+                            // is 0f (it stays 0 when overview was opened via button, not gesture).
+                            // Seed it to 1f so the drag has the full 1→0 range to work with.
+                            val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
+                            val delta = (zoomChange - 1f) * 4f
+                            val next = (startProgress - delta).coerceIn(0f, 1f)
+                            isDraggingOverview = true
+                            overviewDragProgress = next
+                            zoomPan = initialZoomPanState
+                            scope.launch { overviewProgressAnim.snapTo(next) }
+                        }
+                        // ── At 1× zoom: pinch-in → enter overview ──────────────────────
+                        // Stay in drag mode if isDraggingOverview is already true, even
+                        // when zoomChange oscillates near 1f on slow pinches — only exit
+                        // on a clear pinch-OUT (zoomChange > 1+ε, handled above/in else).
+                        !isOverviewDisabled &&
+                        !isOverviewMenuOpen &&
+                        candidate.userScale <= 1f + ReaderZoomEpsilon &&
+                        (isDraggingOverview || zoomChange < 1f - ReaderZoomEpsilon) -> {
+                            val delta = (1f - zoomChange).coerceAtLeast(0f) * 4f
+                            val next = (overviewDragProgress + delta).coerceIn(0f, 1f)
+                            isDraggingOverview = true
+                            overviewDragProgress = next
+                            zoomPan = initialZoomPanState
+                            scope.launch { overviewProgressAnim.snapTo(next) }
+                        }
+                        // ── Normal zoom / clear reversal ────────────────────────────────
+                        else -> {
+                            if (isDraggingOverview) {
+                                // Only cancel the overview drag when the user clearly
+                                // spreads fingers (zooming IN).  Near-1 zoomChange values
+                                // from a slow pinch must NOT cancel; just hold position.
+                                if (zoomChange > 1f + ReaderZoomEpsilon) {
+                                    isDraggingOverview = false
+                                    overviewDragProgress = 0f
+                                    scope.launch {
+                                        overviewProgressAnim.animateTo(
+                                            0f,
+                                            tween(200, easing = FastOutSlowInEasing)
+                                        )
+                                    }
+                                }
+                                zoomPan = initialZoomPanState
+                                // else: near-1 zoomChange while dragging → hold current progress
+                            } else {
+                                zoomPan = candidate
+                            }
+                        }
+                    }
+                }
+            },
+            onTransformEnd = { _ ->
+                if (isEpub && isPinchChangingFontSize) {
+                    isPinchChangingFontSize = false
+                    pinchAccumulatedScale = 1f
+                    zoomPan = initialZoomPanState
+                    return@ReaderTapLayer
+                }
+                if (isDraggingOverview) {
+                    isDraggingOverview = false
+                    val shouldCommit = overviewDragProgress >= 0.35f
+                    zoomPan = initialZoomPanState
+                    if (isOverviewMenuOpen) {
+                        // Was overview open, dragging to dismiss
+                        val shouldDismiss = overviewDragProgress <= 0.65f
+                        if (shouldDismiss) {
+                            // Progress went below threshold → dismiss overview
+                            showReaderMenu = false
+                            overviewDragProgress = 0f
+                            // isOverviewMenuOpen → false → LaunchedEffect animates to 0
+                        } else {
+                            // Didn't drag enough → snap back to fully open
+                            overviewDragProgress = 1f
+                            scope.launch {
+                                overviewProgressAnim.animateTo(
+                                    1f,
+                                    tween(200, easing = FastOutSlowInEasing)
+                                )
+                            }
+                        }
+                    } else {
+                        // Was reading, dragging to open overview
+                        if (shouldCommit) {
+                            // Open the overview: set showReaderMenu → triggers isOverviewMenuOpen
+                            showReaderMenu = true
+                            overviewDragProgress = 0f
+                            // isOverviewMenuOpen → true → LaunchedEffect animates to 1
+                        } else {
+                            // Not enough → snap back to reading
+                            overviewDragProgress = 0f
+                            scope.launch {
+                                overviewProgressAnim.animateTo(
+                                    0f,
+                                    tween(200, easing = FastOutSlowInEasing)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            )
+        }
+    } else if (!vertical && !showReaderMenu) {
+        ReaderTapLayer(
+            rightToLeft = rtl,
+            navigationMode = appSettings.reader.navigationMode,
+            tappingInvertMode = appSettings.reader.tappingInvertMode,
+            onNextSpread = { onTurnChapterBoundary(ReaderTurnDirection.Next) },
+            onPreviousSpread = { onTurnChapterBoundary(ReaderTurnDirection.Previous) },
+            onNextSingle = { onTurnChapterBoundary(ReaderTurnDirection.Next) },
+            onPreviousSingle = { onTurnChapterBoundary(ReaderTurnDirection.Previous) },
+            onCenterTap = {},
+            turnVisualDistancePx = turnVisualDistancePx,
+            onTurnDragStart = { direction, _ ->
+                boundaryDragDirection = direction
+                boundaryDragProgress = 0f
+            },
+            onTurnDrag = { direction, progress, _ ->
+                boundaryDragDirection = direction
+                boundaryDragProgress = progress
+            },
+            onTurnDragEnd = { velocityX ->
+                val direction = boundaryDragDirection
+                if (direction != null && shouldCommitReaderTurn(
+                        progress = boundaryDragProgress,
+                        velocityX = velocityX,
+                        direction = direction,
+                        rightToLeft = rtl,
+                        minimumFlingVelocity = minimumFlingVelocity
+                    )) {
+                    onTurnChapterBoundary(direction)
+                }
+                boundaryDragDirection = null
+                boundaryDragProgress = 0f
+            },
+            onTurnDragCancel = {
+                boundaryDragDirection = null
+                boundaryDragProgress = 0f
+            }
+        )
+    }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderVerticalBranch(
+    book: ReaderBookState,
+    turn: ReaderTurnState,
+    view: ReaderViewState,
+    page: Int,
+    pages: Int,
+    currentChapterId: Int,
+    appSettings: AppSettings,
+    activeImageLoader: ImageLoader,
+    invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
+    readerPageBackground: Color,
+    viewportHeight: Dp,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
+    verticalListState: LazyListState,
+    verticalBoundariesEnabled: Boolean,
+    isWebtoon: Boolean,
+    epubFontSizeSp: Float,
+    portraitPadding: PaddingValues,
+    ttsHighlight: TtsHighlight?,
+    pageModel: (Int) -> Any?,
+    onPageChange: (Int) -> Unit,
+    onCompleteChapter: (Boolean) -> Unit,
+    onResetChapter: (Boolean) -> Unit,
+    onSwitchChapter: (ReaderChapterEntry, Boolean) -> Unit,
+    onBack: () -> Unit
+) {
+    with(book) {
+        with(turn) {
+            with(view) {
+        val neighbors = readerChapterNeighbors(chapterSequence, currentChapterId)
+            val previousBoundary = neighbors.previous?.let { previous ->
+                ReaderChapterBoundary(
+                    direction = ReaderTurnDirection.Previous,
+                    current = currentChapter,
+                    neighbor = previous
+                )
+            }
+            val nextBoundary = neighbors.next?.let { next ->
+                ReaderChapterBoundary(
+                    direction = ReaderTurnDirection.Next,
+                    current = currentChapter,
+                    neighbor = next
+                )
+            }
+            ReaderVerticalScroll(
+                pageCount = pages,
+                pageDimensions = pageDimensions,
+                pageModel = pageModel,
+                imageLoader = activeImageLoader,
+                invertMode = invertMode,
+                ePaperMode = ePaperMode,
+                whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                invertDecisionCache = invertDecisionCache,
+                pageBackground = readerPageBackground,
+                nightModeEnabled = nightModeEnabled,
+                nightLightIntensity = nightLightIntensity,
+                viewportHeight = viewportHeight,
+                fallbackPageAspectRatio = (viewportWidthPx / viewportHeightPx.coerceAtLeast(1f))
+                    .coerceAtLeast(0.01f),
+                listState = verticalListState,
+                previousBoundary = previousBoundary,
+                nextBoundary = nextBoundary,
+                seriesName = seriesName,
+                chapterSwitching = chapterSwitching,
+                boundaryHasError = error != null,
+                onCurrentPageChanged = { currentPage ->
+                    if (page != currentPage) onPageChange(currentPage)
+                    if (completingRead) completingRead = false
+                },
+                onBoundaryReached = { direction ->
+                    if (verticalBoundariesEnabled && !completingRead) {
+                        when (direction) {
+                            ReaderTurnDirection.Next -> {
+                                onCompleteChapter(false)
+                            }
+                            ReaderTurnDirection.Previous -> {
+                                if (neighbors.previous != null) {
+                                    onResetChapter(false)
+                                }
+                            }
+                        }
+                    }
+                },
+                onContinueBoundary = { direction ->
+                    val neighbor = when (direction) {
+                        ReaderTurnDirection.Next -> neighbors.next
+                        ReaderTurnDirection.Previous -> neighbors.previous
+                    }
+                    neighbor?.let { target ->
+                        onSwitchChapter(target, direction == ReaderTurnDirection.Previous)
+                    }
+                },
+                onBackToSeries = onBack,
+                onMenuToggle = { showReaderMenu = !showReaderMenu },
+                epubSubpages = epubSubpages,
+                epubFontSizeSp = epubFontSizeSp,
+                epubFontFamily = appSettings.reader.epubFontFamily,
+                epubTextAlign = appSettings.reader.epubTextAlign,
+                epubContentPadding = portraitPadding,
+                ttsPage = ttsPage,
+                ttsHighlight = ttsHighlight,
+                isWebtoon = isWebtoon,
+                sidePaddingPercent = appSettings.reader.webtoonSidePadding,
+                navigationMode = appSettings.reader.navigationMode,
+                tappingInvertMode = appSettings.reader.tappingInvertMode,
+                imageScaleType = appSettings.reader.imageScaleType,
+                cropBorders = appSettings.reader.cropBorders
+            )
+        }
+    }
+}
+}
+
+@Composable
+private fun ReaderOverviewSection(
+    book: ReaderBookState,
+    view: ReaderViewState,
+    page: Int,
+    pages: Int,
+    currentChapterId: Int,
+    portrait: Boolean,
+    rtl: Boolean,
+    appSettings: AppSettings,
+    scope: CoroutineScope,
+    overviewProgressState: State<Float>,
+    isOverviewMenuOpen: Boolean,
+    overviewProgressAnim: Animatable<Float, *>,
+    initialZoomPanState: ReaderZoomPanState,
+    activeImageLoader: ImageLoader,
+    invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
+    readerPageBackground: Color,
+    portraitPadding: PaddingValues,
+    landscapeLeftPadding: PaddingValues,
+    landscapeRightPadding: PaddingValues,
+    epubFontSizeSp: Float,
+    ttsHighlight: TtsHighlight?,
+    pageModel: (Int) -> Any?,
+    onPageChange: (Int) -> Unit
+) {
+    with(book) {
+        with(view) {
+            val overviewCursors = remember(pages, portrait, pageDimensions, isEpub) {
+                readerOverviewCursors(
+                    pageCount = pages,
+                    portrait = portrait,
+                    pageDimensions = pageDimensions,
+                    isEpub = isEpub
+                )
+            }
+            ReaderOverviewGallery(
+                cursors = overviewCursors,
+                currentCursor = page,
+                reverseLayout = rtl,
+                progressState = overviewProgressState,
+                tapZoneOverlayVisible = tapZoneOverlayVisible,
+                tapZoneNavigationMode = appSettings.reader.navigationMode,
+                tapZoneTappingInvertMode = appSettings.reader.tappingInvertMode,
+                tapZoneRightToLeft = rtl,
+                onTapZoneOverlayDismiss = { tapZoneOverlayVisible = false },
+                onSelect = { cursor ->
+                    onPageChange(cursor)
+                    lastRemoteProgressPages[currentChapterId] = cursor
+                },
+                onCenterTap = {
+                    zoomPan = initialZoomPanState
+                    showReaderMenu = false
+                },
+                // Route pinch gestures from within the overview gallery to the same
+                // onTransform/onTransformEnd handlers used by ReaderTapLayer.  The
+                // gallery's Initial-pass interceptor captures 2-finger events before
+                // HorizontalPager can misinterpret them as horizontal scroll.
+                onTransform = { zoomChange, _, _ ->
+                    if (isOverviewMenuOpen) {
+                        if (zoomChange > 1f + ReaderZoomEpsilon || (isDraggingOverview && zoomChange < 1f - ReaderZoomEpsilon)) {
+                            val startProgress = if (!isDraggingOverview) 1f else overviewDragProgress
+                            val delta = (zoomChange - 1f) * 4f
+                            val next = (startProgress - delta).coerceIn(0f, 1f)
+                            isDraggingOverview = true
+                            overviewDragProgress = next
+                            zoomPan = initialZoomPanState
+                            scope.launch { overviewProgressAnim.snapTo(next) }
+                        }
+                    }
+                },
+                onTransformEnd = { _ ->
+                    if (isDraggingOverview) {
+                        isDraggingOverview = false
+                        val shouldDismiss = overviewDragProgress <= 0.65f
+                        zoomPan = initialZoomPanState
+                        if (shouldDismiss) {
+                            showReaderMenu = false
+                            overviewDragProgress = 0f
+                        } else {
+                            overviewDragProgress = 1f
+                            scope.launch {
+                                overviewProgressAnim.animateTo(
+                                    1f,
+                                    tween(200, easing = FastOutSlowInEasing)
+                                )
+                            }
+                        }
+                    }
+                }
+            ) { cursor, cardModifier ->
+                RenderReaderPage(
+                    cursor = cursor,
+                    pageCount = pages,
+                    portrait = portrait,
+                    pageDimensions = pageDimensions,
+                    rightToLeft = rtl,
+                    pageModel = pageModel,
+                    imageLoader = activeImageLoader,
+                    invertMode = invertMode,
+                    ePaperMode = ePaperMode,
+                    whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                    invertDecisionCache = invertDecisionCache,
+                    pageBackground = readerPageBackground,
+                    isEpub = isEpub,
+                    epubSubpages = epubSubpages,
+                    epubFontSizeSp = epubFontSizeSp,
+                    epubFontFamily = appSettings.reader.epubFontFamily,
+                    epubTextAlign = appSettings.reader.epubTextAlign,
+                    portraitPadding = portraitPadding,
+                    landscapeLeftPadding = landscapeLeftPadding,
+                    landscapeRightPadding = landscapeRightPadding,
+                    ttsHighlight = ttsHighlight,
+                    ttsPage = ttsPage,
+                    imageScaleType = appSettings.reader.imageScaleType,
+                    cropBorders = appSettings.reader.cropBorders,
+                    nightModeEnabled = nightModeEnabled,
+                    nightLightIntensity = nightLightIntensity,
+                    modifier = cardModifier
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderSlideTransitionStrip(
+    book: ReaderBookState,
+    turn: ReaderTurnState,
+    view: ReaderViewState,
+    transition: ReaderPageTransition?,
+    rtl: Boolean,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
+    zoomPanEnabled: Boolean,
+    totalZoomScale: Float,
+    portrait: Boolean,
+    density: Density,
+    readerPageBackground: Color,
+    pages: Int,
+    pageModel: (Int) -> Any?,
+    activeImageLoader: ImageLoader,
+    invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
+    epubFontSizeSp: Float,
+    portraitPadding: PaddingValues,
+    landscapeLeftPadding: PaddingValues,
+    landscapeRightPadding: PaddingValues,
+    ttsHighlight: TtsHighlight?,
+    appSettings: AppSettings,
+    onZoomLandingOffsetX: (ReaderTurnDirection) -> Float
+) {
+    with(book) {
+        with(turn) {
+            with(view) {
+            requireNotNull(transition)
+            val progress = transitionProgress.coerceIn(0f, 1f)
+            val physicalSign = readerTurnPhysicalSign(rtl, transition.direction)
+            val slideDistancePx = viewportWidthPx * transition.distanceFraction
+            val targetOffsetX = if (zoomPanEnabled) {
+                onZoomLandingOffsetX(transition.direction)
+            } else {
+                zoomPan.offsetX
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(readerPageBackground)
+            ) {
+                if (transition.distanceFraction < 1f && !zoomPanEnabled) {
+                    // Spread shift: the two whole-spread layers cannot slide seamlessly
+                    // because each hugs the pages to its own spine — at the layer seam the
+                    // outer margins meet and open a gap at the spine. Instead draw one
+                    // paper background and the three page images (enter / stay / exit)
+                    // glued edge-to-edge, all travelling by the staying page's rendered
+                    // width; the leaving page fades out.
+                    fun halfPageWidthPx(pageIndex: Int): Float {
+                        val dims = pageDimensions[pageIndex] ?: return viewportWidthPx / 2f
+                        val w = dims.width?.toFloat() ?: return viewportWidthPx / 2f
+                        val h = dims.height?.toFloat() ?: return viewportWidthPx / 2f
+                        if (w <= 0f || h <= 0f) return viewportWidthPx / 2f
+                        return minOf(viewportWidthPx / 2f, viewportHeightPx * (w / h))
+                    }
+
+                    val (enterPage, stayPage, exitPage) = readerShiftStripPages(
+                        outgoingPage = transition.outgoingPage,
+                        targetPage = transition.targetPage,
+                        direction = transition.direction
+                    )
+                    val geometry = readerShiftStripGeometry(
+                        physicalSign = physicalSign,
+                        halfViewportPx = viewportWidthPx / 2f,
+                        stayWidthPx = halfPageWidthPx(stayPage),
+                        enterWidthPx = halfPageWidthPx(enterPage),
+                        exitWidthPx = halfPageWidthPx(exitPage)
+                    )
+                    listOf(
+                        // The entering page starts glued to the staying page, which puts
+                        // a sliver of it inside the resting view's outer margin; fade it
+                        // in over the first quarter so it does not pop into existence.
+                        Triple(enterPage, geometry.enterStartLeftPx, (progress * 4f).coerceAtMost(1f)),
+                        Triple(stayPage, geometry.stayStartLeftPx, 1f),
+                        Triple(exitPage, geometry.exitStartLeftPx, 1f - progress)
+                    ).forEach { (stripPage, startLeftPx, pageAlpha) ->
+                        if (stripPage in 0 until pages) {
+                            val widthDp = with(density) { halfPageWidthPx(stripPage).toDp() }
+                            key(stripPage) {
+                                Box(
+                                    Modifier
+                                        .fillMaxHeight()
+                                        .width(widthDp)
+                                        .graphicsLayer {
+                                            translationX = startLeftPx + geometry.travelPx * progress
+                                            alpha = pageAlpha
+                                        }
+                                ) {
+                                    RenderReaderPage(
+                                        cursor = stripPage,
+                                        pageCount = pages,
+                                        portrait = true,
+                                        pageDimensions = pageDimensions,
+                                        rightToLeft = rtl,
+                                        pageModel = pageModel,
+                                        imageLoader = activeImageLoader,
+                                        invertMode = invertMode,
+                                        ePaperMode = ePaperMode,
+                                        whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                                        invertDecisionCache = invertDecisionCache,
+                                        pageBackground = readerPageBackground,
+                                        isEpub = isEpub,
+                                        epubSubpages = epubSubpages,
+                                        epubFontSizeSp = epubFontSizeSp,
+                                        epubFontFamily = appSettings.reader.epubFontFamily,
+                                        epubTextAlign = appSettings.reader.epubTextAlign,
+                                        portraitPadding = portraitPadding,
+                                        landscapeLeftPadding = landscapeLeftPadding,
+                                        landscapeRightPadding = landscapeRightPadding,
+                                        ttsHighlight = ttsHighlight,
+                                        ttsPage = ttsPage,
+                                        imageScaleType = appSettings.reader.imageScaleType,
+                                        cropBorders = appSettings.reader.cropBorders,
+                                        nightModeEnabled = nightModeEnabled,
+                                        nightLightIntensity = nightLightIntensity,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    RenderReaderPage(
+                        cursor = transition.targetPage,
+                        pageCount = pages,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions,
+                        rightToLeft = rtl,
+                        pageModel = pageModel,
+                        imageLoader = activeImageLoader,
+                        invertMode = invertMode,
+                        ePaperMode = ePaperMode,
+                        whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        pageBackground = readerPageBackground,
+                        isEpub = isEpub,
+                        epubSubpages = epubSubpages,
+                        epubFontSizeSp = epubFontSizeSp,
+                        epubFontFamily = appSettings.reader.epubFontFamily,
+                        epubTextAlign = appSettings.reader.epubTextAlign,
+                        portraitPadding = portraitPadding,
+                        landscapeLeftPadding = landscapeLeftPadding,
+                        landscapeRightPadding = landscapeRightPadding,
+                        ttsHighlight = ttsHighlight,
+                        ttsPage = ttsPage,
+                        imageScaleType = appSettings.reader.imageScaleType,
+                        cropBorders = appSettings.reader.cropBorders,
+                        nightModeEnabled = nightModeEnabled,
+                        nightLightIntensity = nightLightIntensity,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = -physicalSign * slideDistancePx * (1f - progress) + targetOffsetX
+                                translationY = zoomPan.offsetY
+                                scaleX = totalZoomScale
+                                scaleY = totalZoomScale
+                            }
+                    )
+                    RenderReaderPage(
+                        cursor = transition.outgoingPage,
+                        pageCount = pages,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions,
+                        rightToLeft = rtl,
+                        pageModel = pageModel,
+                        imageLoader = activeImageLoader,
+                        invertMode = invertMode,
+                        ePaperMode = ePaperMode,
+                        whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        pageBackground = readerPageBackground,
+                        isEpub = isEpub,
+                        epubSubpages = epubSubpages,
+                        epubFontSizeSp = epubFontSizeSp,
+                        epubFontFamily = appSettings.reader.epubFontFamily,
+                        epubTextAlign = appSettings.reader.epubTextAlign,
+                        portraitPadding = portraitPadding,
+                        landscapeLeftPadding = landscapeLeftPadding,
+                        landscapeRightPadding = landscapeRightPadding,
+                        ttsHighlight = ttsHighlight,
+                        ttsPage = ttsPage,
+                        imageScaleType = appSettings.reader.imageScaleType,
+                        cropBorders = appSettings.reader.cropBorders,
+                        nightModeEnabled = nightModeEnabled,
+                        nightLightIntensity = nightLightIntensity,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = physicalSign * slideDistancePx * progress + zoomPan.offsetX
+                                translationY = zoomPan.offsetY
+                                scaleX = totalZoomScale
+                                scaleY = totalZoomScale
+                            }
+                    )
+                }
+            }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderPlayCurlBranch(
+    book: ReaderBookState,
+    turn: ReaderTurnState,
+    view: ReaderViewState,
+    page: Int,
+    pages: Int,
+    rtl: Boolean,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
+    readerPageBackground: Color,
+    pageModel: (Int) -> Any?,
+    appSettings: AppSettings,
+    invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
+    epubFontSizeSp: Float,
+    portraitPadding: PaddingValues,
+    landscapeOuterMargin: Dp,
+    safeTopPadding: Dp,
+    safeBottomPadding: Dp,
+    landscapeLeftPadding: PaddingValues,
+    landscapeRightPadding: PaddingValues,
+    density: Density,
+    playCurlHost: PlayCurlHostState,
+    overviewTakingOver: Boolean,
+    ttsSpeaking: Boolean,
+    ttsHighlight: TtsHighlight?,
+    totalZoomScale: Float,
+    usePortraitPlayCurl: Boolean,
+    portrait: Boolean,
+    activeImageLoader: ImageLoader,
+    onPageChange: (Int) -> Unit,
+    onPlayCurlSettled: (Int) -> Unit
+) {
+    with(book) {
+        with(turn) {
+            with(view) {
+            // Settle in-flight turn state before unmounting the surface for the
+            // overview (dispose cancels the GL settlement without committing).
+            // Tap-turns have no live drag pointer, so commit their target — the
+            // GL animation would have landed there anyway. Live drag-turns are
+            // cancelled instead: the page stays where it was.
+            LaunchedEffect(overviewTakingOver) {
+                if (overviewTakingOver && activeCurlTargetPage != null) {
+                    if (curlDragStartPointer == null) {
+                        onPageChange(activeCurlTargetPage!!.coerceIn(0, (pages - 1).coerceAtLeast(0)))
+                    } else {
+                        playCurlHost.cancelDrag()
+                    }
+                    activeCurlDirection = null
+                    activeCurlTargetPage = null
+                    curlDragStartPointer = null
+                    curlDragProgress = 0f
+                    dragBoundaryDirection = null
+                }
+            }
+            if (!overviewTakingOver) {
+                PlayCurlPage(
+                    page = page,
+                    pageCount = pages,
+                    portrait = usePortraitPlayCurl,
+                    rightToLeft = rtl,
+                    viewportWidthPx = viewportWidthPx,
+                    viewportHeightPx = viewportHeightPx,
+                    paperColor = readerPageBackground,
+                    pageModel = pageModel,
+                    imageLoader = activeImageLoader,
+                    pageDimensions = pageDimensions,
+                    invertMode = invertMode,
+                    whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                    invertDecisionCache = invertDecisionCache,
+                    ePaperMode = ePaperMode,
+                    imageScaleType = appSettings.reader.imageScaleType,
+                    cropBorders = appSettings.reader.cropBorders,
+                    nightModeEnabled = nightModeEnabled,
+                    nightLightIntensity = nightLightIntensity,
+                    epubFontSizeSp = epubFontSizeSp,
+                    epubFontFamily = appSettings.reader.epubFontFamily,
+                    epubTextAlign = appSettings.reader.epubTextAlign,
+                    // Landscape halves split the padding into outer/inner spine margins
+                    // exactly like the Slide path's landscapeLeft/RightPadding, so keep
+                    // the same outer margin on both sides here and let the deck's glue
+                    // logic derive the inner one.
+                    epubContentPadding = if (usePortraitPlayCurl) portraitPadding else PaddingValues(
+                        start = landscapeOuterMargin,
+                        top = safeTopPadding,
+                        end = landscapeOuterMargin,
+                        bottom = safeBottomPadding
+                    ),
+                    density = density,
+                    isEpub = isEpub,
+                    epubSubpages = epubSubpages,
+                    host = playCurlHost,
+                    onPageTurned = onPlayCurlSettled,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            if (overviewTakingOver || !playCurlHost.ready || (isEpub && (ttsSpeaking || isTtsActive))) {
+                RenderReaderPage(
+                    cursor = page,
+                    pageCount = pages,
+                    portrait = portrait,
+                    pageDimensions = pageDimensions,
+                    rightToLeft = rtl,
+                    pageModel = pageModel,
+                    imageLoader = activeImageLoader,
+                    invertMode = invertMode,
+                    ePaperMode = ePaperMode,
+                    whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                    invertDecisionCache = invertDecisionCache,
+                    pageBackground = readerPageBackground,
+                    isEpub = isEpub,
+                    epubSubpages = epubSubpages,
+                    epubFontSizeSp = epubFontSizeSp,
+                    epubFontFamily = appSettings.reader.epubFontFamily,
+                    epubTextAlign = appSettings.reader.epubTextAlign,
+                    portraitPadding = portraitPadding,
+                    landscapeLeftPadding = landscapeLeftPadding,
+                    landscapeRightPadding = landscapeRightPadding,
+                    ttsHighlight = ttsHighlight,
+                    ttsPage = ttsPage,
+                    imageScaleType = appSettings.reader.imageScaleType,
+                    cropBorders = appSettings.reader.cropBorders,
+                    nightModeEnabled = nightModeEnabled,
+                    nightLightIntensity = nightLightIntensity,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationX = zoomPan.offsetX
+                            translationY = zoomPan.offsetY
+                            scaleX = totalZoomScale
+                            scaleY = totalZoomScale
+                        }
+                )
+            }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalPageCurlApi::class)
+private fun ReaderSpreadCurlBranch(
+    book: ReaderBookState,
+    turn: ReaderTurnState,
+    view: ReaderViewState,
+    page: Int,
+    pages: Int,
+    portrait: Boolean,
+    rtl: Boolean,
+    pageModel: (Int) -> Any?,
+    activeImageLoader: ImageLoader,
+    appSettings: AppSettings,
+    invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
+    readerPageBackground: Color,
+    epubFontSizeSp: Float,
+    portraitPadding: PaddingValues,
+    landscapeLeftPadding: PaddingValues,
+    landscapeRightPadding: PaddingValues,
+    ttsHighlight: TtsHighlight?,
+    spreadCurlState: PageCurlState,
+    spreadCurlConfig: PageCurlConfig,
+    nextPageTurnStep: Int,
+    onTurnTarget: (ReaderTurnDirection, Int, Boolean) -> Int?
+) {
+    with(book) {
+        with(turn) {
+            with(view) {
+            val curlMirror = if (rtl) -1f else 1f
+            // During a turn the under/flap pages come from the in-flight target; at rest
+            // they pre-render the forward target spread (the likely next turn), which
+            // warms its images while the reader sits on the current spread.
+            val forwardRestTargetPage = onTurnTarget(ReaderTurnDirection.Next, nextPageTurnStep, false) ?: page
+            val underPage = activeCurlTargetPage ?: forwardRestTargetPage
+            PageCurl(
+                count = ReaderSpreadCurlVisualPageCount,
+                state = spreadCurlState,
+                config = spreadCurlConfig,
+                interactionsEnabled = false,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = curlMirror
+                    },
+                backContent = { _, forward ->
+                    val targetIsWide = pageDimensions.pageIsWide(underPage)
+                    val backPage = readerSpreadCurlBackPageIndex(
+                        targetPage = underPage,
+                        pageCount = pages,
+                        direction = if (forward) ReaderTurnDirection.Next else ReaderTurnDirection.Previous,
+                        targetIsWide = targetIsWide
+                    )
+                    if (targetIsWide) {
+                        // A wide page lands spanning the whole spread, so its back-face
+                        // content is laid out full width; the fold clip reveals the near
+                        // half of the artwork as the leaf turns.
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    scaleX = curlMirror
+                                }
+                        ) {
+                            RenderReaderPage(
+                                cursor = backPage,
+                                pageCount = pages,
+                                portrait = false,
+                                pageDimensions = pageDimensions,
+                                rightToLeft = rtl,
+                                pageModel = pageModel,
+                                imageLoader = activeImageLoader,
+                                invertMode = invertMode,
+                                ePaperMode = ePaperMode,
+                                whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                                invertDecisionCache = invertDecisionCache,
+                                pageBackground = readerPageBackground,
+                                isEpub = isEpub,
+                                epubSubpages = epubSubpages,
+                                epubFontSizeSp = epubFontSizeSp,
+                                epubFontFamily = appSettings.reader.epubFontFamily,
+                                epubTextAlign = appSettings.reader.epubTextAlign,
+                                portraitPadding = portraitPadding,
+                                landscapeLeftPadding = landscapeLeftPadding,
+                                landscapeRightPadding = landscapeRightPadding,
+                                ttsHighlight = ttsHighlight,
+                                ttsPage = ttsPage,
+                                imageScaleType = appSettings.reader.imageScaleType,
+                                cropBorders = appSettings.reader.cropBorders,
+                                nightModeEnabled = nightModeEnabled,
+                                nightLightIntensity = nightLightIntensity,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else {
+                        val backPageAlignment = if (forward == rtl) {
+                            Alignment.CenterStart
+                        } else {
+                            Alignment.CenterEnd
+                        }
+                        val backPageEpubPadding = if (backPageAlignment == Alignment.CenterStart) {
+                            landscapeLeftPadding
+                        } else {
+                            landscapeRightPadding
+                        }
+                        Box(Modifier.fillMaxSize()) {
+                            Box(
+                                Modifier
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(0.5f)
+                                    .align(if (forward) Alignment.CenterStart else Alignment.CenterEnd)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer {
+                                            scaleX = curlMirror
+                                        }
+                                ) {
+                                    RenderReaderPage(
+                                        cursor = backPage,
+                                        pageCount = pages,
+                                        portrait = true,
+                                        pageDimensions = pageDimensions,
+                                        rightToLeft = rtl,
+                                        pageModel = pageModel,
+                                        imageLoader = activeImageLoader,
+                                        invertMode = invertMode,
+                                        ePaperMode = ePaperMode,
+                                        whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                                        invertDecisionCache = invertDecisionCache,
+                                        pageBackground = readerPageBackground,
+                                        isEpub = isEpub,
+                                        epubSubpages = epubSubpages,
+                                        epubFontSizeSp = epubFontSizeSp,
+                                        epubFontFamily = appSettings.reader.epubFontFamily,
+                                        epubTextAlign = appSettings.reader.epubTextAlign,
+                                        portraitPadding = portraitPadding,
+                                        landscapeLeftPadding = landscapeLeftPadding,
+                                        landscapeRightPadding = landscapeRightPadding,
+                                        ttsHighlight = ttsHighlight,
+                                        ttsPage = ttsPage,
+                                        imageScaleType = appSettings.reader.imageScaleType,
+                                        cropBorders = appSettings.reader.cropBorders,
+                                        nightModeEnabled = nightModeEnabled,
+                                        nightLightIntensity = nightLightIntensity,
+                                        singlePageAlignmentOverride = backPageAlignment,
+                                        epubContentPaddingOverride = backPageEpubPadding,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            ) { cursor ->
+                val renderPage = if (cursor != spreadCurlState.current) {
+                    underPage
+                } else {
+                    page
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = curlMirror
+                        }
+                ) {
+                    RenderReaderPage(
+                        cursor = renderPage,
+                        pageCount = pages,
+                        portrait = portrait,
+                        pageDimensions = pageDimensions,
+                        rightToLeft = rtl,
+                        pageModel = pageModel,
+                        imageLoader = activeImageLoader,
+                        invertMode = invertMode,
+                        ePaperMode = ePaperMode,
+                        whiteThreshold = appSettings.reader.invertWhiteThreshold,
+                        invertDecisionCache = invertDecisionCache,
+                        pageBackground = readerPageBackground,
+                        isEpub = isEpub,
+                        epubSubpages = epubSubpages,
+                        epubFontSizeSp = epubFontSizeSp,
+                        epubFontFamily = appSettings.reader.epubFontFamily,
+                        epubTextAlign = appSettings.reader.epubTextAlign,
+                        portraitPadding = portraitPadding,
+                        landscapeLeftPadding = landscapeLeftPadding,
+                        landscapeRightPadding = landscapeRightPadding,
+                        ttsHighlight = ttsHighlight,
+                        ttsPage = ttsPage,
+                        imageScaleType = appSettings.reader.imageScaleType,
+                        cropBorders = appSettings.reader.cropBorders,
+                        nightModeEnabled = nightModeEnabled,
+                        nightLightIntensity = nightLightIntensity,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reader state holders.
+//
+// ReaderScreen used to declare ~55 individual `remember` states directly in the
+// composable body. Every nested @Composable lambda then captured each state it
+// touched as its own synthetic parameter, and R8 merged those into a single
+// 114-parameter restartable method for the main reader content
+// (ReaderScreen$lambda$539: 339 registers, ~19k instructions). ART rejects
+// such mega-methods at verification time, so release builds crashed with
+// `java.lang.VerifyError: Verifier rejected class ReaderScreenKt` as soon as
+// the reader content composed, while unoptimized debug builds worked fine.
+//
+// Grouping the states into a few @Stable holders collapses N captures into one
+// per holder (call sites use `with(book) { ... }` scopes so existing bare
+// references keep resolving). No behavior changes: lifetimes and reset keys
+// match the previous per-state `remember` calls.
+// ---------------------------------------------------------------------------
+
+@Stable
+private class ReaderBookState(initialChapterId: Int, initialVolumeId: Int) {
+    var chapterSequence by mutableStateOf<List<ReaderChapterEntry>>(emptyList())
+    var currentChapter by mutableStateOf(
+        ReaderChapterEntry(
+            chapterId = initialChapterId,
+            volumeId = initialVolumeId,
+            volumeName = null,
+            chapterName = "Chapter"
+        )
+    )
+    var seriesName by mutableStateOf("")
+    var chapterSwitching by mutableStateOf(false)
+    var chapterBoundary by mutableStateOf<ReaderChapterBoundary?>(null)
+    var boundaryDragDirection by mutableStateOf<ReaderTurnDirection?>(null)
+    var boundaryDragProgress by mutableFloatStateOf(0f)
+    var pageDimensions by mutableStateOf<Map<Int, FileDimensionDto>>(emptyMap())
+    var readerReady by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
+    var showReaderMenu by mutableStateOf(false)
+    var offlineChapter by mutableStateOf<OfflineChapter?>(null)
+    var readerImageLoader by mutableStateOf<ImageLoader?>(null)
+    var sessionPreferenceKey by mutableStateOf<String?>(null)
+    var pendingRemoteProgress by mutableStateOf<PendingReaderRemoteProgress?>(null)
+    var pendingEpubScrollRestore by mutableStateOf<ReaderEpubScrollAnchor?>(null)
+    var isEpub by mutableStateOf(false)
+    var isPdf by mutableStateOf(false)
+    var epubSpineBlocks by mutableStateOf<List<List<EpubBlock>>>(emptyList())
+    var epubSubpages by mutableStateOf<List<EpubSubpage>>(emptyList())
+    val lastRemoteProgressPages = ConcurrentHashMap<Int, Int>()
+    val progressRevisionClocks = mutableMapOf<Int, AtomicLong>()
+    val lastRemoteScrollIds = ConcurrentHashMap<Int, String>()
+}
+
+@Stable
+private class ReaderTurnState {
+    var activeTransition by mutableStateOf<ReaderPageTransition?>(null)
+    var transitionProgress by mutableFloatStateOf(0f)
+    var transitionSettling by mutableStateOf(false)
+    var activeCurlDirection by mutableStateOf<ReaderTurnDirection?>(null)
+    var activeCurlTargetPage by mutableStateOf<Int?>(null)
+    var curlDragStartPointer by mutableStateOf<Offset?>(null)
+    var curlDragProgress by mutableFloatStateOf(0f)
+    var queuedTurn by mutableStateOf<PendingReaderTurn?>(null)
+    var pendingZoomLandingDirection by mutableStateOf<ReaderTurnDirection?>(null)
+    var dragBoundaryDirection by mutableStateOf<ReaderTurnDirection?>(null)
+    var zoomAnimationJob by mutableStateOf<Job?>(null)
+    var closeDragOffsetY by mutableFloatStateOf(0f)
+    var completingRead by mutableStateOf(false)
+}
+
+@Stable
+private class ReaderViewState(
+    readingDirection: ReaderReadingDirection,
+    invertMode: InvertMode,
+    ePaperMode: EPaperMode,
+    readerBrightness: Float,
+    nightModeEnabled: Boolean,
+    nightLightIntensity: Float,
+    drawUnderCutout: Boolean,
+    initialAudioVolume: Float
+) {
+    var readingDirection by mutableStateOf(readingDirection)
+    var invertMode by mutableStateOf(invertMode)
+    var ePaperMode by mutableStateOf(ePaperMode)
+    var readerBrightness by mutableFloatStateOf(readerBrightness)
+    var nightModeEnabled by mutableStateOf(nightModeEnabled)
+    var nightLightIntensity by mutableFloatStateOf(nightLightIntensity)
+    var drawUnderCutout by mutableStateOf(drawUnderCutout)
+    var zoomPan by mutableStateOf(ReaderZoomPanState())
+    var overviewDragProgress by mutableFloatStateOf(0f)
+    var isDraggingOverview by mutableStateOf(false)
+    var overviewAnimJob by mutableStateOf<Job?>(null)
+    var closeAnimationJob by mutableStateOf<Job?>(null)
+    var verticalRestoreNonce by mutableIntStateOf(0)
+    var tapZoneOverlayVisible by mutableStateOf(false)
+    var pinchBaseFontSize by mutableFloatStateOf(18f)
+    var pinchAccumulatedScale by mutableFloatStateOf(1f)
+    var isPinchChangingFontSize by mutableStateOf(false)
+    var currentAudioVolume by mutableFloatStateOf(initialAudioVolume)
+    var ttsPage by mutableIntStateOf(-1)
+    var ttsAutoContinue by mutableStateOf(false)
+    var ttsAutoAdvancing by mutableStateOf(false)
+    var isTtsActive by mutableStateOf(false)
+}
+
+@Composable
+private fun RenderReaderPage(
+    cursor: Int,
+    pageCount: Int,
+    portrait: Boolean,
+    pageDimensions: Map<Int, FileDimensionDto>,
+    rightToLeft: Boolean,
+    pageModel: (Int) -> Any?,
+    imageLoader: ImageLoader,
+    invertMode: InvertMode,
+    ePaperMode: EPaperMode,
+    whiteThreshold: Float,
+    invertDecisionCache: MutableMap<ReaderInvertCacheKey, Boolean>,
+    pageBackground: Color,
+    isEpub: Boolean,
+    epubSubpages: List<EpubSubpage>,
+    epubFontSizeSp: Float,
+    epubFontFamily: String,
+    epubTextAlign: EpubTextAlign,
+    portraitPadding: PaddingValues,
+    landscapeLeftPadding: PaddingValues,
+    landscapeRightPadding: PaddingValues,
+    ttsHighlight: TtsHighlight?,
+    ttsPage: Int,
+    imageScaleType: ReaderImageScaleType,
+    cropBorders: Boolean,
+    nightModeEnabled: Boolean,
+    nightLightIntensity: Float,
+    singlePageAlignmentOverride: Alignment? = null,
+    modifier: Modifier = Modifier,
+    epubFontSizeSpOverride: Float? = null,
+    epubContentPaddingOverride: PaddingValues? = null,
+    epubBlockSpacingOverride: Dp? = null
+) {
+    val effectiveEpubFontSizeSp = epubFontSizeSpOverride ?: epubFontSizeSp
+    val effectiveBlockSpacing = epubBlockSpacingOverride ?: 10.dp
+    Box(modifier = modifier) {
+        if (isEpub && epubSubpages.isNotEmpty()) {
+            if (portrait || singlePageAlignmentOverride != null) {
+                val safeIndex = cursor.coerceIn(0, epubSubpages.lastIndex)
+                ReaderEpubPageView(
+                    subpage = epubSubpages[safeIndex],
+                    fontSizeSp = effectiveEpubFontSizeSp,
+                    pageBackground = pageBackground,
+                    invertMode = invertMode,
+                    ePaperMode = ePaperMode,
+                    epubFontFamily = epubFontFamily,
+                    epubTextAlign = epubTextAlign,
+                    imageLoader = imageLoader,
+                    contentPadding = epubContentPaddingOverride ?: portraitPadding,
+                    blockSpacingDp = effectiveBlockSpacing,
+                    ttsHighlight = ttsHighlight.takeIf { ttsPage == safeIndex },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                val spread = spreadPagesFor(cursor, rightToLeft)
+                Box(modifier = modifier.fillMaxSize()) {
+                    Row(modifier = Modifier.fillMaxSize().background(pageBackground)) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            if (spread.leftPage in epubSubpages.indices) {
+                                ReaderEpubPageView(
+                                    subpage = epubSubpages[spread.leftPage],
+                                    fontSizeSp = effectiveEpubFontSizeSp,
+                                    pageBackground = pageBackground,
+                                    invertMode = invertMode,
+                                    ePaperMode = ePaperMode,
+                                    epubFontFamily = epubFontFamily,
+                                    epubTextAlign = epubTextAlign,
+                                    imageLoader = imageLoader,
+                                    contentPadding = epubContentPaddingOverride ?: landscapeLeftPadding,
+                                    blockSpacingDp = effectiveBlockSpacing,
+                                    ttsHighlight = ttsHighlight.takeIf { ttsPage == spread.leftPage },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(pageBackground)
+                                )
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            if (spread.rightPage in epubSubpages.indices) {
+                                ReaderEpubPageView(
+                                    subpage = epubSubpages[spread.rightPage],
+                                    fontSizeSp = effectiveEpubFontSizeSp,
+                                    pageBackground = pageBackground,
+                                    invertMode = invertMode,
+                                    ePaperMode = ePaperMode,
+                                    epubFontFamily = epubFontFamily,
+                                    epubTextAlign = epubTextAlign,
+                                    imageLoader = imageLoader,
+                                    contentPadding = epubContentPaddingOverride ?: landscapeRightPadding,
+                                    blockSpacingDp = effectiveBlockSpacing,
+                                    ttsHighlight = ttsHighlight.takeIf { ttsPage == spread.rightPage },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(pageBackground)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            ReaderPageView(
+                cursor = cursor,
+                pageCount = pageCount,
+                portrait = portrait,
+                pageDimensions = pageDimensions,
+                rightToLeft = rightToLeft,
+                pageModel = pageModel,
+                imageLoader = imageLoader,
+                invertMode = invertMode,
+                whiteThreshold = whiteThreshold,
+                invertDecisionCache = invertDecisionCache,
+                pageBackground = pageBackground,
+                ePaperMode = ePaperMode,
+                imageScaleType = imageScaleType,
+                cropBorders = cropBorders,
+                singlePageAlignmentOverride = singlePageAlignmentOverride,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        if (nightModeEnabled && nightLightIntensity > 0f) {
+            val amberAlpha = (nightLightIntensity * 0.38f).coerceIn(0f, 0.45f)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFFF9E3D).copy(alpha = amberAlpha))
+            )
+        }
     }
 }
 
