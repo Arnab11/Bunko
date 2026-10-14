@@ -181,6 +181,7 @@ internal fun HomeShell(
     refreshing: Boolean,
     onRefresh: () -> Unit,
     error: String?,
+    serverNotConfigured: Boolean = false,
     session: KavitaSession,
     sessionStore: KavitaSessionStore,
     komgaSessionStore: KomgaSessionStore,
@@ -550,6 +551,7 @@ internal fun HomeShell(
                 refreshing = refreshing,
                 onRefresh = onRefresh,
                 error = error,
+                serverNotConfigured = serverNotConfigured,
                 session = session,
                 sessionStore = sessionStore,
                 komgaSessionStore = komgaSessionStore,
@@ -625,6 +627,7 @@ internal fun HomeShell(
                 gridCoverSize = liveGridCoverSize,
                 listCoverSize = liveListCoverSize,
                 onSelectDestination = ::selectDestination,
+                onOpenManageServers = onOpenManageServers,
                 modifier = Modifier.fillMaxSize()
             )
         }

@@ -234,13 +234,8 @@ fun LibraryScreen(
     fun toggleLibraryMode() {
         if (isOffline) {
             scope.launch {
-                val session = sessionStore.load()
-                if (session.baseUrl.isNotBlank() && (session.jwt.isNotBlank() || session.apiKey.isNotBlank())) {
-                    localRepository.setActiveMode("kavita")
-                    isOffline = false
-                } else {
-                    onRequireLogin()
-                }
+                localRepository.setActiveMode("kavita")
+                isOffline = false
             }
         } else {
             scope.launch {
@@ -273,6 +268,7 @@ fun LibraryScreen(
     var wantToReadLoadMoreError by remember { mutableStateOf<String?>(null) }
     var wantToReadPagingRevision by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
+    var serverNotConfigured by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var refreshing by remember { mutableStateOf(false) }
     var refreshJob by remember { mutableStateOf<Job?>(null) }
@@ -314,8 +310,19 @@ fun LibraryScreen(
             scanningLibraryIds = emptySet()
         }
         error = null
+        serverNotConfigured = false
         try {
             val backend = ctx.serverBackend(sessionStore, komgaSessionStore)
+            if (!backend.isConfigured) {
+                serverNotConfigured = true
+                useKomga = backend.isKomga
+                serverName = backend.serverLabel
+                session = sessionStore.load()
+                komgaSession = komgaSessionStore.load()
+                api = null
+                libs = emptyList()
+                return@coroutineScope
+            }
             useKomga = backend.isKomga
             serverName = backend.serverLabel
             session = sessionStore.load()
@@ -588,6 +595,7 @@ fun LibraryScreen(
             refreshing = refreshing,
             onRefresh = ::refreshHome,
             error = error,
+            serverNotConfigured = serverNotConfigured,
             session = session,
             sessionStore = sessionStore,
             komgaSessionStore = komgaSessionStore,

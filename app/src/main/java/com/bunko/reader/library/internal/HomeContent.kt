@@ -352,6 +352,7 @@ internal fun HomeContent(
     refreshing: Boolean,
     onRefresh: () -> Unit,
     error: String?,
+    serverNotConfigured: Boolean = false,
     session: KavitaSession,
     sessionStore: KavitaSessionStore,
     komgaSessionStore: KomgaSessionStore,
@@ -410,6 +411,7 @@ internal fun HomeContent(
     gridCoverSize: Int = 130,
     listCoverSize: Int = 80,
     onSelectDestination: (HomeDestination) -> Unit = {},
+    onOpenManageServers: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val homeListState = rememberLazyListState()
@@ -531,6 +533,15 @@ internal fun HomeContent(
 
         if (destination != HomeDestination.Browse && destination != HomeDestination.Libraries && loading) {
             DarkLoadingState()
+            return@Column
+        }
+        if (destination != HomeDestination.Browse && destination != HomeDestination.Libraries && serverNotConfigured) {
+            DarkMessageState(
+                title = "No Server Configured",
+                body = "Connect a server to browse your library.",
+                actionLabel = "Manage Servers",
+                onAction = onOpenManageServers
+            )
             return@Column
         }
         if (destination != HomeDestination.Browse && destination != HomeDestination.Libraries && error != null) {
